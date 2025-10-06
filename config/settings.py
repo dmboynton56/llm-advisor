@@ -14,7 +14,7 @@
 # --- Watchlist ----------------------------------------------------------------
 # List of symbols the bot will actively monitor.
 WATCHLIST = [
-    "SPY", "QQQ", "IWM", "ES=F", "NQ=F",  # Indices & Futures
+    "SPY", "QQQ", "IWM",  # Indices & Futures
     "NVDA", "TSLA", "AAPL", "AMZN",       # Tech Stocks
     "META", "MSFT", "GOOG"                # More Tech Stocks
 ]
@@ -52,7 +52,7 @@ LLM_PROVIDERS = ["openai"]
 LLM_MODEL = "gpt-4o"
 
 # The time in seconds the bot will wait between each analysis loop.
-ANALYSIS_INTERVAL_SECONDS = 60
+ANALYSIS_INTERVAL_SECONDS = 30
 
 # --- Logging Configuration ----------------------------------------------------
 LOG_LEVEL = "INFO"  # "DEBUG", "INFO", "WARNING", "ERROR"
