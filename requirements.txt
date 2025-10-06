@@ -1,0 +1,13 @@
+alpaca-trade-api
+openai
+python-dotenv
+pandas
+numpy
+scikit-learn
+xgboost
+yfinance
+beautifulsoup4
+requests
+notebook
+matplotlib
+seaborn
