@@ -1,0 +1,3237 @@
+{
+  "date_et": "2025-10-06",
+  "window_et": {
+    "start": "2025-10-05T16:00:00-04:00",
+    "end": "2025-10-06T09:30:00-04:00"
+  },
+  "sources_used": [
+    "alpaca",
+    "google_news",
+    "finviz"
+  ],
+  "universe": [
+    "SPY",
+    "QQQ",
+    "IWM",
+    "NVDA",
+    "TSLA",
+    "AAPL",
+    "AMZN",
+    "META",
+    "MSFT",
+    "GOOG"
+  ],
+  "industries": {
+    "SPY": {
+      "sector": null,
+      "industry": null
+    },
+    "QQQ": {
+      "sector": null,
+      "industry": null
+    },
+    "IWM": {
+      "sector": null,
+      "industry": null
+    },
+    "NVDA": {
+      "sector": null,
+      "industry": null
+    },
+    "TSLA": {
+      "sector": null,
+      "industry": null
+    },
+    "AAPL": {
+      "sector": null,
+      "industry": null
+    },
+    "AMZN": {
+      "sector": null,
+      "industry": null
+    },
+    "META": {
+      "sector": null,
+      "industry": null
+    },
+    "MSFT": {
+      "sector": null,
+      "industry": null
+    },
+    "GOOG": {
+      "sector": null,
+      "industry": null
+    }
+  },
+  "macro": [
+    {
+      "headline": "Strong manufacturing drives Vietnam's Q3 GDP growth to 8.23% year-on-year. - \u5bcc\u9014\u725b\u725b",
+      "source": "GoogleNews",
+      "published_utc": "2025-10-06T13:18:05+00:00",
+      "url": "https://news.google.com/rss/articles/CBMingFBVV95cUxPMzEwU1VmSElsd2JtOUdhUnNYRmNpdnVMMmViWmN1c1lSa0psNGVXS042ZF9sb1hWek92QVJVS1hhcFB5LWJpWGpCb1BtdnJJRmxMR1hCbERwNnJ2eU5tZUZHRjhEQl84Q2I2MjFORkRIbm13b3N4b1prcksydTlEZ2prN0kxU012eGcxYzhQVXJRVklhdlN1WncyNDlMQQ?oc=5",
+      "summary": "",
+      "tags": [
+        "macro",
+        "macro_gdp"
+      ],
+      "tickers": [],
+      "keywords": [
+        "drives",
+        "gdp",
+        "growth",
+        "manufacturing",
+        "strong",
+        "vietnam"
+      ],
+      "sentiment": {
+        "compound": 0.7096,
+        "label": "positive",
+        "method": "vader"
+      }
+    },
+    {
+      "headline": "Leading And Lagging Sectors For October 6, 2025",
+      "source": "benzinga",
+      "published_utc": "2025-10-06T13:10:08+00:00",
+      "url": "https://www.benzinga.com/insights/sector-etfs/25/10/48040501/leading-and-lagging-sectors-for-october-6-2025",
+      "summary": "",
+      "tags": [
+        "risk",
+        "sec"
+      ],
+      "tickers": [
+        "XLB",
+        "XLC",
+        "XLE",
+        "XLF",
+        "XLI",
+        "XLK",
+        "XLP",
+        "XLRE",
+        "XLU",
+        "XLV"
+      ],
+      "keywords": [
+        "2025",
+        "lagging",
+        "leading",
+        "october",
+        "sectors"
+      ],
+      "sentiment": {
+        "compound": -0.2732,
+        "label": "negative",
+        "method": "vader"
+      }
+    },
+    {
+      "headline": "US likely to fall into recession? Moody\u2019s chief economist Mark Zandi flags 22 states with persistent economic weakness - Mint",
+      "source": "GoogleNews",
+      "published_utc": "2025-10-06T13:02:07+00:00",
+      "url": "https://news.google.com/rss/articles/CBMigAJBVV95cUxQQ21BeHNQX1JjSDZyRGM4QThmc2ItSDlCcWhaNHFvd1VySVdqNGJIbjNYMFBmX2VzUUJqZ00wYnB2OGl6a1g0ck02TXo1N25wQlNKYzBGT2FMXzdpd3o1V1d1a0xzVFBsal84ZHA0R01WWm9WOFZIazNQN0Fvb25ubDVwUmp0U3dEM3J0ZmNSRWM1bFZpOG90N2FSZFR0M0hXazdKOER5ZE9xNEl4TTdfajlRVENfV1lOV3QtQ3hUV2hQUDFjVnhzUUNfeFF0TlA0RnNUNDBuQmkxNkJLMDllT2lqdDNMZjB3bl82UG5Ub0RYZUhxRzY3UnBiVld5TzRM0gGGAkFVX3lxTE1VMjdrWXZqWDhtd3d3SVlsQ0Z3aVpDQ0RPelpLeU5YZ1p1NDJrOGFoZlBQNy1SYkctVldCbFhaZDRTRTh0VWlMSE9qQW9LeTIzZU5EcmFjWnVBUU1xeXFSM1NQOU5XOWxGNzdBalFUY2l0T24tbXByd2dwX0JiTzBaREh0RmxiMy1IWHJyZEJLemZhcHVtajZlVmttWV84dFJyNVZhdGRwMUVSSHFrb1JzcndDQ04ybWxrZDBZZFVVc2JiM2hPSl9WSGpQQkl2dlZkN0JyNmhVTXRBQ3hJSDBIeGJia21WWEZ6T2VSaFpaR2tkX0NZRXZMX095NjRWVDUzU01DNXc?oc=5",
+      "summary": "",
+      "tags": [],
+      "tickers": [],
+      "keywords": [
+        "chief",
+        "economic",
+        "economist",
+        "fall",
+        "flags",
+        "likely"
+      ],
+      "sentiment": {
+        "compound": -0.6808,
+        "label": "negative",
+        "method": "vader"
+      }
+    },
+    {
+      "headline": "Stable crude oil prices, increasing refinery margins in third quarter of 2025 - U.S. Energy Information Administration (EIA) (.gov)",
+      "source": "GoogleNews",
+      "published_utc": "2025-10-06T13:01:24+00:00",
+      "url": "https://news.google.com/rss/articles/CBMiY0FVX3lxTE9SWXJ6Vmt1U1B3XzN1WFMwUUdsZ21xdWpabUZjUlBqSnFJTGc5dFpvaUd5U3pRV2E5R2t0dE9ha3hSZ2dfdmdWcHY2bElwYVBJTzRGMWY0aVh3LVdwOGNDcWRRSQ?oc=5",
+      "summary": "",
+      "tags": [
+        "energy",
+        "oil"
+      ],
+      "tickers": [],
+      "keywords": [
+        "2025",
+        "administration",
+        "crude",
+        "eia",
+        "energy",
+        "gov"
+      ],
+      "sentiment": {
+        "compound": -0.1027,
+        "label": "negative",
+        "method": "vader"
+      }
+    },
+    {
+      "headline": "President Trump Announces Sun, Jun 14, 2026 As Date For UFC At The White House",
+      "source": "benzinga",
+      "published_utc": "2025-10-06T12:54:48+00:00",
+      "url": "https://www.benzinga.com/economics/macro-economic-events/25/10/48039877/president-trump-announces-sun-jun-14-2026-as-date-for-ufc-at-the-white-house",
+      "summary": "",
+      "tags": [],
+      "tickers": [
+        "PSKY",
+        "SPY",
+        "TKO"
+      ],
+      "keywords": [
+        "2026",
+        "announces",
+        "date",
+        "house",
+        "jun",
+        "president"
+      ],
+      "sentiment": {
+        "compound": 0.0,
+        "label": "neutral",
+        "method": "vader"
+      }
+    },
+    {
+      "headline": "Paul Tudor Jones On CNBC Says \"My guess is that I think all the ingredients are in place for some kind of a blow off\"",
+      "source": "benzinga",
+      "published_utc": "2025-10-06T12:52:07+00:00",
+      "url": "https://www.benzinga.com/news/25/10/48039860/paul-tudor-jones-on-cnbc-says-my-guess-is-that-i-think-all-the-ingredients-are-in-place-for-some-kin",
+      "summary": "",
+      "tags": [],
+      "tickers": [
+        "SPY"
+      ],
+      "keywords": [
+        "all",
+        "blow",
+        "cnbc",
+        "guess",
+        "ingredients",
+        "jones"
+      ],
+      "sentiment": {
+        "compound": 0.0,
+        "label": "neutral",
+        "method": "vader"
+      }
+    },
+    {
+      "headline": "General Council of Economists raises 2025 forecast for Spanish GDP growth to 3% - The Corner .eu",
+      "source": "GoogleNews",
+      "published_utc": "2025-10-06T12:41:17+00:00",
+      "url": "https://news.google.com/rss/articles/CBMizAFBVV95cUxPLUlsMm9RZ0dvZ3hQamNNMTI0RkRlaDR6ODBMbUdIWlF3b2oydVIzQWhXNUxHVTc4Z1pVR0Z4TUlVUy10bUQ4NkI3VHdaYjVITTd2Mjg2NWVCQVFfNUJMSTdtNzk5NlBCS3N0NGF2OEFITGpPVVlfbEZka3JudXgwNWNBLS1YZE5PYzJnMi01SzRWWE15WUl2UTVPbVVmYzlfTmllSy1mdzFVRm45aF81cHRObTNzMlE0WFUyMlRhOTJyZWN5M1pzTUh0NmM?oc=5",
+      "summary": "",
+      "tags": [
+        "ai",
+        "guidance",
+        "macro",
+        "macro_gdp"
+      ],
+      "tickers": [],
+      "keywords": [
+        "2025",
+        "corner",
+        "council",
+        "economists",
+        "forecast",
+        "gdp"
+      ],
+      "sentiment": {
+        "compound": 0.3818,
+        "label": "positive",
+        "method": "vader"
+      }
+    },
+    {
+      "headline": "Stock Market Today: Dow Jones, Nasdaq, Futures Gain As Government Enters 2nd Week Of Shutdown\u2014Plug, Lithium Americas, UiPath In Focus (UPDATED)",
+      "source": "benzinga",
+      "published_utc": "2025-10-06T12:23:30+00:00",
+      "url": "https://www.benzinga.com/markets/equities/25/10/48036663/stock-market-today-nasdaq-sp-500-futures-rise-as-government-enters-2nd-week-of-shutdown-plug-lithium-americas-uipath-in-focus",
+      "summary": "Editor\u2019s Note: The future prices of benchmark tracking ETFs were updated in the story.\n\n\n\nU.S. stock futures rose on Monday following Friday\u2019s mixed moves. Futures of major benchmark indices were higher.",
+      "tags": [
+        "ai"
+      ],
+      "tickers": [
+        "AEHR",
+        "BTCUSD",
+        "GOOG",
+        "GOOGL",
+        "LAC",
+        "MSFT",
+        "NVDA",
+        "ORKA",
+        "PATH",
+        "PLUG",
+        "QQQ",
+        "SKYT",
+        "SNOW",
+        "SPY",
+        "STZ",
+        "VCIG"
+      ],
+      "keywords": [
+        "futures",
+        "benchmark",
+        "stock",
+        "updated",
+        "2nd",
+        "americas"
+      ],
+      "sentiment": {
+        "compound": 0.5267,
+        "label": "positive",
+        "method": "vader"
+      }
+    },
+    {
+      "headline": "Moody's Chief Economist Says Not Having BLS Data Is 'A Serious Problem,' But Cites Private Data To Warn That Job Market Is 'Sputtering'",
+      "source": "benzinga",
+      "published_utc": "2025-10-06T12:10:40+00:00",
+      "url": "https://www.benzinga.com/markets/economic-data/25/10/48039060/moodys-chief-economist-says-not-having-bls-data-is-a-serious-problem-but-cites-private-data-to-warn-that-job-market-is-sputtering",
+      "summary": "Moody&#39;s Mark Zandi warns of a weakening job market, citing private data showing minimal growth and negative impacts on smaller companies.",
+      "tags": [
+        "macro",
+        "macro_gdp"
+      ],
+      "tickers": [
+        "QQQ",
+        "SPY"
+      ],
+      "keywords": [
+        "data",
+        "job",
+        "market",
+        "moody",
+        "private",
+        "bls"
+      ],
+      "sentiment": {
+        "compound": -0.8316,
+        "label": "negative",
+        "method": "vader"
+      }
+    },
+    {
+      "headline": "Who Plans the Economy? - Michael Hudson",
+      "source": "GoogleNews",
+      "published_utc": "2025-10-06T11:44:35+00:00",
+      "url": "https://news.google.com/rss/articles/CBMiaEFVX3lxTFBkeDF6Y1ZXZ1cwVC0tQnJ5S25vS1ppT0JLZ0Q4T0t6NjI1WE01cGh6TUNNODk4RU1tS2cyWVZaWDlzQUo3QjZSVTNnYUItTGF5Wm5lVXJweUNFZEJWSjlkMWdpUlE2UDln?oc=5",
+      "summary": "",
+      "tags": [],
+      "tickers": [],
+      "keywords": [
+        "economy",
+        "hudson",
+        "michael",
+        "plans",
+        "who"
+      ],
+      "sentiment": {
+        "compound": 0.0,
+        "label": "neutral",
+        "method": "vader"
+      }
+    },
+    {
+      "headline": "Activity cools, but Q3 could benefit from fiscal stimulus - Valor International",
+      "source": "GoogleNews",
+      "published_utc": "2025-10-06T11:31:30+00:00",
+      "url": "https://news.google.com/rss/articles/CBMiwAFBVV95cUxObDVWaEtxclg2ajBXU1hUbDBxT2JHU1pnSHpJTmhwMmV3VmlqYmpyQVRvWnRUQVZIMDhrVWFTbWRrc3Z6YW0wZ1JkeHpVNTRkX09ucWdla0hlUmdQOWRaYk5mUWVWbHE0Z0RpRlk0SXAtei0xSmszTDZreGdYNlhMYVdpSlFoX1JmcDF5dk92T0Y4VHRPbTRtTURRRUJ2QWtiZjF0cUNjRm01RUhOVXZjcmVCWHlfOWdKQVUwTHpGUljSAc8BQVVfeXFMUDdaZDBQOXRHY2ZucWozUW5hTGFJc0d6TTJCM3RhYkIxVndtMlpHVVhMNG5Bd0lpeGJIdHFRc2lYa3JrbGdjbEpuOUQ5cFlHekptZnQwQ0JZSW1sY1hMTTZ3blBqUnM5UWFfLUtXekFmRXRJaG11U2c2VnRzUXkwWDZyWndBWTBUQ2puRXJ5d3hnQ0x2VTVsRG0xazhZUGItYmhaRzkwSGd0OXBlLUt1bDhod082bmpZNkw0X3FUVkl0RE8wR1l0dEFpb1U5SklN?oc=5",
+      "summary": "",
+      "tags": [],
+      "tickers": [],
+      "keywords": [
+        "activity",
+        "benefit",
+        "but",
+        "cools",
+        "could",
+        "fiscal"
+      ],
+      "sentiment": {
+        "compound": 0.6124,
+        "label": "positive",
+        "method": "vader"
+      }
+    },
+    {
+      "headline": "The Everything Recession - The Atlantic",
+      "source": "GoogleNews",
+      "published_utc": "2025-10-06T11:31:00+00:00",
+      "url": "https://news.google.com/rss/articles/CBMihwFBVV95cUxOOXdydzh2RVM3NnRJX3F4NTFaWVJqOG53cTdBM0oxc0tKUnBYM1dpdU5IZUYwM1BfZl95QnBQYlBabDVzTG1sY0dERmpublhZOHV1YXoySmhmR21HUmRNTFdsTkk3OE5xRTllcmRWdDR6dVBRN1pWUmo4azlXQlk5Y2FfUlFHcVk?oc=5",
+      "summary": "",
+      "tags": [
+        "ev"
+      ],
+      "tickers": [],
+      "keywords": [
+        "atlantic",
+        "everything",
+        "recession"
+      ],
+      "sentiment": {
+        "compound": -0.4215,
+        "label": "negative",
+        "method": "vader"
+      }
+    },
+    {
+      "headline": "High Growth Tech Stocks in US to Watch for Potential Portfolio Boost - simplywall.st",
+      "source": "GoogleNews",
+      "published_utc": "2025-10-06T11:22:33+00:00",
+      "url": "https://news.google.com/rss/articles/CBMi0wFBVV95cUxNaGRYU3ZsQnBuMXhRTjg4VDRZdmt3SEhFdjZjRU1PWVB5dVlGcHdmNmFlRFZIbTFJS1NmN09qajBmajU4X1o2TWlJbVpuSFJZcmxBMm9TTDlnWUtRbjRkcll2LUZlbVBfeGhXdEg5SnN6bVlmTm84Q1pnNDBMZk5oTmllNmY5SjlLNl9tZUNrRVMxRERTWVNrMTBsN3V5NkxmYmtYYjlmbkxPRXoyeWROZXJ5YmdNeFlnTkhtbFNMMHlOaTdNZW9XMEFDMnd2YWpwdGpV0gHYAUFVX3lxTE43MFZvUEdhQmtiTUdSMDcwSlB1RWZtVDhVX0EwQjNjaVNqZ21QVzhMTWFxWUJKSnhkWEVjaE1sWjNMTThkajVndGZTdkJKTlk2X0ZleldTNkV3aHNDa2std0VXREJVTE5kMUhuampSdVJYSVk2OHNxakFZRkZvZVNTMERwWFVVQjlxSFVzbzBLeHd3cXVweXhLNlhkc1VlS2hYZGlmVWwwbGc0MXg1dzJTWWQ5M25LaFdKNFhBQzNNQmdQR2diNVZOOFJLQ2dHQnRPYVBBTTRmdQ?oc=5",
+      "summary": "",
+      "tags": [
+        "macro",
+        "macro_gdp"
+      ],
+      "tickers": [],
+      "keywords": [
+        "boost",
+        "growth",
+        "high",
+        "portfolio",
+        "potential",
+        "simplywall"
+      ],
+      "sentiment": {
+        "compound": 0.6486,
+        "label": "positive",
+        "method": "vader"
+      }
+    },
+    {
+      "headline": "Nvidia's Sky-High AI Ambitions Under Fire: Goldman Sachs Flags 'Circular Revenue' Risk As Wall Street Questions 'Jensen's Math'",
+      "source": "benzinga",
+      "published_utc": "2025-10-06T11:05:33+00:00",
+      "url": "https://www.benzinga.com/markets/equities/25/10/48037892/nvidias-sky-high-ai-ambitions-under-fire-goldman-sachs-flags-circular-revenue-risk-as-wall-street-questions-jensens-math",
+      "summary": "Goldman Sachs warns on Nvidia&#39;s &#39;circular revenue&#39; risk. Barclays&#39; AI forecast offers a reality check, even as they remain bullish on NVDA.",
+      "tags": [
+        "ai",
+        "earnings",
+        "ev",
+        "guidance"
+      ],
+      "tickers": [
+        "NVDA",
+        "QQQ",
+        "SPY"
+      ],
+      "keywords": [
+        "circular",
+        "goldman",
+        "nvidia",
+        "revenue",
+        "risk",
+        "sachs"
+      ],
+      "sentiment": {
+        "compound": -0.7184,
+        "label": "negative",
+        "method": "vader"
+      }
+    },
+    {
+      "headline": "Fed Set to Drive Global Rate Cuts as Europe Shifts to Pause - Bloomberg.com",
+      "source": "GoogleNews",
+      "published_utc": "2025-10-06T10:45:29+00:00",
+      "url": "https://news.google.com/rss/articles/CBMirwFBVV95cUxNTHJUSUtrZERlaFc2anVkcjJ3cGZqV1BlMkdkLWVMcHpITzBaaUF5UHR5bXA1UEpsVGV1WGttSmc2TW42b0hUekNBbktuc1AxUXM1SzFJLU1pR29Sa2tSeTcweU1FZFZILXdOWVFna00yVUlMS1ZCbGpjRDdTbmdIWjljSG41czlNZzR6d0JlMTBLdXBFV0NMYnhwZDhaVGRmRllfd3ZNeWt4OUNQX0Jj?oc=5",
+      "summary": "",
+      "tags": [
+        "macro",
+        "macro_fomc"
+      ],
+      "tickers": [],
+      "keywords": [
+        "bloomberg",
+        "com",
+        "cuts",
+        "drive",
+        "europe",
+        "fed"
+      ],
+      "sentiment": {
+        "compound": -0.296,
+        "label": "negative",
+        "method": "vader"
+      }
+    },
+    {
+      "headline": "America saw 'essentially no job growth' last month, warns Moody's, and any roles added were in three wealthy states - Fortune",
+      "source": "GoogleNews",
+      "published_utc": "2025-10-06T10:31:00+00:00",
+      "url": "https://news.google.com/rss/articles/CBMiggFBVV95cUxQN1VkdlJUYmREZjdlbkVwLXhoaG5SVmw4ZVd6WThiWDJXU3NQUFhsRTRuSjkxNDBuNTU1Vk9NdzQtdFBUc19wYkt6aUIwSXRlR3ZmZnpCSkVqVmRPTndmZnFhVEhfNmRDNUV0WFotTHR3UFFlY1o0QmRpS3JXWmtENHRR?oc=5",
+      "summary": "",
+      "tags": [
+        "macro",
+        "macro_gdp"
+      ],
+      "tickers": [],
+      "keywords": [
+        "added",
+        "america",
+        "any",
+        "essentially",
+        "fortune",
+        "growth"
+      ],
+      "sentiment": {
+        "compound": -0.3147,
+        "label": "negative",
+        "method": "vader"
+      }
+    },
+    {
+      "headline": "Trump's economic plans called for more oil drilling and lower gas prices. He's only getting the latter. - Yahoo Finance",
+      "source": "GoogleNews",
+      "published_utc": "2025-10-06T09:56:57+00:00",
+      "url": "https://news.google.com/rss/articles/CBMi3gFBVV95cUxNRnZKaVpWVmFDTXpzS1JkMXlJbEhOVVdfWjAtSWlJUG1PZzZ6Yk5NTFk0cHhsaE1MMVYyVDBGU2U0N0RBT29MQm9uNjVIVmxDWmVRZXB2dERmYUpYOUpnLTVRM19TZDYzaWstYzB6TmM4SWZUbVVmVmdkTVdINHdxdmpMdVdwLU1HMVlIM1BhcVBfWU5uMDFyRXlLMy0zTW9wRWs1YkhrOEcwZVFSczNPVy1hRXQ0ZUpoUmRrU2pnaU1EaTVnYTVsbXJFUTQ2WHNqVXRtOURtLVhxMG1yTGc?oc=5",
+      "summary": "",
+      "tags": [
+        "energy",
+        "oil"
+      ],
+      "tickers": [],
+      "keywords": [
+        "called",
+        "drilling",
+        "economic",
+        "finance",
+        "gas",
+        "getting"
+      ],
+      "sentiment": {
+        "compound": -0.296,
+        "label": "negative",
+        "method": "vader"
+      }
+    },
+    {
+      "headline": "Vietnam\u2019s Growth Quickens on Manufacturing Despite Trump Tariffs - Bloomberg.com",
+      "source": "GoogleNews",
+      "published_utc": "2025-10-06T09:56:20+00:00",
+      "url": "https://news.google.com/rss/articles/CBMitgFBVV95cUxPNnZrUWtfNmdjWmlMUVhRMldjZzFhTEZpc1lWaWlGcjFZZHVBRnByTFV1ellULVRDaFR1c2JsX0xBNTc5NXFCRUl1LWIzWVFobUtJRVNDeWx1ZGZvSG1teFdGcGRGX1A5bzI0WVpGME9yQktraFFqWWVRYVpVUVJHOGtQbEdUZ2NweHRoWUFYVENJd20tdjhkZXRSdUVGV1RoRF9kRTlQTEkwZ0RVVXl6dm5MTE1Cdw?oc=5",
+      "summary": "",
+      "tags": [
+        "macro",
+        "macro_gdp"
+      ],
+      "tickers": [],
+      "keywords": [
+        "bloomberg",
+        "com",
+        "despite",
+        "growth",
+        "manufacturing",
+        "quickens"
+      ],
+      "sentiment": {
+        "compound": 0.3818,
+        "label": "positive",
+        "method": "vader"
+      }
+    },
+    {
+      "headline": "Treasury yields move higher as government shutdown stretches on - CNBC",
+      "source": "GoogleNews",
+      "published_utc": "2025-10-06T09:40:40+00:00",
+      "url": "https://news.google.com/rss/articles/CBMikwFBVV95cUxPRmhobDJRTzBmMjlJX201cGtSZnduRGlCZmFaMzdsNGF5bXhQTTdLNm0yRmxqYkZBcHZGTVFUcnpBcXVldXFkcGljYU5MbnZLbzd1U0FaQnlFWllXMjhabWUtYk9vS3h4aGNJelVrX0NxQUhRRWFNUGtlaHUwM3ZBMDh5alZQcWF4c0Z1R1Y0a0xLQUXSAZgBQVVfeXFMTmxVUzdjNEw5ZHRMc1BHRUhyRHdzRzFodEx3Rm00eW9IeGtKdk83VGpoSnNzTDRMYzVDcEhTUzdwTzdVcllYNDhRM0IxdlAwcFdOYS1wZWVuRHZnMzU5YjI1cllrQ1dPVnpiZUpoVzRMNC1jWU9zZnpaVGE2TTltMGtaTXo0XzBjR3dPanVWZG5EUUlWcGhhTXU?oc=5",
+      "summary": "",
+      "tags": [
+        "macro",
+        "yields"
+      ],
+      "tickers": [],
+      "keywords": [
+        "cnbc",
+        "government",
+        "higher",
+        "move",
+        "shutdown",
+        "stretches"
+      ],
+      "sentiment": {
+        "compound": 0.2023,
+        "label": "positive",
+        "method": "vader"
+      }
+    },
+    {
+      "headline": "Bloomberg Reported Saturday  Stellantis Plans $10B In U.S. Investments",
+      "source": "benzinga",
+      "published_utc": "2025-10-06T09:03:19+00:00",
+      "url": "https://www.benzinga.com/news/25/10/48036276/bloomberg-reported-saturday-stellantis-plans-10b-in-u-s-investments",
+      "summary": "",
+      "tags": [],
+      "tickers": [
+        "SPY",
+        "STLA"
+      ],
+      "keywords": [
+        "10b",
+        "bloomberg",
+        "investments",
+        "plans",
+        "reported",
+        "saturday"
+      ],
+      "sentiment": {
+        "compound": 0.0,
+        "label": "neutral",
+        "method": "vader"
+      }
+    },
+    {
+      "headline": "Wall Street, crypto industry say tokenization will reshape global markets: 'It\u2019s going to eat the entire financial system' - Yahoo Finance",
+      "source": "GoogleNews",
+      "published_utc": "2025-10-06T08:50:28+00:00",
+      "url": "https://news.google.com/rss/articles/CBMi9gFBVV95cUxOeWVtTG9wTjlaNWFtaUw5ME5JOXRNYk5ka2NpVVdINzVNdldreThxZmo5RW5qMFBQbkUwMDNZQkk2N0RRaW83YXN2YW5INlUzcENKY3B0QUNHSG8zb2k4Z29MZEFmcnpLdkEtQU5BN01vT2JWUlFNZ3lWeTVwTHBBVFpWcU83RE1SOU9GMEI1VS1Lak5oekVCSnA2S2dFNmRHdElwa3lDNWh2VHlaM3V3QWZaRjFSS0ZuUW1iUi11Q1dYc0NFenFNcUtRRGNHcHJXMG5YNGZjSE1EN1doQXJQN2pJTnQ4SXNVWlJ4MWctZlFTNXFOd1E?oc=5",
+      "summary": "",
+      "tags": [],
+      "tickers": [],
+      "keywords": [
+        "crypto",
+        "eat",
+        "entire",
+        "finance",
+        "financial",
+        "global"
+      ],
+      "sentiment": {
+        "compound": 0.0,
+        "label": "neutral",
+        "method": "vader"
+      }
+    },
+    {
+      "headline": "Oil prices surge after OPEC+ announces smaller-than-feared output hike - Yahoo",
+      "source": "GoogleNews",
+      "published_utc": "2025-10-06T08:39:33+00:00",
+      "url": "https://news.google.com/rss/articles/CBMimgFBVV95cUxNeHFNV0hsVjNXTnItUnVRVlBXTEJmM0xoVTAtY0xXbm4zemh3Mmt6U3pnczg1R3I3VmU5RjQtNTNRbmRVMjN3VklSUXl0UWp3VEF1clhkWXhRNXE2ajhLUHRpQWFCZWFwVFJCeXdVemowRmwzVV9CSG1pbnVRQW9IVDBkWllnandGcXlsTXdVUF9ZU1JUYm0yRjZB?oc=5",
+      "summary": "",
+      "tags": [
+        "oil"
+      ],
+      "tickers": [],
+      "keywords": [
+        "after",
+        "announces",
+        "hike",
+        "oil",
+        "opec",
+        "output"
+      ],
+      "sentiment": {
+        "compound": 0.0,
+        "label": "neutral",
+        "method": "vader"
+      }
+    },
+    {
+      "headline": "Chamath Palihapitiya Warns AI Push By GOOGL, META, MSFT And AMZN Using NVDA Chips Could Double Electricity Rates",
+      "source": "benzinga",
+      "published_utc": "2025-10-06T08:35:15+00:00",
+      "url": "https://www.benzinga.com/markets/equities/25/10/48036166/chamath-palihapitiya-warns-ai-push-by-googl-meta-msft-and-amzn-using-nvda-chips-could-double-electricity-rates",
+      "summary": "Chamath Palihapitiya warns the AI push by Google &amp; Meta could double electricity rates, predicting a PR crisis over soaring consumer costs.",
+      "tags": [
+        "ai",
+        "chips"
+      ],
+      "tickers": [
+        "AMZN",
+        "FDN",
+        "FTEC",
+        "GOOG",
+        "GOOGL",
+        "IGM",
+        "IXN",
+        "IYW",
+        "MAGS",
+        "META",
+        "MSFT",
+        "NVDA",
+        "QQQ",
+        "QTUM",
+        "SPY"
+      ],
+      "keywords": [
+        "chamath",
+        "could",
+        "double",
+        "electricity",
+        "meta",
+        "palihapitiya"
+      ],
+      "sentiment": {
+        "compound": -0.7096,
+        "label": "negative",
+        "method": "vader"
+      }
+    },
+    {
+      "headline": "Stocks open higher as Wall Street's winning streak looks set to continue - MarketWatch",
+      "source": "GoogleNews",
+      "published_utc": "2025-10-06T08:27:00+00:00",
+      "url": "https://news.google.com/rss/articles/CBMi5ARBVV95cUxOY185UzBYQ1JOQVJHeDh4ak8wMFUweTlKZ2pTZ0oxRmlSYTZVejNRNVhVT2M3MlRWVTRpSkVnTVFYZm5NU3JiRjB6ZEdyQi1FSVdpY0gzTWpwWUFkdHF0YTVQZGxFX3p3aFgxTEw0RENZblRjOFFGTEtjQV9jc0tPSXA1OGhEazVuX1dBejJVQWZuWlFVcU1sWjBzbURRdnUybnpWZ1dtUlY0YWh4WVZKU3ZwT0pnbVNpLTBhekFFdEpLOWY1ME1vb0F0NDJtQUFabEV4bkhodERpYXpYc0ZpeG5wZXNyMFd0a3ZaRkIyV0pnYWlRUy1oaTFSdHlOQjk2LXhwdG1aSjI3cnowdHpWamdqSEhEMjlEZ190cW5reUd6X2daMGV0a3hTVHpvTFZnR3FacmdmZ09Ua2VuSE0ycVFPS056RmRNTGJLSUlfb29UUHVNQU5Hdm1DX3lNT0xnSlFQWTB6clZxV1B4N1BNeE1tSDZZc0llSEYwNlJvQmJCX0xacWJ0VHVjZDVLN3p6NEdpZlkwVmN5NEZhRElBUHQwdVRpYWU3SnllbjRSWFRReXFKZUxJbGFqa1BQVUkzRElUU2FPdVFjMWM1TThNNEY4dEhrTlZCdllHeFgyb3JDSVM0bTgwTkRnUFd3QTVtSVNObUxZRk10akRoTUlZUTdSQnV5Z3dyRm5tVnlYSlhuYUdxOUQ3SXJSV01kYmJ3ZjFQZ0k2bUtqdnRyYXlEal9GV0xiU0dEVjd2NGZyTU84RDgwMnV3a2dTazkySGNYTFZtY01aUDAtcDVPVjBsSEg3Rmc?oc=5",
+      "summary": "",
+      "tags": [],
+      "tickers": [],
+      "keywords": [
+        "continue",
+        "higher",
+        "looks",
+        "marketwatch",
+        "open",
+        "set"
+      ],
+      "sentiment": {
+        "compound": 0.5267,
+        "label": "positive",
+        "method": "vader"
+      }
+    },
+    {
+      "headline": "Government Shutdown Could Drag On Until October 15: Polymarket Bets On 70% Chance Of Reopening Beyond Half A Month",
+      "source": "benzinga",
+      "published_utc": "2025-10-06T07:14:54+00:00",
+      "url": "https://www.benzinga.com/markets/equities/25/10/48035705/government-shutdown-could-drag-on-until-october-15-polymarket-bets-on-70-chance-of-reopening-beyond-half-a-month",
+      "summary": "The government shutdown could last until Oct. 15, as Polymarket odds show a 70% chance. See analysis on market impact and spending.",
+      "tags": [],
+      "tickers": [
+        "QQQ",
+        "SPY"
+      ],
+      "keywords": [
+        "chance",
+        "could",
+        "government",
+        "polymarket",
+        "shutdown",
+        "until"
+      ],
+      "sentiment": {
+        "compound": 0.2732,
+        "label": "positive",
+        "method": "vader"
+      }
+    },
+    {
+      "headline": "Oil rises more than 1% after OPEC+ hikes output less than expected - CNBC",
+      "source": "GoogleNews",
+      "published_utc": "2025-10-06T07:07:42+00:00",
+      "url": "https://news.google.com/rss/articles/CBMipwFBVV95cUxPc0duYnRkQkpBYkNuR0JxZEUzXzR6SVBSNTI3NlFsSUJXSF9MQ2Y2TFVVYVFIREs4b0oyNElaQnJ5NEtQMFR4SHNXa05vX3BBZ3QzVmtDd2ozXzlGSF9wT1hUcjBpQkkwREJ0eXlna3VzaC1EZTEtQUlVQ0w4dDNSaDVWU2VFellJdEstX1pQQ1dBbUxwYWV2QUY1ajJsOHlEWTJ2Q2Nrb9IBrAFBVV95cUxQc0RuUGhGbHczOTVzZlJFQUNSRFBMZGJESkJVbDJmLTFFNlI0U3NoQVl1THI1MWtScDc2QlRqci1xc2tyTEt5RjVfeFJkLUZnZG8tS0ZCOXZweERnVzhhVGVOM05HdF9fLTlIeklyel94ZkNCY1R2VTY4QmF0Q04tTncwaXJzWS0zN1ZyMUtINUN6bGVpZXh4TXRBaElHdE9RelhPMmpYVmpIdWlF?oc=5",
+      "summary": "",
+      "tags": [
+        "oil"
+      ],
+      "tickers": [],
+      "keywords": [
+        "after",
+        "cnbc",
+        "expected",
+        "hikes",
+        "less",
+        "more"
+      ],
+      "sentiment": {
+        "compound": 0.0,
+        "label": "neutral",
+        "method": "vader"
+      }
+    },
+    {
+      "headline": "Oil prices jump after OPEC+ announces modest monthly output hike - Euronews.com",
+      "source": "GoogleNews",
+      "published_utc": "2025-10-06T06:59:00+00:00",
+      "url": "https://news.google.com/rss/articles/CBMirAFBVV95cUxQTGxxWC14LVl5ZDEzeWg0NjQzenFYenRraHNiLUk5cGw3T0pXNzlHQUVDM1V1RmRPZDhtaTBsT3hqcThsT0dBY3h4RTlabXRqZ1BDMk5WY2xhMi1fVEFpRWNqOFZQZnB3UUEtQ0FmcWM1eVY4THVCU3MxWmNvN3piS29yNDFfSnotbFZhZ1g1X2pnRVFhblNQRFJNMFlOeEdoWVlBaXZob3lvNlp6?oc=5",
+      "summary": "",
+      "tags": [
+        "oil"
+      ],
+      "tickers": [],
+      "keywords": [
+        "after",
+        "announces",
+        "com",
+        "euronews",
+        "hike",
+        "jump"
+      ],
+      "sentiment": {
+        "compound": 0.0,
+        "label": "neutral",
+        "method": "vader"
+      }
+    },
+    {
+      "headline": "Surging OPEC+ oil output leaves market with shrinking shock absorbers - Reuters",
+      "source": "GoogleNews",
+      "published_utc": "2025-10-06T06:00:00+00:00",
+      "url": "https://news.google.com/rss/articles/CBMiwgFBVV95cUxNTHpNTTVQVjZqNUk0TUNCaTZpbzFiVTlpRF8xb2NxcEZEYzM1U0ZGb2dJbWtQdV9Eb1J0N2RudTg4Z3dQeG80RzUyWXkxVGFOM2NWUkdNMThycmxFQ1hmSmFaTUI4WXEzeHhBczJoc1JsRGNaR2VlYUdpZW9QUHlXMTlDMmtlNjZBSi1YNHNyWDlwQUY4M0Q5TllSSmRxWVNoM0w4UFUyM0ZWbkJRQ25HdWhKdmhWMklPZDRHbW05anZCUQ?oc=5",
+      "summary": "",
+      "tags": [
+        "oil"
+      ],
+      "tickers": [],
+      "keywords": [
+        "absorbers",
+        "leaves",
+        "market",
+        "oil",
+        "opec",
+        "output"
+      ],
+      "sentiment": {
+        "compound": -0.3818,
+        "label": "negative",
+        "method": "vader"
+      }
+    },
+    {
+      "headline": "Vietnam's economy accelerates despite dip in US exports, footwear drop - Reuters",
+      "source": "GoogleNews",
+      "published_utc": "2025-10-06T05:36:00+00:00",
+      "url": "https://news.google.com/rss/articles/CBMiogFBVV95cUxNU3loLXVhY2Y2TDhIamhxYy03cEd6ajlabDhPTXAxSWdCbEdudzE3R3lkMWdrd2lxN0xHQXA3UFhtWlltM1drOWdTeUdvZEdTa2xrRl9tUWVNY2Qxa2QyU21GTURpWDBsRmw3enQzaHFyNFhpS09tUVJGdmNPNnNoMVdlNHJSM1RLZ3lDZ2c3VVBZLVVkeXNKcDRNcnc1MUFid2c?oc=5",
+      "summary": "",
+      "tags": [],
+      "tickers": [],
+      "keywords": [
+        "accelerates",
+        "despite",
+        "dip",
+        "drop",
+        "economy",
+        "exports"
+      ],
+      "sentiment": {
+        "compound": -0.2732,
+        "label": "negative",
+        "method": "vader"
+      }
+    },
+    {
+      "headline": "America is now one big bet on AI - Financial Times",
+      "source": "GoogleNews",
+      "published_utc": "2025-10-06T04:00:48+00:00",
+      "url": "https://news.google.com/rss/articles/CBMicEFVX3lxTE54SWNQaG40RkdqTE5nT2NEeExfY1FyWjNpY3Z1Z1FwRmVWWHhjOGlOUFlNX0o3WkpCYTEtbmtqM2NVUk1UaWZkZFBkSUQ0blJ4VTJJX3hqal9oMWRlNnNkSHNKY3VNRDB5N2ZFbnVYZUc?oc=5",
+      "summary": "",
+      "tags": [
+        "ai"
+      ],
+      "tickers": [],
+      "keywords": [
+        "america",
+        "bet",
+        "big",
+        "financial",
+        "now",
+        "one"
+      ],
+      "sentiment": {
+        "compound": 0.0,
+        "label": "neutral",
+        "method": "vader"
+      }
+    },
+    {
+      "headline": "Oil Prices Climb After OPEC Announces Modest Output Hike - Crude Oil Prices Today | OilPrice.com",
+      "source": "GoogleNews",
+      "published_utc": "2025-10-06T02:35:50+00:00",
+      "url": "https://news.google.com/rss/articles/CBMisgFBVV95cUxNdU5fM1VCSlRSd2U5eTRNbmJGbEdaYVlWZXR5TEFXU2txRFhfeE1BTmctY3VCM1c1alotTlBBakhNZzRDZ3puN285V1ZXRHNiZmE2elZhS2RNejNQZGJ0bUhGcFdtQTdFa055Rk1ZNmhiYVhQdk9menBSbGpYVzhNVHhJTi1BT28wOTJwcWdpNWJaQVFJVTRFODEtdzZhalpiel9FdXdTdmx1b1VpTHBRT3B30gG3AUFVX3lxTE0tSE1yS2xKYTQ3NEZsRkZtM1MxWjVFVFpZMTlCV0VfdEdYWHBVVnFwUU92Um5EVUxkRUlycHJpQnpVUlhad1V3OVhmNzNlenVpazJ5ejJfc0hZa1RNaFFKeDkwUDlZblhKOVFfSmZKMUhVQWFmLTJoc0dTbERVS2NRa0h4U2NfTEVwMXlXZ2tDZjBfVTN6QnJscE1ieDYxWGVBbzZCSjRKUTJ4MkpSZTByeGpUYy1mdw?oc=5",
+      "summary": "",
+      "tags": [
+        "oil"
+      ],
+      "tickers": [],
+      "keywords": [
+        "oil",
+        "prices",
+        "after",
+        "announces",
+        "climb",
+        "com"
+      ],
+      "sentiment": {
+        "compound": -0.5719,
+        "label": "negative",
+        "method": "vader"
+      }
+    }
+  ],
+  "symbols": {
+    "SPY": [
+      {
+        "headline": "If You'd Invested $1,000 in the SPDR S&P 500 ETF Trust (SPY) 5 Years Ago, Here's How Much You'd Have Today - The Motley Fool",
+        "source": "GoogleNews",
+        "published_utc": "2025-10-06T13:23:00+00:00",
+        "url": "https://news.google.com/rss/articles/CBMikgFBVV95cUxQOGpVVmJid0twN2RLMW9tX1FfMEZaR0U4TWV1eGxpR2VrSFhrOGRIaVhBTGFUQWpkM2JSV2xmQThXV1g3emRmZUNSNno1eGJGdHBuLTk0U0lCaDNsU3RfX2dnY2Z4cDBwTWw4akc0OE1wZ3FKSU43RGJ1YlNydWZINmVuem1adGhNMDU1dGJaWTJaUQ?oc=5",
+        "summary": "",
+        "tags": [],
+        "tickers": [],
+        "keywords": [
+          "you",
+          "000",
+          "500",
+          "ago",
+          "etf",
+          "fool"
+        ],
+        "sentiment": {
+          "compound": 0.1027,
+          "label": "positive",
+          "method": "vader"
+        }
+      },
+      {
+        "headline": "President Trump Announces Sun, Jun 14, 2026 As Date For UFC At The White House",
+        "source": "benzinga",
+        "published_utc": "2025-10-06T12:54:48+00:00",
+        "url": "https://www.benzinga.com/economics/macro-economic-events/25/10/48039877/president-trump-announces-sun-jun-14-2026-as-date-for-ufc-at-the-white-house",
+        "summary": "",
+        "tags": [],
+        "tickers": [
+          "PSKY",
+          "SPY",
+          "TKO"
+        ],
+        "keywords": [
+          "2026",
+          "announces",
+          "date",
+          "house",
+          "jun",
+          "president"
+        ],
+        "sentiment": {
+          "compound": 0.0,
+          "label": "neutral",
+          "method": "vader"
+        }
+      },
+      {
+        "headline": "Paul Tudor Jones On CNBC Says \"My guess is that I think all the ingredients are in place for some kind of a blow off\"",
+        "source": "benzinga",
+        "published_utc": "2025-10-06T12:52:07+00:00",
+        "url": "https://www.benzinga.com/news/25/10/48039860/paul-tudor-jones-on-cnbc-says-my-guess-is-that-i-think-all-the-ingredients-are-in-place-for-some-kin",
+        "summary": "",
+        "tags": [],
+        "tickers": [
+          "SPY"
+        ],
+        "keywords": [
+          "all",
+          "blow",
+          "cnbc",
+          "guess",
+          "ingredients",
+          "jones"
+        ],
+        "sentiment": {
+          "compound": 0.0,
+          "label": "neutral",
+          "method": "vader"
+        }
+      },
+      {
+        "headline": "Stock Market Today: Dow Jones, Nasdaq, Futures Gain As Government Enters 2nd Week Of Shutdown\u2014Plug, Lithium Americas, UiPath In Focus (UPDATED)",
+        "source": "benzinga",
+        "published_utc": "2025-10-06T12:23:30+00:00",
+        "url": "https://www.benzinga.com/markets/equities/25/10/48036663/stock-market-today-nasdaq-sp-500-futures-rise-as-government-enters-2nd-week-of-shutdown-plug-lithium-americas-uipath-in-focus",
+        "summary": "Editor\u2019s Note: The future prices of benchmark tracking ETFs were updated in the story.\n\n\n\nU.S. stock futures rose on Monday following Friday\u2019s mixed moves. Futures of major benchmark indices were higher.",
+        "tags": [
+          "ai"
+        ],
+        "tickers": [
+          "AEHR",
+          "BTCUSD",
+          "GOOG",
+          "GOOGL",
+          "LAC",
+          "MSFT",
+          "NVDA",
+          "ORKA",
+          "PATH",
+          "PLUG",
+          "QQQ",
+          "SKYT",
+          "SNOW",
+          "SPY",
+          "STZ",
+          "VCIG"
+        ],
+        "keywords": [
+          "futures",
+          "benchmark",
+          "stock",
+          "updated",
+          "2nd",
+          "americas"
+        ],
+        "sentiment": {
+          "compound": 0.5267,
+          "label": "positive",
+          "method": "vader"
+        }
+      },
+      {
+        "headline": "Moody's Chief Economist Says Not Having BLS Data Is 'A Serious Problem,' But Cites Private Data To Warn That Job Market Is 'Sputtering'",
+        "source": "benzinga",
+        "published_utc": "2025-10-06T12:10:40+00:00",
+        "url": "https://www.benzinga.com/markets/economic-data/25/10/48039060/moodys-chief-economist-says-not-having-bls-data-is-a-serious-problem-but-cites-private-data-to-warn-that-job-market-is-sputtering",
+        "summary": "Moody&#39;s Mark Zandi warns of a weakening job market, citing private data showing minimal growth and negative impacts on smaller companies.",
+        "tags": [
+          "macro",
+          "macro_gdp"
+        ],
+        "tickers": [
+          "QQQ",
+          "SPY"
+        ],
+        "keywords": [
+          "data",
+          "job",
+          "market",
+          "moody",
+          "private",
+          "bls"
+        ],
+        "sentiment": {
+          "compound": -0.8316,
+          "label": "negative",
+          "method": "vader"
+        }
+      },
+      {
+        "headline": "Nvidia's Sky-High AI Ambitions Under Fire: Goldman Sachs Flags 'Circular Revenue' Risk As Wall Street Questions 'Jensen's Math'",
+        "source": "benzinga",
+        "published_utc": "2025-10-06T11:05:33+00:00",
+        "url": "https://www.benzinga.com/markets/equities/25/10/48037892/nvidias-sky-high-ai-ambitions-under-fire-goldman-sachs-flags-circular-revenue-risk-as-wall-street-questions-jensens-math",
+        "summary": "Goldman Sachs warns on Nvidia&#39;s &#39;circular revenue&#39; risk. Barclays&#39; AI forecast offers a reality check, even as they remain bullish on NVDA.",
+        "tags": [
+          "ai",
+          "earnings",
+          "ev",
+          "guidance"
+        ],
+        "tickers": [
+          "NVDA",
+          "QQQ",
+          "SPY"
+        ],
+        "keywords": [
+          "circular",
+          "goldman",
+          "nvidia",
+          "revenue",
+          "risk",
+          "sachs"
+        ],
+        "sentiment": {
+          "compound": -0.7184,
+          "label": "negative",
+          "method": "vader"
+        }
+      },
+      {
+        "headline": "Warren Buffett's preferred stock valuation gauge at all-time highs (SPY:NYSEARCA) - Seeking Alpha",
+        "source": "GoogleNews",
+        "published_utc": "2025-10-06T10:48:53+00:00",
+        "url": "https://news.google.com/rss/articles/CBMipgFBVV95cUxOVTdfZmg0LTlBUTVlSkFhZ2xrc2xTNWVsaDBCaTFTU2c2blEyZkptZFdCcjNrWU1OVnpNaFgxaFR0MUc0QjZhdUFNNlRmZXd4dXQyUVc1TEZBa2xzLXl6aTIwdXU3MHo5d3Z6b1NUc1B3dXdGSDNKWWdhMzZNRzBxY19HTkRvZjZtWmVVU0FObkNHd2RWazhOWVNNM3J1bl9oc09FamJR?oc=5",
+        "summary": "",
+        "tags": [],
+        "tickers": [],
+        "keywords": [
+          "all-time",
+          "alpha",
+          "buffett",
+          "gauge",
+          "highs",
+          "nysearca"
+        ],
+        "sentiment": {
+          "compound": 0.0,
+          "label": "neutral",
+          "method": "vader"
+        }
+      },
+      {
+        "headline": "Bloomberg Reported Saturday  Stellantis Plans $10B In U.S. Investments",
+        "source": "benzinga",
+        "published_utc": "2025-10-06T09:03:19+00:00",
+        "url": "https://www.benzinga.com/news/25/10/48036276/bloomberg-reported-saturday-stellantis-plans-10b-in-u-s-investments",
+        "summary": "",
+        "tags": [],
+        "tickers": [
+          "SPY",
+          "STLA"
+        ],
+        "keywords": [
+          "10b",
+          "bloomberg",
+          "investments",
+          "plans",
+          "reported",
+          "saturday"
+        ],
+        "sentiment": {
+          "compound": 0.0,
+          "label": "neutral",
+          "method": "vader"
+        }
+      },
+      {
+        "headline": "Chamath Palihapitiya Warns AI Push By GOOGL, META, MSFT And AMZN Using NVDA Chips Could Double Electricity Rates",
+        "source": "benzinga",
+        "published_utc": "2025-10-06T08:35:15+00:00",
+        "url": "https://www.benzinga.com/markets/equities/25/10/48036166/chamath-palihapitiya-warns-ai-push-by-googl-meta-msft-and-amzn-using-nvda-chips-could-double-electricity-rates",
+        "summary": "Chamath Palihapitiya warns the AI push by Google &amp; Meta could double electricity rates, predicting a PR crisis over soaring consumer costs.",
+        "tags": [
+          "ai",
+          "chips"
+        ],
+        "tickers": [
+          "AMZN",
+          "FDN",
+          "FTEC",
+          "GOOG",
+          "GOOGL",
+          "IGM",
+          "IXN",
+          "IYW",
+          "MAGS",
+          "META",
+          "MSFT",
+          "NVDA",
+          "QQQ",
+          "QTUM",
+          "SPY"
+        ],
+        "keywords": [
+          "chamath",
+          "could",
+          "double",
+          "electricity",
+          "meta",
+          "palihapitiya"
+        ],
+        "sentiment": {
+          "compound": -0.7096,
+          "label": "negative",
+          "method": "vader"
+        }
+      },
+      {
+        "headline": "(SPY) and the Role of Price-Sensitive Allocations - news.stocktradersdaily.com",
+        "source": "GoogleNews",
+        "published_utc": "2025-10-06T07:50:01+00:00",
+        "url": "https://news.google.com/rss/articles/CBMixgFBVV95cUxONDhsV05pcF8tbWNBWDlWRVJnekhlaUY0dmRSTXgwZjBXUkZ5NXZMNjhDanVJb183cGplSEdyRWtkT0FmVEdvS2VDWE1MaV9mMkdRSVhHWFpyWU1jODhtMjNPc2llcXBtTFMxMjh4LUdpUW1XUzFhRW81TF9OVmdsY3Y0bnZuaXk5NDN6cXdqcllVT0ZaamtZYkNpWkEtQWlGWTdKSXVfVTFkdGNxSXE3WWVtOFBsYlJjc2pqV05XamxiazY0dmc?oc=5",
+        "summary": "",
+        "tags": [
+          "ai"
+        ],
+        "tickers": [],
+        "keywords": [
+          "allocations",
+          "com",
+          "news",
+          "price-sensitive",
+          "role",
+          "spy"
+        ],
+        "sentiment": {
+          "compound": 0.0,
+          "label": "neutral",
+          "method": "vader"
+        }
+      },
+      {
+        "headline": "Government Shutdown Could Drag On Until October 15: Polymarket Bets On 70% Chance Of Reopening Beyond Half A Month",
+        "source": "benzinga",
+        "published_utc": "2025-10-06T07:14:54+00:00",
+        "url": "https://www.benzinga.com/markets/equities/25/10/48035705/government-shutdown-could-drag-on-until-october-15-polymarket-bets-on-70-chance-of-reopening-beyond-half-a-month",
+        "summary": "The government shutdown could last until Oct. 15, as Polymarket odds show a 70% chance. See analysis on market impact and spending.",
+        "tags": [],
+        "tickers": [
+          "QQQ",
+          "SPY"
+        ],
+        "keywords": [
+          "chance",
+          "could",
+          "government",
+          "polymarket",
+          "shutdown",
+          "until"
+        ],
+        "sentiment": {
+          "compound": 0.2732,
+          "label": "positive",
+          "method": "vader"
+        }
+      }
+    ],
+    "QQQ": [
+      {
+        "headline": "Why ProShares Ultra QQQ stock appeals to dividend investors - 2025 Sector Review & Consistent Profit Trading Strategies - newser.com",
+        "source": "GoogleNews",
+        "published_utc": "2025-10-06T13:23:41+00:00",
+        "url": "https://news.google.com/rss/articles/CBMimgFBVV95cUxOdEpaRmZlTDNXdmotNkIzS1VPX2Vwc1VzNENuN0VrdFNkVXZDYlpRUlJtYmkzTzdPSEFmN2JGd0FHM215SnhxbFA0SkFITmRWTVpPeloxTDJGbXIxWWRXWFVmT3djSGViUkpFbm9PZzNiZWR0bV9yancxTkFBTFpVOUNZZi1wS2VpcmVTNkd2UjhnMDhMaFNxQ0NB?oc=5",
+        "summary": "",
+        "tags": [
+          "ev",
+          "risk",
+          "sec"
+        ],
+        "tickers": [],
+        "keywords": [
+          "2025",
+          "appeals",
+          "com",
+          "consistent",
+          "dividend",
+          "investors"
+        ],
+        "sentiment": {
+          "compound": 0.4404,
+          "label": "positive",
+          "method": "vader"
+        }
+      },
+      {
+        "headline": "Precision Trading with Invesco Qqq Trust (QQQ) Risk Zones - news.stocktradersdaily.com",
+        "source": "GoogleNews",
+        "published_utc": "2025-10-06T13:00:02+00:00",
+        "url": "https://news.google.com/rss/articles/CBMi0gFBVV95cUxQS1I0XzNSYTZqbW1WSDR2WGd0cG1LYWlXa3ZodHVZNkhmZkxDZ2ZvOUctMXdkZU5FckN6WV9rUzh3WkNHdjhxQ2VnRGZ0Zks3TnpoYk1DYVlaSDROcG5QWFBqZGFyeEtZbWk2aEhLaHVUOUxISVFQbzlJbzd6RE8wemR3Wk1XWGdnWms0NUxZckkzTk82ZGlrQkhSVG1HWW05WGYzOENSNThMaHhVUFNiRXdEMHpiNDhXRTdIaWFNSWV3cVpGQk5QcFlCOGxTTGNBRUE?oc=5",
+        "summary": "",
+        "tags": [
+          "ai"
+        ],
+        "tickers": [],
+        "keywords": [
+          "qqq",
+          "com",
+          "invesco",
+          "news",
+          "precision",
+          "risk"
+        ],
+        "sentiment": {
+          "compound": 0.296,
+          "label": "positive",
+          "method": "vader"
+        }
+      },
+      {
+        "headline": "The Smartest AI ETF to Buy With $2,000 Right Now - The Motley Fool",
+        "source": "GoogleNews",
+        "published_utc": "2025-10-06T12:30:00+00:00",
+        "url": "https://news.google.com/rss/articles/CBMijgFBVV95cUxQTTRPRS03NW5fV2FBekRIeldUQVJLdjJjU3hBcHNfb2FJclFzaEVLZU1jVC1YbkVOX3RaLTgxTXgtTGpGZTFSRlFYUTlwem42UmFJRUlPSnJjVnFjakxQMF9vMkE0dU5rOFhXRUw1N3hGVWxsNTBaMHprMnNKcUdzUGx6ak5fR3ZQeENBS0p3?oc=5",
+        "summary": "",
+        "tags": [
+          "ai"
+        ],
+        "tickers": [],
+        "keywords": [
+          "000",
+          "buy",
+          "etf",
+          "fool",
+          "motley",
+          "now"
+        ],
+        "sentiment": {
+          "compound": 0.2732,
+          "label": "positive",
+          "method": "vader"
+        }
+      },
+      {
+        "headline": "Stock Market Today: Dow Jones, Nasdaq, Futures Gain As Government Enters 2nd Week Of Shutdown\u2014Plug, Lithium Americas, UiPath In Focus (UPDATED)",
+        "source": "benzinga",
+        "published_utc": "2025-10-06T12:23:30+00:00",
+        "url": "https://www.benzinga.com/markets/equities/25/10/48036663/stock-market-today-nasdaq-sp-500-futures-rise-as-government-enters-2nd-week-of-shutdown-plug-lithium-americas-uipath-in-focus",
+        "summary": "Editor\u2019s Note: The future prices of benchmark tracking ETFs were updated in the story.\n\n\n\nU.S. stock futures rose on Monday following Friday\u2019s mixed moves. Futures of major benchmark indices were higher.",
+        "tags": [
+          "ai"
+        ],
+        "tickers": [
+          "AEHR",
+          "BTCUSD",
+          "GOOG",
+          "GOOGL",
+          "LAC",
+          "MSFT",
+          "NVDA",
+          "ORKA",
+          "PATH",
+          "PLUG",
+          "QQQ",
+          "SKYT",
+          "SNOW",
+          "SPY",
+          "STZ",
+          "VCIG"
+        ],
+        "keywords": [
+          "futures",
+          "benchmark",
+          "stock",
+          "updated",
+          "2nd",
+          "americas"
+        ],
+        "sentiment": {
+          "compound": 0.5267,
+          "label": "positive",
+          "method": "vader"
+        }
+      },
+      {
+        "headline": "Moody's Chief Economist Says Not Having BLS Data Is 'A Serious Problem,' But Cites Private Data To Warn That Job Market Is 'Sputtering'",
+        "source": "benzinga",
+        "published_utc": "2025-10-06T12:10:40+00:00",
+        "url": "https://www.benzinga.com/markets/economic-data/25/10/48039060/moodys-chief-economist-says-not-having-bls-data-is-a-serious-problem-but-cites-private-data-to-warn-that-job-market-is-sputtering",
+        "summary": "Moody&#39;s Mark Zandi warns of a weakening job market, citing private data showing minimal growth and negative impacts on smaller companies.",
+        "tags": [
+          "macro",
+          "macro_gdp"
+        ],
+        "tickers": [
+          "QQQ",
+          "SPY"
+        ],
+        "keywords": [
+          "data",
+          "job",
+          "market",
+          "moody",
+          "private",
+          "bls"
+        ],
+        "sentiment": {
+          "compound": -0.8316,
+          "label": "negative",
+          "method": "vader"
+        }
+      },
+      {
+        "headline": "Nvidia's Sky-High AI Ambitions Under Fire: Goldman Sachs Flags 'Circular Revenue' Risk As Wall Street Questions 'Jensen's Math'",
+        "source": "benzinga",
+        "published_utc": "2025-10-06T11:05:33+00:00",
+        "url": "https://www.benzinga.com/markets/equities/25/10/48037892/nvidias-sky-high-ai-ambitions-under-fire-goldman-sachs-flags-circular-revenue-risk-as-wall-street-questions-jensens-math",
+        "summary": "Goldman Sachs warns on Nvidia&#39;s &#39;circular revenue&#39; risk. Barclays&#39; AI forecast offers a reality check, even as they remain bullish on NVDA.",
+        "tags": [
+          "ai",
+          "earnings",
+          "ev",
+          "guidance"
+        ],
+        "tickers": [
+          "NVDA",
+          "QQQ",
+          "SPY"
+        ],
+        "keywords": [
+          "circular",
+          "goldman",
+          "nvidia",
+          "revenue",
+          "risk",
+          "sachs"
+        ],
+        "sentiment": {
+          "compound": -0.7184,
+          "label": "negative",
+          "method": "vader"
+        }
+      },
+      {
+        "headline": "Why ProShares Short QQQ stock could break out in 2025 - Portfolio Performance Summary & Real-Time Sentiment Analysis - newser.com",
+        "source": "GoogleNews",
+        "published_utc": "2025-10-06T10:19:14+00:00",
+        "url": "https://news.google.com/rss/articles/CBMikgFBVV95cUxNUFVzTThGRnpyal93VHBvbVlLYU1PZTFzMnR1V3R3R1U1UDcxY0xOdTZ0RVBwT3BKcm1RQ1ZQN2lPV2h2enprcDdMeElzNXBWYVVtdXI0bmotY19NTElfNU5GUWJHN3h5NnBWXzd0cU5WU0JnS2R2bXQ3UkkxcTcycklfQ2R5Z3pRSUJkSWI5TmVnQQ?oc=5",
+        "summary": "",
+        "tags": [],
+        "tickers": [],
+        "keywords": [
+          "2025",
+          "analysis",
+          "break",
+          "com",
+          "could",
+          "newser"
+        ],
+        "sentiment": {
+          "compound": 0.0,
+          "label": "neutral",
+          "method": "vader"
+        }
+      },
+      {
+        "headline": "Why ProShares Short QQQ stock could break out in 2025 - 2025 Historical Comparison & Risk Adjusted Buy and Sell Alerts - newser.com",
+        "source": "GoogleNews",
+        "published_utc": "2025-10-06T09:10:25+00:00",
+        "url": "https://news.google.com/rss/articles/CBMikwFBVV95cUxOaWlzMmlwdUttUWd3RnI2MkwyWE4tR2NLSEZSUW14dzd1bnhyOEF0YVgtRjltUGVyZ2w3UG5RYkR0cnoyd1lSLXhyMlB3WjhnMXNVem5SV0dqa3lQN21FaTVaQXNHUklZejZva2dDbXJxUjRsN2JKUHVIakJ6TnFHQkNjZWg2NTEwTzFLc25ySGdFYTA?oc=5",
+        "summary": "",
+        "tags": [],
+        "tickers": [],
+        "keywords": [
+          "2025",
+          "adjusted",
+          "alerts",
+          "break",
+          "buy",
+          "com"
+        ],
+        "sentiment": {
+          "compound": -0.2732,
+          "label": "negative",
+          "method": "vader"
+        }
+      },
+      {
+        "headline": "Chamath Palihapitiya Warns AI Push By GOOGL, META, MSFT And AMZN Using NVDA Chips Could Double Electricity Rates",
+        "source": "benzinga",
+        "published_utc": "2025-10-06T08:35:15+00:00",
+        "url": "https://www.benzinga.com/markets/equities/25/10/48036166/chamath-palihapitiya-warns-ai-push-by-googl-meta-msft-and-amzn-using-nvda-chips-could-double-electricity-rates",
+        "summary": "Chamath Palihapitiya warns the AI push by Google &amp; Meta could double electricity rates, predicting a PR crisis over soaring consumer costs.",
+        "tags": [
+          "ai",
+          "chips"
+        ],
+        "tickers": [
+          "AMZN",
+          "FDN",
+          "FTEC",
+          "GOOG",
+          "GOOGL",
+          "IGM",
+          "IXN",
+          "IYW",
+          "MAGS",
+          "META",
+          "MSFT",
+          "NVDA",
+          "QQQ",
+          "QTUM",
+          "SPY"
+        ],
+        "keywords": [
+          "chamath",
+          "could",
+          "double",
+          "electricity",
+          "meta",
+          "palihapitiya"
+        ],
+        "sentiment": {
+          "compound": -0.7096,
+          "label": "negative",
+          "method": "vader"
+        }
+      },
+      {
+        "headline": "Government Shutdown Could Drag On Until October 15: Polymarket Bets On 70% Chance Of Reopening Beyond Half A Month",
+        "source": "benzinga",
+        "published_utc": "2025-10-06T07:14:54+00:00",
+        "url": "https://www.benzinga.com/markets/equities/25/10/48035705/government-shutdown-could-drag-on-until-october-15-polymarket-bets-on-70-chance-of-reopening-beyond-half-a-month",
+        "summary": "The government shutdown could last until Oct. 15, as Polymarket odds show a 70% chance. See analysis on market impact and spending.",
+        "tags": [],
+        "tickers": [
+          "QQQ",
+          "SPY"
+        ],
+        "keywords": [
+          "chance",
+          "could",
+          "government",
+          "polymarket",
+          "shutdown",
+          "until"
+        ],
+        "sentiment": {
+          "compound": 0.2732,
+          "label": "positive",
+          "method": "vader"
+        }
+      },
+      {
+        "headline": "Responsive Playbooks and the QQQ Inflection - news.stocktradersdaily.com",
+        "source": "GoogleNews",
+        "published_utc": "2025-10-06T04:52:02+00:00",
+        "url": "https://news.google.com/rss/articles/CBMiwAFBVV95cUxOeVFWZ0RsLUFsUGk5VEZPZkUwRFc0a28ydklMdnRYY05ZLWlQM3RnbG1QaGs5clpjSGFsalEzeW9KWlk2N1htTlU1RncwZXp4VC1iNl9ud0cycEF4bEhUa2N2T1Z5d1ZXV3ZjTjNWRnU2cnd4aExZby11VU93U0lRS0hxeGp5UnFfZ0dKaDRMU0FnTThBVTNXWUFpUzhCVXpybDNwWk1aWVcxNnA2QS15T0tVS3dJLTJjTGJxODduNTM?oc=5",
+        "summary": "",
+        "tags": [
+          "ai"
+        ],
+        "tickers": [],
+        "keywords": [
+          "com",
+          "inflection",
+          "news",
+          "playbooks",
+          "qqq",
+          "responsive"
+        ],
+        "sentiment": {
+          "compound": 0.3612,
+          "label": "positive",
+          "method": "vader"
+        }
+      }
+    ],
+    "IWM": [
+      {
+        "headline": "Understanding Momentum Shifts in (IWM) - news.stocktradersdaily.com",
+        "source": "GoogleNews",
+        "published_utc": "2025-10-06T12:56:02+00:00",
+        "url": "https://news.google.com/rss/articles/CBMiuAFBVV95cUxOdWVEVUZ1VnBNbTlFaG1YLURVMjktQUhmUkFqcDBlRzh0eXBiRmhRNUt5ZDNLMEhEQzdENS1vRllxLXFKX29jMFhxMk1wTm54UVQxUWZvaVI5NUoxeUlSWnY3c1lRZW5fdVFTdmZmLVAxY3hQQjVfUjE1NnFIMUVxUElfbTFqcXJpOEZJUmVVdFRMZ1pVb2ZFVGstbnR6Zi1qajVDa2paT1JWbVltWFBXWjdIUUtCZE1h?oc=5",
+        "summary": "",
+        "tags": [
+          "ai"
+        ],
+        "tickers": [],
+        "keywords": [
+          "com",
+          "iwm",
+          "momentum",
+          "news",
+          "shifts",
+          "stocktradersdaily"
+        ],
+        "sentiment": {
+          "compound": 0.0,
+          "label": "neutral",
+          "method": "vader"
+        }
+      }
+    ],
+    "NVDA": [
+      {
+        "headline": "Nvidia stock rating reiterated by KeyBanc on strong demand and improved yields - Investing.com",
+        "source": "GoogleNews",
+        "published_utc": "2025-10-06T12:51:54+00:00",
+        "url": "https://news.google.com/rss/articles/CBMi1AFBVV95cUxOb1JvUEFMeFdhWExQenRjaVZ4ZW84ajFpSHZMVTUybGVvc3JiZllfNU5yVVY4S01NX1hhZmFPWTRJM0hwV0d2M2JkZTc0amtacUxiTzY3ZXhzTGRlSHVHeEd3elVQOUxzc2xvbldMRE1BRjUxWDJ2aXFXeFB2UXh3OFNqcnpLUURMdW5iVGE0QWwyWVVkZ3EweGZrV2dGckdmbGhkbDNPQ0EzTUtDTWNpVFZZVG9vSTRMRTJfdmFocDVyNjdxSi1DU2NDeTNZcTVXMjEtag?oc=5",
+        "summary": "",
+        "tags": [
+          "macro",
+          "yields"
+        ],
+        "tickers": [],
+        "keywords": [
+          "com",
+          "demand",
+          "improved",
+          "investing",
+          "keybanc",
+          "nvidia"
+        ],
+        "sentiment": {
+          "compound": 0.7096,
+          "label": "positive",
+          "method": "vader"
+        }
+      },
+      {
+        "headline": "Nvidia (NVDA) Stock: Goldman Sachs Boosts Target But Issues Revenue Warning - parameter.io",
+        "source": "GoogleNews",
+        "published_utc": "2025-10-06T12:42:19+00:00",
+        "url": "https://news.google.com/rss/articles/CBMimgFBVV95cUxOdjg4Zk1tZnFWaDdib18taUpERlJCOWNBS21rYXU3NXFQZWo3RkRvbW9nellvWjVGNFBEbnU1R2E1V3F2OVFSY0ZhZmF6SURKSnFIbmJ4dkJwR2lrNzFfalJSU2s1eG55UXRaUEFKS2dQUzN4d1pfc2U0eW5NU25JeDhReEE3R1BrRjdDYzFraFdqZ0N4a2RtZjZR?oc=5",
+        "summary": "",
+        "tags": [
+          "earnings",
+          "ev"
+        ],
+        "tickers": [],
+        "keywords": [
+          "boosts",
+          "but",
+          "goldman",
+          "issues",
+          "nvda",
+          "nvidia"
+        ],
+        "sentiment": {
+          "compound": -0.3506,
+          "label": "negative",
+          "method": "vader"
+        }
+      },
+      {
+        "headline": "Chamath Says Earth Can't Power AI \u2014 Bezos, Arista, Rocket Lab Have A Space Solution",
+        "source": "benzinga",
+        "published_utc": "2025-10-06T12:37:59+00:00",
+        "url": "https://www.benzinga.com/markets/tech/25/10/48039595/chamath-says-earth-cant-power-ai-bezos-arista-rocket-lab-have-a-space-solution",
+        "summary": "Chamath Palihapitiya warns of global grid deficiency; Bezos envisions a future where AI data centers orbit Earth, powered by solar energy.",
+        "tags": [
+          "ai",
+          "energy"
+        ],
+        "tickers": [
+          "AMZN",
+          "ANET",
+          "GOOG",
+          "GOOGL",
+          "META",
+          "MSFT",
+          "NVDA",
+          "RKLB"
+        ],
+        "keywords": [
+          "bezos",
+          "chamath",
+          "earth",
+          "arista",
+          "can",
+          "centers"
+        ],
+        "sentiment": {
+          "compound": 0.4588,
+          "label": "positive",
+          "method": "vader"
+        }
+      },
+      {
+        "headline": "Stock Market Today: Dow Jones, Nasdaq, Futures Gain As Government Enters 2nd Week Of Shutdown\u2014Plug, Lithium Americas, UiPath In Focus (UPDATED)",
+        "source": "benzinga",
+        "published_utc": "2025-10-06T12:23:30+00:00",
+        "url": "https://www.benzinga.com/markets/equities/25/10/48036663/stock-market-today-nasdaq-sp-500-futures-rise-as-government-enters-2nd-week-of-shutdown-plug-lithium-americas-uipath-in-focus",
+        "summary": "Editor\u2019s Note: The future prices of benchmark tracking ETFs were updated in the story.\n\n\n\nU.S. stock futures rose on Monday following Friday\u2019s mixed moves. Futures of major benchmark indices were higher.",
+        "tags": [
+          "ai"
+        ],
+        "tickers": [
+          "AEHR",
+          "BTCUSD",
+          "GOOG",
+          "GOOGL",
+          "LAC",
+          "MSFT",
+          "NVDA",
+          "ORKA",
+          "PATH",
+          "PLUG",
+          "QQQ",
+          "SKYT",
+          "SNOW",
+          "SPY",
+          "STZ",
+          "VCIG"
+        ],
+        "keywords": [
+          "futures",
+          "benchmark",
+          "stock",
+          "updated",
+          "2nd",
+          "americas"
+        ],
+        "sentiment": {
+          "compound": 0.5267,
+          "label": "positive",
+          "method": "vader"
+        }
+      },
+      {
+        "headline": "ChatGPT Parent OpenAI, AMD Partner In Landmark AI Deal",
+        "source": "benzinga",
+        "published_utc": "2025-10-06T12:20:25+00:00",
+        "url": "https://www.benzinga.com/markets/tech/25/10/48039154/chatgpt-parent-openai-amd-partner-in-landmark-ai-deal",
+        "summary": "AMD shares surged on a strategic partnership with OpenAI to deploy up to 6 gigawatts of AMD Instinct GPU power for next-gen AI infrastructure.",
+        "tags": [
+          "ai",
+          "chips",
+          "mna"
+        ],
+        "tickers": [
+          "AMD",
+          "AVGO",
+          "NVDA"
+        ],
+        "keywords": [
+          "amd",
+          "openai",
+          "chatgpt",
+          "deal",
+          "deploy",
+          "gigawatts"
+        ],
+        "sentiment": {
+          "compound": 0.3612,
+          "label": "positive",
+          "method": "vader"
+        }
+      },
+      {
+        "headline": "Here are Monday's biggest analyst calls: Nvidia, Tesla, Apple, Klarna, Micron, Oracle, Amazon, Broadcom, Affirm, Disney and more - CNBC",
+        "source": "GoogleNews",
+        "published_utc": "2025-10-06T12:19:45+00:00",
+        "url": "https://news.google.com/rss/articles/CBMiqAFBVV95cUxPVWJyWXhDWXo4Nm1iajBPWlRlNTNoUVRlRjR5MlFLWXJuTkRvcjNGUEc3ZGNVaTNvYThYM0ZEOFktTFpBUnBGS0w5ZklqanZVTlVQVlEwRjVtMEF0eU8tYmVpbmpfU1M2NXUyRV9LcHR3T3YwTjg4SEpTRGVPMGJFNXVFSEphNXVQN3JfUXYwS0RZbXFzQ0trcjhaRko1RS0wYTdaQUhpUDc?oc=5",
+        "summary": "",
+        "tags": [],
+        "tickers": [],
+        "keywords": [
+          "affirm",
+          "amazon",
+          "analyst",
+          "apple",
+          "biggest",
+          "broadcom"
+        ],
+        "sentiment": {
+          "compound": 0.1779,
+          "label": "positive",
+          "method": "vader"
+        }
+      },
+      {
+        "headline": "Nvidia Stock Drops. It Isn\u2019t the Only Chip Maker With a Big OpenAI Deal. - Barron's",
+        "source": "GoogleNews",
+        "published_utc": "2025-10-06T11:50:00+00:00",
+        "url": "https://news.google.com/rss/articles/CBMijwNBVV95cUxPZjlyQ1VTcFdZU3ZmSDA3MUtyY2RUb3dGbi16a0FhUTVrS3hpMFdMbFpsbmRzdDZMX2JhN2pTUXlFWHRSdU5oNkRiSXlkVGo2dTFVZ1ctdUo2TUdHUkxyT19hOWFuZlN5UDZobTFYMXlBalQ3X2ZzWElIeTFHYkVxLTZDc0NmV29UOEJJcm1Wd3UxanR5eEZpUXNieXJfeU81Mk82NUVvVHZmR2pRTE83NXpUa3ZlUkRjWFZma2ZvYkFWSFVGNXNSWmgyU192a3BWbnF0M3puSGZZbnRfVWdmRHlyYTRkNVlqX3FvUDItNFBzdFVMcWsyZ18zMEFRbDhiR2NkdWFyRWpZOHNsYXF1QUtwUGZRZDdZak1GSkt1bHhOY09XcVg5bnBrb09aN3liZGwzT2owakdFR0dhSXZvRXNWbk0xVXBraWdtRml1YTVPc0Y1N1p4VFVycmV0VEt4X0ozUGdCWmhoSFVQMURpM3l6WHJjWkc5ZVJxMFBiMU5fV0l1eFhEWEJRWUZqZ2s?oc=5",
+        "summary": "",
+        "tags": [
+          "ai",
+          "chips",
+          "mna"
+        ],
+        "tickers": [],
+        "keywords": [
+          "barron",
+          "big",
+          "chip",
+          "deal",
+          "drops",
+          "isn"
+        ],
+        "sentiment": {
+          "compound": 0.0,
+          "label": "neutral",
+          "method": "vader"
+        }
+      },
+      {
+        "headline": "Nvidia's Sky-High AI Ambitions Under Fire: Goldman Sachs Flags 'Circular Revenue' Risk As Wall Street Questions 'Jensen's Math'",
+        "source": "benzinga",
+        "published_utc": "2025-10-06T11:05:33+00:00",
+        "url": "https://www.benzinga.com/markets/equities/25/10/48037892/nvidias-sky-high-ai-ambitions-under-fire-goldman-sachs-flags-circular-revenue-risk-as-wall-street-questions-jensens-math",
+        "summary": "Goldman Sachs warns on Nvidia&#39;s &#39;circular revenue&#39; risk. Barclays&#39; AI forecast offers a reality check, even as they remain bullish on NVDA.",
+        "tags": [
+          "ai",
+          "earnings",
+          "ev",
+          "guidance"
+        ],
+        "tickers": [
+          "NVDA",
+          "QQQ",
+          "SPY"
+        ],
+        "keywords": [
+          "circular",
+          "goldman",
+          "nvidia",
+          "revenue",
+          "risk",
+          "sachs"
+        ],
+        "sentiment": {
+          "compound": -0.7184,
+          "label": "negative",
+          "method": "vader"
+        }
+      },
+      {
+        "headline": "Melius raises Nvidia stock price target to $275 from $240 on data center growth - Investing.com",
+        "source": "GoogleNews",
+        "published_utc": "2025-10-06T10:59:17+00:00",
+        "url": "https://news.google.com/rss/articles/CBMi0wFBVV95cUxPdUJja2FxcDFJTzJEWTcya0doT25weEhVejQzOG9YU1ZlOHlmb1pqenNhUjEyN0ZnUF9XTTFPa1I4YVk2M1k2eGJaTVhlZmZGOC1WVnMwbnVXTWpYSXA3SlV4QjR5cm5RZllhUVhZcXhZc1llYnd6OVdqZENBeGZIWUxZVHU5Um9jMk5RZjc1LVFUNVBXcXFWRnhtU3gtSTgzNEN6WU1vMk1OYzNfLTItYlVtaGpSSWo4Tml4TGp2WjczZzMxUUdrQmhhUlN5NDNhMVcw?oc=5",
+        "summary": "",
+        "tags": [
+          "ai",
+          "macro",
+          "macro_gdp",
+          "potential_tailwind",
+          "price_target"
+        ],
+        "tickers": [],
+        "keywords": [
+          "240",
+          "275",
+          "center",
+          "com",
+          "data",
+          "growth"
+        ],
+        "sentiment": {
+          "compound": 0.3818,
+          "label": "positive",
+          "method": "vader"
+        }
+      },
+      {
+        "headline": "This Underrated Growth Opportunity Could Send Nvidia Stock Soaring Over the Next 5 Years - Nasdaq",
+        "source": "GoogleNews",
+        "published_utc": "2025-10-06T10:00:00+00:00",
+        "url": "https://news.google.com/rss/articles/CBMisAFBVV95cUxOMG13SDh4MWtWVDdaTEk1QmJyRmtlOEpfRTBXXzVyNlowZFIwWUYyNktFRkVIQ1FKaXh3Z2xpb1d6STFENzBpVVJuS3VlUXFqVC01RWY3eHZhdGh2UWYwMXFLRGFVZDFVUkVSR2YxRzdnS1ZzcDBfajZMS2Mwd0syNmF0X1dBQVZKSFVuMS1talhVdnk2VWd1MVVrNWZRU0NndG5PeDhjYXBPMFJMQ1VmbQ?oc=5",
+        "summary": "",
+        "tags": [
+          "macro",
+          "macro_gdp"
+        ],
+        "tickers": [],
+        "keywords": [
+          "could",
+          "growth",
+          "nasdaq",
+          "next",
+          "nvidia",
+          "opportunity"
+        ],
+        "sentiment": {
+          "compound": 0.6597,
+          "label": "positive",
+          "method": "vader"
+        }
+      },
+      {
+        "headline": "Chamath Palihapitiya Warns AI Push By GOOGL, META, MSFT And AMZN Using NVDA Chips Could Double Electricity Rates",
+        "source": "benzinga",
+        "published_utc": "2025-10-06T08:35:15+00:00",
+        "url": "https://www.benzinga.com/markets/equities/25/10/48036166/chamath-palihapitiya-warns-ai-push-by-googl-meta-msft-and-amzn-using-nvda-chips-could-double-electricity-rates",
+        "summary": "Chamath Palihapitiya warns the AI push by Google &amp; Meta could double electricity rates, predicting a PR crisis over soaring consumer costs.",
+        "tags": [
+          "ai",
+          "chips"
+        ],
+        "tickers": [
+          "AMZN",
+          "FDN",
+          "FTEC",
+          "GOOG",
+          "GOOGL",
+          "IGM",
+          "IXN",
+          "IYW",
+          "MAGS",
+          "META",
+          "MSFT",
+          "NVDA",
+          "QQQ",
+          "QTUM",
+          "SPY"
+        ],
+        "keywords": [
+          "chamath",
+          "could",
+          "double",
+          "electricity",
+          "meta",
+          "palihapitiya"
+        ],
+        "sentiment": {
+          "compound": -0.7096,
+          "label": "negative",
+          "method": "vader"
+        }
+      },
+      {
+        "headline": "Goldman Sachs Bumps Nvidia Stock (NVDA) Price Target, But With a Warning - TipRanks",
+        "source": "GoogleNews",
+        "published_utc": "2025-10-06T08:26:23+00:00",
+        "url": "https://news.google.com/rss/articles/CBMioAFBVV95cUxOSm1WS2lOd1lLblQ5Y1dxc3BQWVp1S0NSSWNPeUh0QVRTLVpSYWVEMlpzdng3X01HeHU0Ni1TdVd4V3NDMHZRVl9YM3FmOFhjb25zb0FKandjMGpVYVdQazFrUEZkRDlUVlNSbXpTTDRxcWxXYUpfeEtSakxUQXNhNlY4Mk8tU25MMjFZanJwcEpEcmxhOGlEQ1h2Z1B4dU51?oc=5",
+        "summary": "",
+        "tags": [
+          "potential_tailwind",
+          "price_target"
+        ],
+        "tickers": [],
+        "keywords": [
+          "bumps",
+          "but",
+          "goldman",
+          "nvda",
+          "nvidia",
+          "price"
+        ],
+        "sentiment": {
+          "compound": -0.4767,
+          "label": "negative",
+          "method": "vader"
+        }
+      },
+      {
+        "headline": "Advantest And NVIDIA Redefine Semiconductor Testing With Real-Time AI And Machine Learning Integration For Blackwell And Next-Gen Chips",
+        "source": "benzinga",
+        "published_utc": "2025-10-06T07:25:21+00:00",
+        "url": "https://www.benzinga.com/news/25/10/48035752/advantest-and-nvidia-redefine-semiconductor-testing-with-real-time-ai-and-machine-learning-integrati",
+        "summary": "",
+        "tags": [
+          "ai",
+          "chips"
+        ],
+        "tickers": [
+          "NVDA"
+        ],
+        "keywords": [
+          "advantest",
+          "blackwell",
+          "chips",
+          "integration",
+          "learning",
+          "machine"
+        ],
+        "sentiment": {
+          "compound": 0.0,
+          "label": "neutral",
+          "method": "vader"
+        }
+      },
+      {
+        "headline": "NVIDIA Corporation $NVDA Stock Position Increased by Harrell Investment Partners LLC - MarketBeat",
+        "source": "GoogleNews",
+        "published_utc": "2025-10-06T07:22:32+00:00",
+        "url": "https://news.google.com/rss/articles/CBMi3AFBVV95cUxPU09DbVFudmd3b1FxVUdRdThSX25yUW5qZWpWT0cxYXBuQ08yREFWS2RWemI4eU0zV1ZtbUFkOGJkU3hjM205MDVTQUhKVkFXLUQ1eGxGeFNMMlBsYW82dnFNdmo1VVR2a0Z5VHRobEdWVVZTOVRhbzhzWFg1V1pHcGpKRnJMajNKYUFKR1E0VlFBY1FKYXgySVJxTEo5QXl4Vi1BTGdPN3NkUHZsekF3YTQzUlI5Z2xIVXFHdkZmM2l6Z2NBeVpxWU1SQjZseWlzcDRmc3c2czNvckJr?oc=5",
+        "summary": "",
+        "tags": [
+          "earnings"
+        ],
+        "tickers": [],
+        "keywords": [
+          "corporation",
+          "harrell",
+          "increased",
+          "investment",
+          "llc",
+          "marketbeat"
+        ],
+        "sentiment": {
+          "compound": 0.2732,
+          "label": "positive",
+          "method": "vader"
+        }
+      }
+    ],
+    "TSLA": [
+      {
+        "headline": "4 stocks to watch on Monday: TSLA, AMD, FITB, BA (SP500:) - Seeking Alpha",
+        "source": "GoogleNews",
+        "published_utc": "2025-10-06T13:03:15+00:00",
+        "url": "https://news.google.com/rss/articles/CBMiigFBVV95cUxPNklhd2dUWTE3VllGZkdCbFJGcEdobjR3NmRxMWtUSlh5cjJYaktZNHdYUlVLY0FvZGRjYXhhWXhJQVFPS1o3V3ZZdzY3VWVUQkNjTVk0b3pZajVzS09MT3QxdlpyQWFxMEhnejRJM3Z5VEpwVlV4YWF0Y1hUTGNFRkRjd202WmdyMUE?oc=5",
+        "summary": "",
+        "tags": [],
+        "tickers": [],
+        "keywords": [
+          "alpha",
+          "amd",
+          "fitb",
+          "monday",
+          "seeking",
+          "sp500"
+        ],
+        "sentiment": {
+          "compound": 0.0,
+          "label": "neutral",
+          "method": "vader"
+        }
+      },
+      {
+        "headline": "UK Becomes Tesla Rival BYD's Largest International Market Amid Europe Expansion",
+        "source": "benzinga",
+        "published_utc": "2025-10-06T10:18:31+00:00",
+        "url": "https://www.benzinga.com/markets/eurozone/25/10/48037123/uk-becomes-tesla-rival-byds-largest-international-market-amid-europe-expansion",
+        "summary": "The UK is now BYD&#39;s largest market as Tesla&#39;s sales continue to fall in Europe. BYD plans to be UK&#39;s top EV company and expand overseas.",
+        "tags": [
+          "ev"
+        ],
+        "tickers": [
+          "BYDDF",
+          "BYDDY",
+          "TSLA"
+        ],
+        "keywords": [
+          "byd",
+          "europe",
+          "largest",
+          "market",
+          "tesla",
+          "becomes"
+        ],
+        "sentiment": {
+          "compound": 0.4767,
+          "label": "positive",
+          "method": "vader"
+        }
+      },
+      {
+        "headline": "Elon Musk-Led Tesla Releases Cryptic Teasers: Could This Finally Be Affordable Model Y Or Roadster?",
+        "source": "benzinga",
+        "published_utc": "2025-10-06T07:32:02+00:00",
+        "url": "https://www.benzinga.com/markets/tech/25/10/48035768/elon-musk-led-tesla-releases-cryptic-teasers-could-this-finally-be-affordable-model-y-or-roadster",
+        "summary": "Tesla teases possible upcoming model, leading to speculation about an affordable Model Y, a new GPU and the Roadster.",
+        "tags": [
+          "chips"
+        ],
+        "tickers": [
+          "TSLA"
+        ],
+        "keywords": [
+          "model",
+          "affordable",
+          "roadster",
+          "tesla",
+          "about",
+          "could"
+        ],
+        "sentiment": {
+          "compound": -0.4404,
+          "label": "negative",
+          "method": "vader"
+        }
+      },
+      {
+        "headline": "Elon Musk Releases Video Showcasing Optimus Robot Performing Martial Arts Moves, Says 'Not Teleoperated' Amid AI Push",
+        "source": "benzinga",
+        "published_utc": "2025-10-06T04:38:06+00:00",
+        "url": "https://www.benzinga.com/markets/tech/25/10/48035011/elon-musk-releases-video-showcasing-optimus-robot-performing-martial-arts-moves-says-not-teleoperated-amid-ai-push",
+        "summary": "Elon Musk showcases a humanoid robot performing martial arts autonomously in a new video amid Robotics push.",
+        "tags": [
+          "ai"
+        ],
+        "tickers": [
+          "META",
+          "TSLA"
+        ],
+        "keywords": [
+          "arts",
+          "elon",
+          "martial",
+          "musk",
+          "performing",
+          "push"
+        ],
+        "sentiment": {
+          "compound": 0.0,
+          "label": "neutral",
+          "method": "vader"
+        }
+      },
+      {
+        "headline": "\u2018What a Banger\u2019: George Gianarikas Says Load Up on Tesla Stock - TipRanks",
+        "source": "GoogleNews",
+        "published_utc": "2025-10-05T21:38:43+00:00",
+        "url": "https://news.google.com/rss/articles/CBMikwFBVV95cUxNWXo0WnZiaGV0Z2V1TG44aTNFSU4xNU9yUk9scUVFLXBHa3lTckIwWHdIQWNZMjF2dFJZVkF2amxrYWxOVHlYRW92dDNHOGdZTHE2TmhHbnpDLUtwQWo4Zk5QeExuY0ZsNlFic2gtQXdBMGhjSG9KYmNjVlN0VjQtTUlBRDNGUEVVTUlfTEw1N1NNOVE?oc=5",
+        "summary": "",
+        "tags": [],
+        "tickers": [],
+        "keywords": [
+          "banger",
+          "george",
+          "gianarikas",
+          "load",
+          "says",
+          "stock"
+        ],
+        "sentiment": {
+          "compound": 0.0,
+          "label": "neutral",
+          "method": "vader"
+        }
+      }
+    ],
+    "AAPL": [
+      {
+        "headline": "How To Trade SPY, Top Tech Stocks Using Technical Analysis",
+        "source": "benzinga",
+        "published_utc": "2025-10-06T12:49:34+00:00",
+        "url": "https://www.benzinga.com/Opinion/25/10/48039825/how-to-trade-spy-top-tech-stocks-using-technical-analysis-35",
+        "summary": "",
+        "tags": [],
+        "tickers": [
+          "AAPL",
+          "GOOGL"
+        ],
+        "keywords": [
+          "analysis",
+          "how",
+          "spy",
+          "stocks",
+          "tech",
+          "technical"
+        ],
+        "sentiment": {
+          "compound": 0.2023,
+          "label": "positive",
+          "method": "vader"
+        }
+      },
+      {
+        "headline": "AAPL: Apple Faces 13% Value Loss After Failing To Lift iPhone Prices - Yahoo",
+        "source": "GoogleNews",
+        "published_utc": "2025-10-06T12:47:32+00:00",
+        "url": "https://news.google.com/rss/articles/CBMif0FVX3lxTE14TWhObzBiZUZTQklCRkZZbGZMX2RQdGotc1FhQnEyOTNNYnF2ZlAybHg5Y2JPVkNLYkg0eXp3NVdTUDd6cnc2Mm1tUmo5UHlSM21xeEZXd0cwVVpkZmgwSWhLVzFVbm92c2Etbl9HcGFhQ1B3V01lYXIyVzRTWlU?oc=5",
+        "summary": "",
+        "tags": [
+          "ai"
+        ],
+        "tickers": [],
+        "keywords": [
+          "aapl",
+          "after",
+          "apple",
+          "faces",
+          "failing",
+          "iphone"
+        ],
+        "sentiment": {
+          "compound": -0.4939,
+          "label": "negative",
+          "method": "vader"
+        }
+      },
+      {
+        "headline": "'Apple Faces Probe in France Over Voice Recordings Made by Siri' -Bloomberg",
+        "source": "benzinga",
+        "published_utc": "2025-10-06T12:29:48+00:00",
+        "url": "https://www.benzinga.com/news/25/10/48039232/apple-faces-probe-in-france-over-voice-recordings-made-by-siri-bloomberg",
+        "summary": "",
+        "tags": [],
+        "tickers": [
+          "AAPL"
+        ],
+        "keywords": [
+          "-bloomberg",
+          "apple",
+          "faces",
+          "france",
+          "made",
+          "probe"
+        ],
+        "sentiment": {
+          "compound": 0.0,
+          "label": "neutral",
+          "method": "vader"
+        }
+      },
+      {
+        "headline": "Norden Group LLC Has $22.24 Million Stock Position in Apple Inc. $AAPL - MarketBeat",
+        "source": "GoogleNews",
+        "published_utc": "2025-10-06T07:39:22+00:00",
+        "url": "https://news.google.com/rss/articles/CBMixgFBVV95cUxPeVU0TGNYQ291enlKRUg2YnB0ekNudmxfN052ODlFdF9rM0psVXpaUUE1cVVwOEtMU050MHh4SU5IVExocUUySlpRSXNIdWktQTNud3ZrTlVfWlpqQnIzRms1VEVLY2VSYXdmVmU5U2FlYUQxR3pzQWVpRjN1U1Q4R20xbEdhTGdDVDhRdHJlUE94NXBUWVY0MmdBNFlCZmJicWoyNGFaTFZrQXRqcURLNU1HVUdMVGZUYmoyU2c0aHQwMjdRSUE?oc=5",
+        "summary": "",
+        "tags": [
+          "earnings"
+        ],
+        "tickers": [],
+        "keywords": [
+          "aapl",
+          "apple",
+          "group",
+          "inc",
+          "llc",
+          "marketbeat"
+        ],
+        "sentiment": {
+          "compound": 0.0,
+          "label": "neutral",
+          "method": "vader"
+        }
+      },
+      {
+        "headline": "Jony Ive And OpenAI's Artificial Intelligence Device Reportedly Faces Delays \u2014 Here Is What's Threatening 2026 Launch For The Palm-Sized Gadget",
+        "source": "benzinga",
+        "published_utc": "2025-10-06T07:20:22+00:00",
+        "url": "https://www.benzinga.com/markets/tech/25/10/48035737/jony-ive-and-openais-artificial-intelligence-device-reportedly-faces-delays-here-is-whats-threatening-2026-launch-for-the-palm-sized-gadget",
+        "summary": "OpenAI and Jony Ive are reportedly struggling with compute shortages, privacy concerns, and design challenges on their $6.5 billion AI hardware project, threatening its planned 2026 launch even as OpenAI hits a $500 billion valuation.",
+        "tags": [
+          "ai",
+          "ev"
+        ],
+        "tickers": [
+          "AAPL",
+          "MSFT"
+        ],
+        "keywords": [
+          "openai",
+          "2026",
+          "billion",
+          "ive",
+          "jony",
+          "launch"
+        ],
+        "sentiment": {
+          "compound": -0.7783,
+          "label": "negative",
+          "method": "vader"
+        }
+      },
+      {
+        "headline": "Waycross Partners LLC Increases Stock Holdings in Apple Inc. $AAPL - MarketBeat",
+        "source": "GoogleNews",
+        "published_utc": "2025-10-06T07:12:31+00:00",
+        "url": "https://news.google.com/rss/articles/CBMiwwFBVV95cUxPM3JncFpGZWdESWxrRk41MGhVYXE1OHVvaENpQlkwM2poLVE2UWZYNXRPMWVYMmd1bHZ3ajJyWFhfT0tsWWoxbnBqbHlkMmlrT3A3YUp3RUlyMXFSUF91T0ZIWHFIZnQ3VXptNkNaM09jWmpOM0R2RTZOVG5jcEhHcUFqM1RfR2dHdVNJX2ZKM0gxR200akVYOE5ubXktakQ4TWVncHpvSWxVMXJNbHRreXdoWjZ3Z3dsbGdPUHJoVzdpcm8?oc=5",
+        "summary": "",
+        "tags": [
+          "earnings"
+        ],
+        "tickers": [],
+        "keywords": [
+          "aapl",
+          "apple",
+          "holdings",
+          "inc",
+          "increases",
+          "llc"
+        ],
+        "sentiment": {
+          "compound": 0.0,
+          "label": "neutral",
+          "method": "vader"
+        }
+      },
+      {
+        "headline": "Steve Jobs Saw The Future As 'Bright,' And 'Boundless,' Says Tim Cook On Apple Co-Founder's 14th Death Anniversary: 'He Lit The Path Forward\u2026'",
+        "source": "benzinga",
+        "published_utc": "2025-10-06T03:42:07+00:00",
+        "url": "https://www.benzinga.com/markets/tech/25/10/48034833/steve-jobs-saw-the-future-as-bright-and-boundless-says-tim-cook-on-apple-co-founders-14th-death-anniversary-he-lit-the-path-forward",
+        "summary": "Apple CEO Tim Cook honored late co-founder Steve Jobs on the 14th anniversary of his death, calling him a visionary who &#34;lit the path forward&#34; and transformed Apple from near collapse into the world&#39;s most valuable company.",
+        "tags": [
+          "ev"
+        ],
+        "tickers": [
+          "AAPL"
+        ],
+        "keywords": [
+          "apple",
+          "14th",
+          "anniversary",
+          "co-founder",
+          "cook",
+          "death"
+        ],
+        "sentiment": {
+          "compound": 0.3597,
+          "label": "positive",
+          "method": "vader"
+        }
+      }
+    ],
+    "AMZN": [
+      {
+        "headline": "Chamath Says Earth Can't Power AI \u2014 Bezos, Arista, Rocket Lab Have A Space Solution",
+        "source": "benzinga",
+        "published_utc": "2025-10-06T12:37:59+00:00",
+        "url": "https://www.benzinga.com/markets/tech/25/10/48039595/chamath-says-earth-cant-power-ai-bezos-arista-rocket-lab-have-a-space-solution",
+        "summary": "Chamath Palihapitiya warns of global grid deficiency; Bezos envisions a future where AI data centers orbit Earth, powered by solar energy.",
+        "tags": [
+          "ai",
+          "energy"
+        ],
+        "tickers": [
+          "AMZN",
+          "ANET",
+          "GOOG",
+          "GOOGL",
+          "META",
+          "MSFT",
+          "NVDA",
+          "RKLB"
+        ],
+        "keywords": [
+          "bezos",
+          "chamath",
+          "earth",
+          "arista",
+          "can",
+          "centers"
+        ],
+        "sentiment": {
+          "compound": 0.4588,
+          "label": "positive",
+          "method": "vader"
+        }
+      },
+      {
+        "headline": "Chamath Palihapitiya Warns AI Push By GOOGL, META, MSFT And AMZN Using NVDA Chips Could Double Electricity Rates",
+        "source": "benzinga",
+        "published_utc": "2025-10-06T08:35:15+00:00",
+        "url": "https://www.benzinga.com/markets/equities/25/10/48036166/chamath-palihapitiya-warns-ai-push-by-googl-meta-msft-and-amzn-using-nvda-chips-could-double-electricity-rates",
+        "summary": "Chamath Palihapitiya warns the AI push by Google &amp; Meta could double electricity rates, predicting a PR crisis over soaring consumer costs.",
+        "tags": [
+          "ai",
+          "chips"
+        ],
+        "tickers": [
+          "AMZN",
+          "FDN",
+          "FTEC",
+          "GOOG",
+          "GOOGL",
+          "IGM",
+          "IXN",
+          "IYW",
+          "MAGS",
+          "META",
+          "MSFT",
+          "NVDA",
+          "QQQ",
+          "QTUM",
+          "SPY"
+        ],
+        "keywords": [
+          "chamath",
+          "could",
+          "double",
+          "electricity",
+          "meta",
+          "palihapitiya"
+        ],
+        "sentiment": {
+          "compound": -0.7096,
+          "label": "negative",
+          "method": "vader"
+        }
+      },
+      {
+        "headline": "If You Invested $10,000 in Amazon Stock 10 Years Ago, Here's How Much You'd Have Today - The Motley Fool",
+        "source": "GoogleNews",
+        "published_utc": "2025-10-06T06:55:00+00:00",
+        "url": "https://news.google.com/rss/articles/CBMilAFBVV95cUxNbmxtbllmRlllUV9yM3ppbzlObHN4bm9GNThVTXVHWVFmRFJWZi15eTFFT3c2V0tZby1jakRmLWR1TDd3OUhicnMydjFjVldobFNiUm1HNld1eDlmYUE0Qk9pQnBpMXh5clNuQXRnX3RFd1hsMUpVbUducnBUd3FvTnpUY2stVGluMUdBd3hWVThiY3hi?oc=5",
+        "summary": "",
+        "tags": [],
+        "tickers": [],
+        "keywords": [
+          "you",
+          "000",
+          "ago",
+          "amazon",
+          "fool",
+          "here"
+        ],
+        "sentiment": {
+          "compound": -0.296,
+          "label": "negative",
+          "method": "vader"
+        }
+      },
+      {
+        "headline": "The Best Warren Buffett Stocks to Buy with $1,000 Right Now - Yahoo Finance",
+        "source": "GoogleNews",
+        "published_utc": "2025-10-06T01:45:00+00:00",
+        "url": "https://news.google.com/rss/articles/CBMiggFBVV95cUxPTVB0OWw2UVZEbGhqM19qSmsyRFJQenQyQWRQcTMwY2Rrc0JmamVtbVZsa0NrQjNzSWFEcENCRmFJMk04ckJMLTlpTGgxZmlaN24tUUJDRm9rR0hvZENmWVlOTWFXaXZCZ1ByaEdrYjBCWWl4Ui1uYVp4QzBUNXFPNElB?oc=5",
+        "summary": "",
+        "tags": [],
+        "tickers": [],
+        "keywords": [
+          "000",
+          "best",
+          "buffett",
+          "buy",
+          "finance",
+          "now"
+        ],
+        "sentiment": {
+          "compound": 0.6369,
+          "label": "positive",
+          "method": "vader"
+        }
+      }
+    ],
+    "META": [
+      {
+        "headline": "Chamath Says Earth Can't Power AI \u2014 Bezos, Arista, Rocket Lab Have A Space Solution",
+        "source": "benzinga",
+        "published_utc": "2025-10-06T12:37:59+00:00",
+        "url": "https://www.benzinga.com/markets/tech/25/10/48039595/chamath-says-earth-cant-power-ai-bezos-arista-rocket-lab-have-a-space-solution",
+        "summary": "Chamath Palihapitiya warns of global grid deficiency; Bezos envisions a future where AI data centers orbit Earth, powered by solar energy.",
+        "tags": [
+          "ai",
+          "energy"
+        ],
+        "tickers": [
+          "AMZN",
+          "ANET",
+          "GOOG",
+          "GOOGL",
+          "META",
+          "MSFT",
+          "NVDA",
+          "RKLB"
+        ],
+        "keywords": [
+          "bezos",
+          "chamath",
+          "earth",
+          "arista",
+          "can",
+          "centers"
+        ],
+        "sentiment": {
+          "compound": 0.4588,
+          "label": "positive",
+          "method": "vader"
+        }
+      },
+      {
+        "headline": "What Meta Stock Investors Can Expect From Its Aggressive Investments in Artificial Intelligence - The Motley Fool",
+        "source": "GoogleNews",
+        "published_utc": "2025-10-06T11:45:00+00:00",
+        "url": "https://news.google.com/rss/articles/CBMimAFBVV95cUxQZ3JQUjlmOGlnc2hla19CZklIOENnMTlLUzg1MXFyWDgwa1N2anJVa0JPT3lELWpHaERiZmk3TlAxQ3FWOUpLc0pTWVRtajdBVXVwblh5aEVnR1QxRkpOR2RfRVhjVDBRN0JZbTBmWVd6c2kzR2g3VzF3NVBUT0cteEpuc3A2SWhVRmRaeUJZQmlFOHZQaXFIUg?oc=5",
+        "summary": "",
+        "tags": [
+          "ai"
+        ],
+        "tickers": [],
+        "keywords": [
+          "aggressive",
+          "artificial",
+          "can",
+          "expect",
+          "fool",
+          "intelligence"
+        ],
+        "sentiment": {
+          "compound": -0.1027,
+          "label": "negative",
+          "method": "vader"
+        }
+      },
+      {
+        "headline": "What Meta Stock Investors Can Expect From Its Aggressive Investments in Artificial Intelligence - Nasdaq",
+        "source": "GoogleNews",
+        "published_utc": "2025-10-06T11:45:00+00:00",
+        "url": "https://news.google.com/rss/articles/CBMiuwFBVV95cUxQdjV5V0VqbUpRTGJQcEppM1BzNHFFaVRmYTU4Q182ZjdySWlDblo4cGZEd2NRVzdjc2o5WVkwQTVfaVVfTUpLdktpdnRZYVN5OExhb3dmVDBDb1JYMXF5ZmJYWjlSVW8zUjBlQ1VJcXg1SDgwV3pKSG5pWkJSYmdWZjhac2JNeFNyb3dZanc4aU15bDlfbVF2YzZ4czlXUkdyRkstQUcyTndSa2ZZdnd0UkxqaC1lU3ExUzdR?oc=5",
+        "summary": "",
+        "tags": [
+          "ai"
+        ],
+        "tickers": [],
+        "keywords": [
+          "aggressive",
+          "artificial",
+          "can",
+          "expect",
+          "intelligence",
+          "investments"
+        ],
+        "sentiment": {
+          "compound": 0.3612,
+          "label": "positive",
+          "method": "vader"
+        }
+      },
+      {
+        "headline": "Meta Platforms, Inc. $META Stock Position Raised by Diversify Advisory Services LLC - MarketBeat",
+        "source": "GoogleNews",
+        "published_utc": "2025-10-06T11:28:12+00:00",
+        "url": "https://news.google.com/rss/articles/CBMi2AFBVV95cUxNT0dSOGJBT3JubjNpTG9jRjVKZGpIZmRYaldQUEQ0THNnczROa2tRUTBvWUE4VHdtR0JtcW5WRDZnbUszbHdfOFEtUEF6RVdLS2dINFByc0hyY2o1MFVvaFZMdXVvXzdpenhiYTJUVElJYy1heDRqNVpiMEZYQlpVaEgzbWpqN3ZmX3pBZGhhLURMWmxiMzZ0X3VMZ2VGR1NRUWpHLWNTNWhXMTdSbHhnLTRKS3dVSmo0ZHpxTXBlOGxoMWZ0Y3hERTVfa2hkVnZOREFlcDFsb0U?oc=5",
+        "summary": "",
+        "tags": [
+          "ai",
+          "earnings"
+        ],
+        "tickers": [],
+        "keywords": [
+          "meta",
+          "advisory",
+          "diversify",
+          "inc",
+          "llc",
+          "marketbeat"
+        ],
+        "sentiment": {
+          "compound": 0.0,
+          "label": "neutral",
+          "method": "vader"
+        }
+      },
+      {
+        "headline": "Meta stock price target maintained at $900 by Citizens on AI tools - Investing.com",
+        "source": "GoogleNews",
+        "published_utc": "2025-10-06T09:09:56+00:00",
+        "url": "https://news.google.com/rss/articles/CBMiwwFBVV95cUxObUtncTdmZ1ZTUjgtcjZncmdvZWwxdFpDT1F0MGVRNFg3dmZYcEMzNEdmcEtxb1FmNnBENDhzTkNQNUdfRE5XaG1TdzJTdm1KdFVqSy1wSXN6R0I2MXBkUFhWTzM4dWNfRnE2MmJNbkNFcTg3NUVlY3F0aHRSeHEyVHJzeThGcEdHQmxMNXV3RzVENWdoWEJiSmwwT1VUbmtqV2ZmcjBGaDFnRUE1NGpZblFCSDVJQ3BxWUJxVFpGbUFnZ0U?oc=5",
+        "summary": "",
+        "tags": [
+          "ai",
+          "potential_tailwind",
+          "price_target"
+        ],
+        "tickers": [],
+        "keywords": [
+          "900",
+          "citizens",
+          "com",
+          "investing",
+          "maintained",
+          "meta"
+        ],
+        "sentiment": {
+          "compound": 0.0,
+          "label": "neutral",
+          "method": "vader"
+        }
+      },
+      {
+        "headline": "Mark Zuckerberg Greets UFC 320 Winner Daniel Santos Cageside Months After Meta Deepened UFC Partnership To Bring AI To The Octagon",
+        "source": "benzinga",
+        "published_utc": "2025-10-06T09:07:03+00:00",
+        "url": "https://www.benzinga.com/markets/tech/25/10/48036383/mark-zuckerberg-greets-ufc-320-winner-daniel-santos-cageside-months-after-meta-deepened-ufc-partnership-to-bring-ai-to-the-octagon",
+        "summary": "Mark Zuckerberg was spotted congratulating Daniel Santos after his UFC 320 knockout win in Las Vegas, highlighting his ties to the sport.",
+        "tags": [
+          "ai",
+          "energy"
+        ],
+        "tickers": [
+          "META",
+          "TKO"
+        ],
+        "keywords": [
+          "ufc",
+          "320",
+          "after",
+          "daniel",
+          "his",
+          "mark"
+        ],
+        "sentiment": {
+          "compound": 0.8481,
+          "label": "positive",
+          "method": "vader"
+        }
+      },
+      {
+        "headline": "The Single Best Stock to Buy for the AI Revolution? This Company Might Be It - Nasdaq",
+        "source": "GoogleNews",
+        "published_utc": "2025-10-06T08:43:00+00:00",
+        "url": "https://news.google.com/rss/articles/CBMikAFBVV95cUxNR1NmTjZXbnhDcGtHZDN5Ty1oOFN2VExUUk1aQmRCd3VDVUZIR01Ba2pFcWI0N1pIaGNIQ1FNazNfVk5JemgtajE2OW8xU0ZlVmRKUWdHa0pKV3dyTFN6YzBOWlBCbW9nV1VoSkxNQWk5T0hlNDRNbzdOVzQ1MWRuaWVlNDNycVo2UE1OVXBxMm8?oc=5",
+        "summary": "",
+        "tags": [
+          "ai",
+          "ev"
+        ],
+        "tickers": [],
+        "keywords": [
+          "best",
+          "buy",
+          "company",
+          "might",
+          "nasdaq",
+          "revolution"
+        ],
+        "sentiment": {
+          "compound": 0.6369,
+          "label": "positive",
+          "method": "vader"
+        }
+      },
+      {
+        "headline": "Chamath Palihapitiya Warns AI Push By GOOGL, META, MSFT And AMZN Using NVDA Chips Could Double Electricity Rates",
+        "source": "benzinga",
+        "published_utc": "2025-10-06T08:35:15+00:00",
+        "url": "https://www.benzinga.com/markets/equities/25/10/48036166/chamath-palihapitiya-warns-ai-push-by-googl-meta-msft-and-amzn-using-nvda-chips-could-double-electricity-rates",
+        "summary": "Chamath Palihapitiya warns the AI push by Google &amp; Meta could double electricity rates, predicting a PR crisis over soaring consumer costs.",
+        "tags": [
+          "ai",
+          "chips"
+        ],
+        "tickers": [
+          "AMZN",
+          "FDN",
+          "FTEC",
+          "GOOG",
+          "GOOGL",
+          "IGM",
+          "IXN",
+          "IYW",
+          "MAGS",
+          "META",
+          "MSFT",
+          "NVDA",
+          "QQQ",
+          "QTUM",
+          "SPY"
+        ],
+        "keywords": [
+          "chamath",
+          "could",
+          "double",
+          "electricity",
+          "meta",
+          "palihapitiya"
+        ],
+        "sentiment": {
+          "compound": -0.7096,
+          "label": "negative",
+          "method": "vader"
+        }
+      },
+      {
+        "headline": "Elon Musk Releases Video Showcasing Optimus Robot Performing Martial Arts Moves, Says 'Not Teleoperated' Amid AI Push",
+        "source": "benzinga",
+        "published_utc": "2025-10-06T04:38:06+00:00",
+        "url": "https://www.benzinga.com/markets/tech/25/10/48035011/elon-musk-releases-video-showcasing-optimus-robot-performing-martial-arts-moves-says-not-teleoperated-amid-ai-push",
+        "summary": "Elon Musk showcases a humanoid robot performing martial arts autonomously in a new video amid Robotics push.",
+        "tags": [
+          "ai"
+        ],
+        "tickers": [
+          "META",
+          "TSLA"
+        ],
+        "keywords": [
+          "arts",
+          "elon",
+          "martial",
+          "musk",
+          "performing",
+          "push"
+        ],
+        "sentiment": {
+          "compound": 0.0,
+          "label": "neutral",
+          "method": "vader"
+        }
+      },
+      {
+        "headline": "These 2 Magnificent Seven Stocks are Screaming Buys Right Now - Yahoo Finance",
+        "source": "GoogleNews",
+        "published_utc": "2025-10-05T23:10:00+00:00",
+        "url": "https://news.google.com/rss/articles/CBMiigFBVV95cUxOMHUtRjF4SnROOWUzUlJxX2JLS0d6Q0dpcXZnWWk3X2VvdGdobjg3VjR3VG5DdDdRWnFERFJwUDhXTjJKV1ljdmRmM0FjUVRFMlJpcXQ1ckRJM0lwaGhKODdiMXl6MnBORTRZdzFsUGJMRVhJVDUtczV5SmFHeTY4YkcwUkN4NjFjNmc?oc=5",
+        "summary": "",
+        "tags": [
+          "ev"
+        ],
+        "tickers": [],
+        "keywords": [
+          "buys",
+          "finance",
+          "magnificent",
+          "now",
+          "right",
+          "screaming"
+        ],
+        "sentiment": {
+          "compound": 0.3182,
+          "label": "positive",
+          "method": "vader"
+        }
+      }
+    ],
+    "MSFT": [
+      {
+        "headline": "Chamath Says Earth Can't Power AI \u2014 Bezos, Arista, Rocket Lab Have A Space Solution",
+        "source": "benzinga",
+        "published_utc": "2025-10-06T12:37:59+00:00",
+        "url": "https://www.benzinga.com/markets/tech/25/10/48039595/chamath-says-earth-cant-power-ai-bezos-arista-rocket-lab-have-a-space-solution",
+        "summary": "Chamath Palihapitiya warns of global grid deficiency; Bezos envisions a future where AI data centers orbit Earth, powered by solar energy.",
+        "tags": [
+          "ai",
+          "energy"
+        ],
+        "tickers": [
+          "AMZN",
+          "ANET",
+          "GOOG",
+          "GOOGL",
+          "META",
+          "MSFT",
+          "NVDA",
+          "RKLB"
+        ],
+        "keywords": [
+          "bezos",
+          "chamath",
+          "earth",
+          "arista",
+          "can",
+          "centers"
+        ],
+        "sentiment": {
+          "compound": 0.4588,
+          "label": "positive",
+          "method": "vader"
+        }
+      },
+      {
+        "headline": "Stock Market Today: Dow Jones, Nasdaq, Futures Gain As Government Enters 2nd Week Of Shutdown\u2014Plug, Lithium Americas, UiPath In Focus (UPDATED)",
+        "source": "benzinga",
+        "published_utc": "2025-10-06T12:23:30+00:00",
+        "url": "https://www.benzinga.com/markets/equities/25/10/48036663/stock-market-today-nasdaq-sp-500-futures-rise-as-government-enters-2nd-week-of-shutdown-plug-lithium-americas-uipath-in-focus",
+        "summary": "Editor\u2019s Note: The future prices of benchmark tracking ETFs were updated in the story.\n\n\n\nU.S. stock futures rose on Monday following Friday\u2019s mixed moves. Futures of major benchmark indices were higher.",
+        "tags": [
+          "ai"
+        ],
+        "tickers": [
+          "AEHR",
+          "BTCUSD",
+          "GOOG",
+          "GOOGL",
+          "LAC",
+          "MSFT",
+          "NVDA",
+          "ORKA",
+          "PATH",
+          "PLUG",
+          "QQQ",
+          "SKYT",
+          "SNOW",
+          "SPY",
+          "STZ",
+          "VCIG"
+        ],
+        "keywords": [
+          "futures",
+          "benchmark",
+          "stock",
+          "updated",
+          "2nd",
+          "americas"
+        ],
+        "sentiment": {
+          "compound": 0.5267,
+          "label": "positive",
+          "method": "vader"
+        }
+      },
+      {
+        "headline": "AMD CEO Says Expect Deal With Openai To Be Highly Accretive To Revenue Growth And Earnings; Says Deal With OpenAI Will Be Immediately Accretive To Adjusted Earnings Per Share Immediately From First Revenue; Says Under OpenAI Deal To Take Stake In AMD Also Directly Tied To Increasing AMD Stock Price Milestones, With The Final Tranche Vesting At A Price Of $600 Per Share",
+        "source": "benzinga",
+        "published_utc": "2025-10-06T12:19:32+00:00",
+        "url": "https://www.benzinga.com/news/25/10/48039148/amd-ceo-says-expect-deal-with-openai-to-be-highly-accretive-to-revenue-growth-and-earnings-says-deal",
+        "summary": "",
+        "tags": [
+          "ai",
+          "earnings",
+          "ev",
+          "macro",
+          "macro_gdp",
+          "mna"
+        ],
+        "tickers": [
+          "AMD",
+          "MSFT"
+        ],
+        "keywords": [
+          "amd",
+          "deal",
+          "openai",
+          "says",
+          "accretive",
+          "earnings"
+        ],
+        "sentiment": {
+          "compound": 0.7184,
+          "label": "positive",
+          "method": "vader"
+        }
+      },
+      {
+        "headline": "Chamath Palihapitiya Warns AI Push By GOOGL, META, MSFT And AMZN Using NVDA Chips Could Double Electricity Rates",
+        "source": "benzinga",
+        "published_utc": "2025-10-06T08:35:15+00:00",
+        "url": "https://www.benzinga.com/markets/equities/25/10/48036166/chamath-palihapitiya-warns-ai-push-by-googl-meta-msft-and-amzn-using-nvda-chips-could-double-electricity-rates",
+        "summary": "Chamath Palihapitiya warns the AI push by Google &amp; Meta could double electricity rates, predicting a PR crisis over soaring consumer costs.",
+        "tags": [
+          "ai",
+          "chips"
+        ],
+        "tickers": [
+          "AMZN",
+          "FDN",
+          "FTEC",
+          "GOOG",
+          "GOOGL",
+          "IGM",
+          "IXN",
+          "IYW",
+          "MAGS",
+          "META",
+          "MSFT",
+          "NVDA",
+          "QQQ",
+          "QTUM",
+          "SPY"
+        ],
+        "keywords": [
+          "chamath",
+          "could",
+          "double",
+          "electricity",
+          "meta",
+          "palihapitiya"
+        ],
+        "sentiment": {
+          "compound": -0.7096,
+          "label": "negative",
+          "method": "vader"
+        }
+      },
+      {
+        "headline": "Maseco LLP Purchases New Shares in Microsoft Corporation $MSFT - MarketBeat",
+        "source": "GoogleNews",
+        "published_utc": "2025-10-06T07:39:16+00:00",
+        "url": "https://news.google.com/rss/articles/CBMivwFBVV95cUxQNEJZY0kyTjdsRlR0U3NiZHVHTGhwNFlNLXZ6MzRJRktEX183WHZYeTlVWFlhWXlVSmJVeUlaSWQxYjlkN1BIdHhwbUVJTW5pN1B5WkpPZVAyaGNwb1NkZ2RLNFEyT0ZZcFFfeGtMUWt1U0hPeGdLbUpBQ2JpVjkyazJIWEFFdTZtaXRVV2JTMHJKMTFieTZPcGpjdjlmQnYxSkJDcUhJQnNhZlE4UjRwajNndFZadVpOenFvUnNtMA?oc=5",
+        "summary": "",
+        "tags": [
+          "earnings",
+          "risk",
+          "sec"
+        ],
+        "tickers": [],
+        "keywords": [
+          "corporation",
+          "llp",
+          "marketbeat",
+          "maseco",
+          "microsoft",
+          "msft"
+        ],
+        "sentiment": {
+          "compound": 0.296,
+          "label": "positive",
+          "method": "vader"
+        }
+      },
+      {
+        "headline": "Fifth Third Bancorp Has $1.45 Billion Stock Holdings in Microsoft Corporation $MSFT - MarketBeat",
+        "source": "GoogleNews",
+        "published_utc": "2025-10-06T07:38:28+00:00",
+        "url": "https://news.google.com/rss/articles/CBMi2AFBVV95cUxObDZBc0cxbnFueTFwbXNOMDQ2TmdSYlc2ckYwbVVVaGlNRi01QUN6TF9GMmtCNnNvS0cwalJBWk1SbmkwWVpPM3E1QTZTUVdRbTkxQ0dyZUtjT2RXbTZVTUNuU3IzaXZiRnVNUll6dTNmR0tJeHlqNzhGeE05b1Fmal9FT1JSZHVfNmxiRVZGdWY4Y2FMVzJyc19SbGVwUHdzNFdRYXU0cHg5TXJVYkRiN2o1QnhwY2hRWTVZQ2FRSS1TSE51ckdPaDg0Y1dIaUpxTnZaZnhlazA?oc=5",
+        "summary": "",
+        "tags": [
+          "earnings"
+        ],
+        "tickers": [],
+        "keywords": [
+          "bancorp",
+          "billion",
+          "corporation",
+          "fifth",
+          "holdings",
+          "marketbeat"
+        ],
+        "sentiment": {
+          "compound": 0.0,
+          "label": "neutral",
+          "method": "vader"
+        }
+      },
+      {
+        "headline": "Jony Ive And OpenAI's Artificial Intelligence Device Reportedly Faces Delays \u2014 Here Is What's Threatening 2026 Launch For The Palm-Sized Gadget",
+        "source": "benzinga",
+        "published_utc": "2025-10-06T07:20:22+00:00",
+        "url": "https://www.benzinga.com/markets/tech/25/10/48035737/jony-ive-and-openais-artificial-intelligence-device-reportedly-faces-delays-here-is-whats-threatening-2026-launch-for-the-palm-sized-gadget",
+        "summary": "OpenAI and Jony Ive are reportedly struggling with compute shortages, privacy concerns, and design challenges on their $6.5 billion AI hardware project, threatening its planned 2026 launch even as OpenAI hits a $500 billion valuation.",
+        "tags": [
+          "ai",
+          "ev"
+        ],
+        "tickers": [
+          "AAPL",
+          "MSFT"
+        ],
+        "keywords": [
+          "openai",
+          "2026",
+          "billion",
+          "ive",
+          "jony",
+          "launch"
+        ],
+        "sentiment": {
+          "compound": -0.7783,
+          "label": "negative",
+          "method": "vader"
+        }
+      },
+      {
+        "headline": "Microsoft Corporation $MSFT Shares Purchased by MCF Advisors LLC - MarketBeat",
+        "source": "GoogleNews",
+        "published_utc": "2025-10-06T07:12:32+00:00",
+        "url": "https://news.google.com/rss/articles/CBMiwgFBVV95cUxNaHpvUkxIeHNYZm5vV0tSeHVtdWlGR0RrRERmNzlYNUNTeU1NcjZfWHc0UkRQT0lfS1EzSGFKMmY1d0NaUEprSEpPbGZiMHUxVnZhX2xJTGJrLU14ajRwaHFPVGM0MG9qZUdvWmd6c01hNVhYNDFLVmJXb3MwR05Jalk1VnJ1UDczQnFpNm9wNjZhN0liUWtKNTc4bl8ydXl5NG0wMEM5VTVWRE9LQnlSdnpRY0NweFludmFnVEczdUdxdw?oc=5",
+        "summary": "",
+        "tags": [
+          "earnings"
+        ],
+        "tickers": [],
+        "keywords": [
+          "advisors",
+          "corporation",
+          "llc",
+          "marketbeat",
+          "mcf",
+          "microsoft"
+        ],
+        "sentiment": {
+          "compound": 0.296,
+          "label": "positive",
+          "method": "vader"
+        }
+      },
+      {
+        "headline": "Microsoft Corporation $MSFT Shares Purchased by Hyperion Asset Management Ltd - MarketBeat",
+        "source": "GoogleNews",
+        "published_utc": "2025-10-06T07:12:31+00:00",
+        "url": "https://news.google.com/rss/articles/CBMi0wFBVV95cUxQdnl4LUZFZU1nZWtYQWxLWS0xNWtoTUljdi1HUm1IMlZ2Q2tKZFh1Smg5U0lYSnRGOVo2SnFQa2dvekNQMzQtbkd4X0FoS1V5VHh5VTZ2ZFVBTEhUMzZwc3BTVXpROWFrSWtvazVjLXl0bkYyNks0YXVvcUVMREdka01pX2p5dmV2eDFMX3dXZ21USEJma0labVBjQ3RaRldUaWVsU3JneTNsSmlXQWRGdGZlYzBrU2VVLThtN3BHTXJaVDlUYXpRb2JwSnBQZXpYN1lN?oc=5",
+        "summary": "",
+        "tags": [
+          "earnings"
+        ],
+        "tickers": [],
+        "keywords": [
+          "asset",
+          "corporation",
+          "hyperion",
+          "ltd",
+          "management",
+          "marketbeat"
+        ],
+        "sentiment": {
+          "compound": 0.5719,
+          "label": "positive",
+          "method": "vader"
+        }
+      }
+    ],
+    "GOOG": [
+      {
+        "headline": "'Google Launches The New YouTube Activation Partners Program' - Blog",
+        "source": "benzinga",
+        "published_utc": "2025-10-06T13:05:32+00:00",
+        "url": "https://www.benzinga.com/news/25/10/48040432/google-launches-the-new-youtube-activation-partners-program-blog",
+        "summary": "",
+        "tags": [],
+        "tickers": [
+          "GOOG",
+          "GOOGL"
+        ],
+        "keywords": [
+          "activation",
+          "blog",
+          "google",
+          "launches",
+          "new",
+          "partners"
+        ],
+        "sentiment": {
+          "compound": 0.0,
+          "label": "neutral",
+          "method": "vader"
+        }
+      },
+      {
+        "headline": "Chamath Says Earth Can't Power AI \u2014 Bezos, Arista, Rocket Lab Have A Space Solution",
+        "source": "benzinga",
+        "published_utc": "2025-10-06T12:37:59+00:00",
+        "url": "https://www.benzinga.com/markets/tech/25/10/48039595/chamath-says-earth-cant-power-ai-bezos-arista-rocket-lab-have-a-space-solution",
+        "summary": "Chamath Palihapitiya warns of global grid deficiency; Bezos envisions a future where AI data centers orbit Earth, powered by solar energy.",
+        "tags": [
+          "ai",
+          "energy"
+        ],
+        "tickers": [
+          "AMZN",
+          "ANET",
+          "GOOG",
+          "GOOGL",
+          "META",
+          "MSFT",
+          "NVDA",
+          "RKLB"
+        ],
+        "keywords": [
+          "bezos",
+          "chamath",
+          "earth",
+          "arista",
+          "can",
+          "centers"
+        ],
+        "sentiment": {
+          "compound": 0.4588,
+          "label": "positive",
+          "method": "vader"
+        }
+      },
+      {
+        "headline": "Stock Market Today: Dow Jones, Nasdaq, Futures Gain As Government Enters 2nd Week Of Shutdown\u2014Plug, Lithium Americas, UiPath In Focus (UPDATED)",
+        "source": "benzinga",
+        "published_utc": "2025-10-06T12:23:30+00:00",
+        "url": "https://www.benzinga.com/markets/equities/25/10/48036663/stock-market-today-nasdaq-sp-500-futures-rise-as-government-enters-2nd-week-of-shutdown-plug-lithium-americas-uipath-in-focus",
+        "summary": "Editor\u2019s Note: The future prices of benchmark tracking ETFs were updated in the story.\n\n\n\nU.S. stock futures rose on Monday following Friday\u2019s mixed moves. Futures of major benchmark indices were higher.",
+        "tags": [
+          "ai"
+        ],
+        "tickers": [
+          "AEHR",
+          "BTCUSD",
+          "GOOG",
+          "GOOGL",
+          "LAC",
+          "MSFT",
+          "NVDA",
+          "ORKA",
+          "PATH",
+          "PLUG",
+          "QQQ",
+          "SKYT",
+          "SNOW",
+          "SPY",
+          "STZ",
+          "VCIG"
+        ],
+        "keywords": [
+          "futures",
+          "benchmark",
+          "stock",
+          "updated",
+          "2nd",
+          "americas"
+        ],
+        "sentiment": {
+          "compound": 0.5267,
+          "label": "positive",
+          "method": "vader"
+        }
+      },
+      {
+        "headline": "Google Cloud's Hot Streak Turns Heads. Is Google Stock A Buy? - Investor's Business Daily",
+        "source": "GoogleNews",
+        "published_utc": "2025-10-06T12:00:00+00:00",
+        "url": "https://news.google.com/rss/articles/CBMilwFBVV95cUxQcmJzM2twY0JiVFU0MV9FZXkyeGl1RXBEUVh2MGNDZ2labE5vUnc0VGZzZEQ2ZkszRXZhQVdvamFHYnQ2N0FoNXpqam82SlFqNWlQSmVGQ3FYWTV4YldtS2l2M3dlZno3Q20tUldDREFlSTdMY2kzNHdyTXUyMXcta1RQdzFyeG9HaUt2ZGFISmZqNFQ4T18w?oc=5",
+        "summary": "",
+        "tags": [
+          "ai",
+          "cloud"
+        ],
+        "tickers": [],
+        "keywords": [
+          "google",
+          "business",
+          "buy",
+          "cloud",
+          "daily",
+          "heads"
+        ],
+        "sentiment": {
+          "compound": 0.0,
+          "label": "neutral",
+          "method": "vader"
+        }
+      },
+      {
+        "headline": "5 Dividend Stocks to Hold for the Next 25 Years - The Motley Fool",
+        "source": "GoogleNews",
+        "published_utc": "2025-10-06T11:00:00+00:00",
+        "url": "https://news.google.com/rss/articles/CBMilAFBVV95cUxOVF9jdjA4eVFmUnpqYVlVTTlRZkN3dXRGaXNKX1cwakwzUHdySnVNeThNcUlhcmtKelVXSU80SDg1aUtJbWlRX0hOSjlwMHBGV3RSbVcxLWlaa2VFbWMyTWpsay1GUU9YNWd0R2xjRHFmSl9Pd25CNTVNa2t3b01LLTlNdzU1ajROYUlkU1Y2RDJHV0Nf?oc=5",
+        "summary": "",
+        "tags": [],
+        "tickers": [],
+        "keywords": [
+          "dividend",
+          "fool",
+          "hold",
+          "motley",
+          "next",
+          "stocks"
+        ],
+        "sentiment": {
+          "compound": -0.4404,
+          "label": "negative",
+          "method": "vader"
+        }
+      },
+      {
+        "headline": "Ascent Group LLC Has $10.29 Million Stock Holdings in Alphabet Inc. $GOOG - MarketBeat",
+        "source": "GoogleNews",
+        "published_utc": "2025-10-06T08:44:43+00:00",
+        "url": "https://news.google.com/rss/articles/CBMiygFBVV95cUxNZ1F1N0J4c0N0WExoQTIydW1MMVlzclYtNDRVOFBzRmJ1QVdJaEpZa1FrWTJtSmtna0VDNTB1dTN5Q1ZtOUxIRjN6Zk9SaUtNQkRsN0Q0ZDl4UXp3RjVZTDZoampuU1pCWEdPQWt6ajg3WW1SQ3FhT0E1eV9Ec204bXVlVmJZdVVUYWNWZFd0YlAyZnVzSm9NSXdDYXlKWERMdTh1T2NsNzZzMlNBazRPOHFkSlJTLTdPZm1xSkhqNlV0Vi1NYW03ZGJB?oc=5",
+        "summary": "",
+        "tags": [
+          "earnings"
+        ],
+        "tickers": [],
+        "keywords": [
+          "alphabet",
+          "ascent",
+          "goog",
+          "group",
+          "holdings",
+          "inc"
+        ],
+        "sentiment": {
+          "compound": 0.0,
+          "label": "neutral",
+          "method": "vader"
+        }
+      },
+      {
+        "headline": "Chamath Palihapitiya Warns AI Push By GOOGL, META, MSFT And AMZN Using NVDA Chips Could Double Electricity Rates",
+        "source": "benzinga",
+        "published_utc": "2025-10-06T08:35:15+00:00",
+        "url": "https://www.benzinga.com/markets/equities/25/10/48036166/chamath-palihapitiya-warns-ai-push-by-googl-meta-msft-and-amzn-using-nvda-chips-could-double-electricity-rates",
+        "summary": "Chamath Palihapitiya warns the AI push by Google &amp; Meta could double electricity rates, predicting a PR crisis over soaring consumer costs.",
+        "tags": [
+          "ai",
+          "chips"
+        ],
+        "tickers": [
+          "AMZN",
+          "FDN",
+          "FTEC",
+          "GOOG",
+          "GOOGL",
+          "IGM",
+          "IXN",
+          "IYW",
+          "MAGS",
+          "META",
+          "MSFT",
+          "NVDA",
+          "QQQ",
+          "QTUM",
+          "SPY"
+        ],
+        "keywords": [
+          "chamath",
+          "could",
+          "double",
+          "electricity",
+          "meta",
+          "palihapitiya"
+        ],
+        "sentiment": {
+          "compound": -0.7096,
+          "label": "negative",
+          "method": "vader"
+        }
+      },
+      {
+        "headline": "Alphabet: Undervalued Mag-7 Stock Hiding In Plain Sight (NASDAQ:GOOG) - Seeking Alpha",
+        "source": "GoogleNews",
+        "published_utc": "2025-10-06T08:24:43+00:00",
+        "url": "https://news.google.com/rss/articles/CBMimwFBVV95cUxQYkhFQ3AxN2x4R0oxT1U2Slk2NjNsb2tRQW53U1Fsbm9NclBfWjRqSjhnbUo3OU1McTl1Vkw2NG5FR25WQjVXUUhpMzFiX09xUEg2azNzcGdUWndSYVNBVU9YeFFLdXZCOWZLc1dSSHpqNmdxRUQ3Q0ZYRUJaTUFrMmgzVXNNaUxyUXFxcXdzajEyNVZYTWNFVjZuYw?oc=5",
+        "summary": "",
+        "tags": [
+          "ai"
+        ],
+        "tickers": [],
+        "keywords": [
+          "alpha",
+          "alphabet",
+          "goog",
+          "hiding",
+          "mag-7",
+          "nasdaq"
+        ],
+        "sentiment": {
+          "compound": -0.296,
+          "label": "negative",
+          "method": "vader"
+        }
+      },
+      {
+        "headline": "Stock Yards Bank & Trust Co. Cuts Position in Alphabet Inc. $GOOG - MarketBeat",
+        "source": "GoogleNews",
+        "published_utc": "2025-10-06T08:12:27+00:00",
+        "url": "https://news.google.com/rss/articles/CBMivgFBVV95cUxPR1BncmtHUm83djhZRkNtR2oyWWxRNDVUVmN1TGVaWG56QjVES3UzanUxaXFZaDBIamMyR2lNZ1Y0c2c1eEN0MVFoek8zdVVVYTJwam52ckhldXllTjU3MTA1M24zVGFmcXBWdEhpVkZFQnR2Z01lLW16aUluUzNaNUpfLTJPc1BPUEpfOXhwT0N6UGd6eVNpWWktaXRPcTNGbGRNbnp6dnQ0WXVZSkFOdC00V3JHb3p2eUN0WC1n?oc=5",
+        "summary": "",
+        "tags": [
+          "earnings"
+        ],
+        "tickers": [],
+        "keywords": [
+          "alphabet",
+          "bank",
+          "cuts",
+          "goog",
+          "inc",
+          "marketbeat"
+        ],
+        "sentiment": {
+          "compound": 0.2732,
+          "label": "positive",
+          "method": "vader"
+        }
+      },
+      {
+        "headline": "Did Google Just Kill OpenAI and Become the Best AI Stock to Own Today? - The Motley Fool",
+        "source": "GoogleNews",
+        "published_utc": "2025-10-06T08:10:00+00:00",
+        "url": "https://news.google.com/rss/articles/CBMilgFBVV95cUxNYjUwTHA5b1R2VnpFN3pEVXRKeEtFME01NDJ2Q3dJaG5lRXFVMjdXZk1CcWxwODBIRzlzZ1NXMnB5S1ZxQnlfQkx3dXBzdXpGanhDZm53NFlpSU5ic3VDcUJaX0t6SHl2N2tZS1NCTkZYZjZkWXY4SGpmNDQ3bkdrWXZfbExlaEFsV3FGZEpYU01JYzhIS0E?oc=5",
+        "summary": "",
+        "tags": [
+          "ai"
+        ],
+        "tickers": [],
+        "keywords": [
+          "become",
+          "best",
+          "did",
+          "fool",
+          "google",
+          "just"
+        ],
+        "sentiment": {
+          "compound": -0.5267,
+          "label": "negative",
+          "method": "vader"
+        }
+      },
+      {
+        "headline": "Empirical Financial Services LLC d.b.a. Empirical Wealth Management Has $24.94 Million Stock Holdings in Alphabet Inc. $GOOG - MarketBeat",
+        "source": "GoogleNews",
+        "published_utc": "2025-10-06T08:04:26+00:00",
+        "url": "https://news.google.com/rss/articles/CBMiigJBVV95cUxPSnU0cGNNbExfZHBPX2pqak9yckN5cVF6UVp6N1NrVi1nWmFHTWxHR1VJUmVwQWJkY2lYWjlXSnkwenFQdVhtdWEzbnR1Uk9yWHJYQzZOQmxzTFlZbWlvNGs0NUtJbEZtcl9RMkFibnlTdm1WSmtRV0E1WUM1aXFWZ0ZLczNQQ1d4YW84MUJ2QmhybDU3YUVEYXZ6SFhoQlYtaTY4S01ESDB0RTQ2cUVhZDVzMEEtN0t3clVkdjdVdGE0VWt4VkttUl9HeWl5Uk9FR1kwa1o2SGU5ZEdwQkZRN01iMnpUU0tKbTZfV3FUeGhSYU5Fd0NsOVRxQk5CcFdjeWM5RGxpVGJyUQ?oc=5",
+        "summary": "",
+        "tags": [
+          "earnings"
+        ],
+        "tickers": [],
+        "keywords": [
+          "empirical",
+          "alphabet",
+          "financial",
+          "goog",
+          "holdings",
+          "inc"
+        ],
+        "sentiment": {
+          "compound": 0.4939,
+          "label": "positive",
+          "method": "vader"
+        }
+      },
+      {
+        "headline": "These 2 Magnificent Seven Stocks are Screaming Buys Right Now - The Motley Fool",
+        "source": "GoogleNews",
+        "published_utc": "2025-10-05T23:10:00+00:00",
+        "url": "https://news.google.com/rss/articles/CBMimAFBVV95cUxQd1gyS21JYUhteWFwVnZLMlpKMjFybVdrbHJoZFo2dWNRc1liVlBEMGtZYlE1STlBcXFPczBsb2VTOVZYOThmUDBwb3dDZENRV282T0RRZ29YMTNDQjNkVXFtdnpLaUZxWGdfV2lVVEpIcXprdkxkSnZORWdhX3NOalBIaG1BOUdpQ3JaQlRfTjNLMTdpSEdsSg?oc=5",
+        "summary": "",
+        "tags": [
+          "ev"
+        ],
+        "tickers": [],
+        "keywords": [
+          "buys",
+          "fool",
+          "magnificent",
+          "motley",
+          "now",
+          "right"
+        ],
+        "sentiment": {
+          "compound": -0.1531,
+          "label": "negative",
+          "method": "vader"
+        }
+      }
+    ]
+  }
+}

@@ -7,6 +7,7 @@ liquidity_flow_agent/
 │
 ├── data/
 │   └── daily_news/                 # Stores scraped news articles for the day
+│   │   └── YYYY-MM-DD
 │
 ├── docs/
 │   ├── PROJECT_PLAN.md             # Detailed architecture and phased plan

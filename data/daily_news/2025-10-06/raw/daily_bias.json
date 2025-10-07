@@ -1,0 +1,388 @@
+{
+  "generated_at_utc": "2025-10-07T02:05:08.190520+00:00",
+  "generated_for_date_et": "2025-10-06",
+  "data_feed": "iex",
+  "feature_set": "open_snapshot_premarket+HTF",
+  "symbols": {
+    "SPY": {
+      "bias": "choppy",
+      "confidence": 0.5925982321345185,
+      "probabilities": {
+        "bearish": 0.21386390518322107,
+        "bullish": 0.19353786268226006,
+        "choppy": 0.5925982321345185
+      },
+      "asof_open_meta": {
+        "et_date": "2025-10-06",
+        "open_source": "09:30_minute_open",
+        "premarket_last_ts": null
+      },
+      "features_snapshot": {
+        "overnight_gap_pct": 0.36087326848074053,
+        "premarket_range_pct": 0.0,
+        "premarket_vol": 0.0,
+        "premarket_vol_vs_prev5d": 0.0,
+        "premarket_sweep_prev_high": 0.0,
+        "premarket_sweep_prev_low": 0.0,
+        "premarket_close_vs_prev_close_pct": 0.0,
+        "premarket_return_pct": 0.0,
+        "prev_close": 669.21,
+        "prev_day_range_pct": 0.670940362516999,
+        "prev_day_body_pct": 17.706013363028006,
+        "prev_day_bull": 0.0,
+        "prev_day_swept_prior_high": 1.0,
+        "prev_day_swept_prior_low": 0.0,
+        "open_pos_in_prev_range": 0.7694877505568004,
+        "open_to_prev_high_pct_rng": 23.051224944319955,
+        "open_to_prev_low_pct_rng": 76.94877505568004,
+        "daily_atr14_pct": 0.7360491154815798,
+        "h1_close_vs_sma20_pct": 0.060782284428241684,
+        "h4_close_vs_sma20_pct": 0.944246377796958,
+        "h1_mom_5bars_pct": -0.3361744537165114,
+        "h4_mom_3bars_pct": -0.10334418819050072
+      }
+    },
+    "QQQ": {
+      "bias": "bearish",
+      "confidence": 0.40011354049203285,
+      "probabilities": {
+        "bearish": 0.40011354049203285,
+        "bullish": 0.23958570417505584,
+        "choppy": 0.36030075533291117
+      },
+      "asof_open_meta": {
+        "et_date": "2025-10-06",
+        "open_source": "09:30_minute_open",
+        "premarket_last_ts": "2025-10-06T09:29:00-04:00"
+      },
+      "features_snapshot": {
+        "overnight_gap_pct": 0.8854399840819642,
+        "premarket_range_pct": 0.12104329370409361,
+        "premarket_vol": 3069.0,
+        "premarket_vol_vs_prev5d": 0.004888787647567633,
+        "premarket_sweep_prev_high": 1.0,
+        "premarket_sweep_prev_low": 0.0,
+        "premarket_close_vs_prev_close_pct": 0.8953887479480637,
+        "premarket_return_pct": -0.013145570764257344,
+        "prev_close": 603.09,
+        "prev_day_range_pct": 0.9766369861877973,
+        "prev_day_body_pct": 59.42275042444835,
+        "prev_day_bull": 0.0,
+        "prev_day_swept_prior_high": 1.0,
+        "prev_day_swept_prior_low": 1.0,
+        "open_pos_in_prev_range": 1.191850594227504,
+        "open_to_prev_high_pct_rng": -19.185059422750392,
+        "open_to_prev_low_pct_rng": 119.1850594227504,
+        "daily_atr14_pct": 0.9466722569244601,
+        "h1_close_vs_sma20_pct": 0.2942810352910266,
+        "h4_close_vs_sma20_pct": 1.2385097607483635,
+        "h1_mom_5bars_pct": 0.7384421360061142,
+        "h4_mom_3bars_pct": 0.26206703312097407
+      }
+    },
+    "IWM": {
+      "bias": "bearish",
+      "confidence": 0.5642329079756598,
+      "probabilities": {
+        "bearish": 0.5642329079756598,
+        "bullish": 0.3093153582390011,
+        "choppy": 0.12645173378533928
+      },
+      "asof_open_meta": {
+        "et_date": "2025-10-06",
+        "open_source": "09:30_minute_open",
+        "premarket_last_ts": "2025-10-06T08:58:00-04:00"
+      },
+      "features_snapshot": {
+        "overnight_gap_pct": 0.752414844941533,
+        "premarket_range_pct": 0.1464158617183468,
+        "premarket_vol": 720.0,
+        "premarket_vol_vs_prev5d": 0.0010440547606721973,
+        "premarket_sweep_prev_high": 0.0,
+        "premarket_sweep_prev_low": 0.0,
+        "premarket_close_vs_prev_close_pct": 0.612099644128112,
+        "premarket_return_pct": -0.08885298869143735,
+        "prev_close": 245.875,
+        "prev_day_range_pct": 1.216065073716323,
+        "prev_day_body_pct": 18.227424749163408,
+        "prev_day_bull": 1.0,
+        "prev_day_swept_prior_high": 1.0,
+        "prev_day_swept_prior_low": 0.0,
+        "open_pos_in_prev_range": 0.8913043478260816,
+        "open_to_prev_high_pct_rng": 10.869565217391841,
+        "open_to_prev_low_pct_rng": 89.13043478260816,
+        "daily_atr14_pct": 1.4388844505773832,
+        "h1_close_vs_sma20_pct": 0.7221716814358171,
+        "h4_close_vs_sma20_pct": 2.138951497595689,
+        "h1_mom_5bars_pct": 0.3029994916115931,
+        "h4_mom_3bars_pct": 0.08074935400516337
+      }
+    },
+    "NVDA": {
+      "bias": "bullish",
+      "confidence": 0.5625211307283421,
+      "probabilities": {
+        "bearish": 0.29642717716373645,
+        "bullish": 0.5625211307283421,
+        "choppy": 0.1410516921079216
+      },
+      "asof_open_meta": {
+        "et_date": "2025-10-06",
+        "open_source": "09:30_minute_open",
+        "premarket_last_ts": "2025-10-06T09:25:00-04:00"
+      },
+      "features_snapshot": {
+        "overnight_gap_pct": -1.1245536428076455,
+        "premarket_range_pct": 0.9273570324575009,
+        "premarket_vol": 2803.0,
+        "premarket_vol_vs_prev5d": 0.0010582585888652169,
+        "premarket_sweep_prev_high": 0.0,
+        "premarket_sweep_prev_low": 1.0,
+        "premarket_close_vs_prev_close_pct": -1.1458721952779436,
+        "premarket_return_pct": -0.6587756413689776,
+        "prev_close": 187.63,
+        "prev_day_range_pct": 2.640835687256842,
+        "prev_day_body_pct": 32.8960645812309,
+        "prev_day_bull": 0.0,
+        "prev_day_swept_prior_high": 0.0,
+        "prev_day_swept_prior_low": 1.0,
+        "open_pos_in_prev_range": 0.023208879919275237,
+        "open_to_prev_high_pct_rng": 97.67911200807248,
+        "open_to_prev_low_pct_rng": 2.3208879919275236,
+        "daily_atr14_pct": 2.8635384228839444,
+        "h1_close_vs_sma20_pct": -1.0550604266708596,
+        "h4_close_vs_sma20_pct": 2.22794319818668,
+        "h1_mom_5bars_pct": -0.8646146479023118,
+        "h4_mom_3bars_pct": -1.1010534116775101
+      }
+    },
+    "TSLA": {
+      "bias": "bullish",
+      "confidence": 0.5292485000160825,
+      "probabilities": {
+        "bearish": 0.4163663225561578,
+        "bullish": 0.5292485000160825,
+        "choppy": 0.0543851774277595
+      },
+      "asof_open_meta": {
+        "et_date": "2025-10-06",
+        "open_source": "09:30_minute_open",
+        "premarket_last_ts": null
+      },
+      "features_snapshot": {
+        "overnight_gap_pct": 2.5589726887823945,
+        "premarket_range_pct": 0.0,
+        "premarket_vol": 0.0,
+        "premarket_vol_vs_prev5d": 0.0,
+        "premarket_sweep_prev_high": 0.0,
+        "premarket_sweep_prev_low": 0.0,
+        "premarket_close_vs_prev_close_pct": 0.0,
+        "premarket_return_pct": 0.0,
+        "prev_close": 429.86,
+        "prev_day_range_pct": 6.961568882892107,
+        "prev_day_body_pct": 45.73099415204677,
+        "prev_day_bull": 0.0,
+        "prev_day_swept_prior_high": 0.0,
+        "prev_day_swept_prior_low": 1.0,
+        "open_pos_in_prev_range": 0.8036758563074353,
+        "open_to_prev_high_pct_rng": 19.632414369256466,
+        "open_to_prev_low_pct_rng": 80.36758563074353,
+        "daily_atr14_pct": 4.417800479890463,
+        "h1_close_vs_sma20_pct": -0.6131553072638429,
+        "h4_close_vs_sma20_pct": 1.9945253693834948,
+        "h1_mom_5bars_pct": 2.2556653108657723,
+        "h4_mom_3bars_pct": 2.494409083089627
+      }
+    },
+    "AAPL": {
+      "bias": "bearish",
+      "confidence": 0.5296998868254558,
+      "probabilities": {
+        "bearish": 0.5296998868254558,
+        "bullish": 0.2804702032178104,
+        "choppy": 0.18982990995673368
+      },
+      "asof_open_meta": {
+        "et_date": "2025-10-06",
+        "open_source": "09:30_minute_open",
+        "premarket_last_ts": "2025-10-06T09:21:00-04:00"
+      },
+      "features_snapshot": {
+        "overnight_gap_pct": -0.02131452487986623,
+        "premarket_range_pct": 0.2441481940784357,
+        "premarket_vol": 605.0,
+        "premarket_vol_vs_prev5d": 0.0005308666955996328,
+        "premarket_sweep_prev_high": 0.0,
+        "premarket_sweep_prev_low": 0.0,
+        "premarket_close_vs_prev_close_pct": 0.17826693535885116,
+        "premarket_return_pct": -0.13521344407959154,
+        "prev_close": 258.04,
+        "prev_day_range_pct": 2.0384436521469613,
+        "prev_day_body_pct": 64.16349809885962,
+        "prev_day_bull": 1.0,
+        "prev_day_swept_prior_high": 1.0,
+        "prev_day_swept_prior_low": 1.0,
+        "open_pos_in_prev_range": 0.7652091254752834,
+        "open_to_prev_high_pct_rng": 23.479087452471656,
+        "open_to_prev_low_pct_rng": 76.52091254752834,
+        "daily_atr14_pct": 1.8622528068737956,
+        "h1_close_vs_sma20_pct": -0.38078836214354495,
+        "h4_close_vs_sma20_pct": 0.7105374693746744,
+        "h1_mom_5bars_pct": -0.983403852470108,
+        "h4_mom_3bars_pct": -0.081575573942423
+      }
+    },
+    "AMZN": {
+      "bias": "bearish",
+      "confidence": 0.6042460001487576,
+      "probabilities": {
+        "bearish": 0.6042460001487576,
+        "bullish": 0.2870536144455467,
+        "choppy": 0.10870038540569583
+      },
+      "asof_open_meta": {
+        "et_date": "2025-10-06",
+        "open_source": "09:30_minute_open",
+        "premarket_last_ts": null
+      },
+      "features_snapshot": {
+        "overnight_gap_pct": 0.6811089090867694,
+        "premarket_range_pct": 0.0,
+        "premarket_vol": 0.0,
+        "premarket_vol_vs_prev5d": 0.0,
+        "premarket_sweep_prev_high": 0.0,
+        "premarket_sweep_prev_low": 0.0,
+        "premarket_close_vs_prev_close_pct": 0.0,
+        "premarket_return_pct": 0.0,
+        "prev_close": 219.495,
+        "prev_day_range_pct": 2.1754481878858316,
+        "prev_day_body_pct": 82.61780104712018,
+        "prev_day_bull": 0.0,
+        "prev_day_swept_prior_high": 1.0,
+        "prev_day_swept_prior_low": 0.0,
+        "open_pos_in_prev_range": 0.34554973821989604,
+        "open_to_prev_high_pct_rng": 65.4450261780104,
+        "open_to_prev_low_pct_rng": 34.554973821989606,
+        "daily_atr14_pct": 2.0669198452291466,
+        "h1_close_vs_sma20_pct": -1.3641607524409094,
+        "h4_close_vs_sma20_pct": -0.31557453127901913,
+        "h1_mom_5bars_pct": -2.0049393803322744,
+        "h4_mom_3bars_pct": -1.0204999100881182
+      }
+    },
+    "META": {
+      "bias": "bearish",
+      "confidence": 0.5415852828497375,
+      "probabilities": {
+        "bearish": 0.5415852828497375,
+        "bullish": 0.17230435420771126,
+        "choppy": 0.28611036294255143
+      },
+      "asof_open_meta": {
+        "et_date": "2025-10-06",
+        "open_source": "09:30_minute_open",
+        "premarket_last_ts": null
+      },
+      "features_snapshot": {
+        "overnight_gap_pct": -0.8075692026309323,
+        "premarket_range_pct": 0.0,
+        "premarket_vol": 0.0,
+        "premarket_vol_vs_prev5d": 0.0,
+        "premarket_sweep_prev_high": 0.0,
+        "premarket_sweep_prev_low": 0.0,
+        "premarket_close_vs_prev_close_pct": 0.0,
+        "premarket_return_pct": 0.0,
+        "prev_close": 710.775,
+        "prev_day_range_pct": 2.8701065738102742,
+        "prev_day_body_pct": 89.75490196078471,
+        "prev_day_bull": 0.0,
+        "prev_day_swept_prior_high": 1.0,
+        "prev_day_swept_prior_low": 1.0,
+        "open_pos_in_prev_range": -0.2526960784313771,
+        "open_to_prev_high_pct_rng": 125.26960784313769,
+        "open_to_prev_low_pct_rng": -25.26960784313771,
+        "daily_atr14_pct": 2.3004064979373617,
+        "h1_close_vs_sma20_pct": -2.6130125038219005,
+        "h4_close_vs_sma20_pct": -4.187212884836341,
+        "h1_mom_5bars_pct": -2.6881234576483157,
+        "h4_mom_3bars_pct": -2.6999889964788726
+      }
+    },
+    "MSFT": {
+      "bias": "bullish",
+      "confidence": 0.5185485157507177,
+      "probabilities": {
+        "bearish": 0.1680109733479541,
+        "bullish": 0.5185485157507177,
+        "choppy": 0.3134405109013284
+      },
+      "asof_open_meta": {
+        "et_date": "2025-10-06",
+        "open_source": "09:30_minute_open",
+        "premarket_last_ts": null
+      },
+      "features_snapshot": {
+        "overnight_gap_pct": 0.303446143141547,
+        "premarket_range_pct": 0.0,
+        "premarket_vol": 0.0,
+        "premarket_vol_vs_prev5d": 0.0,
+        "premarket_sweep_prev_high": 0.0,
+        "premarket_sweep_prev_low": 0.0,
+        "premarket_close_vs_prev_close_pct": 0.0,
+        "premarket_return_pct": 0.0,
+        "prev_close": 517.39,
+        "prev_day_range_pct": 1.038868165213862,
+        "prev_day_body_pct": 9.30232558139535,
+        "prev_day_bull": 1.0,
+        "prev_day_swept_prior_high": 0.0,
+        "prev_day_swept_prior_low": 0.0,
+        "open_pos_in_prev_range": 0.7209302325581395,
+        "open_to_prev_high_pct_rng": 27.906976744186046,
+        "open_to_prev_low_pct_rng": 72.09302325581395,
+        "daily_atr14_pct": 1.3817982014120358,
+        "h1_close_vs_sma20_pct": 1.0214573164518248,
+        "h4_close_vs_sma20_pct": 2.203606184171294,
+        "h1_mom_5bars_pct": 0.6360050033676636,
+        "h4_mom_3bars_pct": 1.7687193502742726
+      }
+    },
+    "GOOG": {
+      "bias": "bullish",
+      "confidence": 0.5670420006560167,
+      "probabilities": {
+        "bearish": 0.236462434529154,
+        "bullish": 0.5670420006560167,
+        "choppy": 0.19649556481482985
+      },
+      "asof_open_meta": {
+        "et_date": "2025-10-06",
+        "open_source": "09:30_minute_open",
+        "premarket_last_ts": "2025-10-06T09:13:00-04:00"
+      },
+      "features_snapshot": {
+        "overnight_gap_pct": -0.058852179560021846,
+        "premarket_range_pct": 0.0,
+        "premarket_vol": 100.0,
+        "premarket_vol_vs_prev5d": 0.00018527713754233583,
+        "premarket_sweep_prev_high": 0.0,
+        "premarket_sweep_prev_low": 0.0,
+        "premarket_close_vs_prev_close_pct": -0.6209919636334122,
+        "premarket_return_pct": 0.0,
+        "prev_close": 246.38,
+        "prev_day_range_pct": 1.8203587953567715,
+        "prev_day_body_pct": 23.634336677814918,
+        "prev_day_bull": 1.0,
+        "prev_day_swept_prior_high": 0.0,
+        "prev_day_swept_prior_low": 1.0,
+        "open_pos_in_prev_range": 0.8104793756967689,
+        "open_to_prev_high_pct_rng": 18.952062430323117,
+        "open_to_prev_low_pct_rng": 81.04793756967689,
+        "daily_atr14_pct": 2.0737420709009293,
+        "h1_close_vs_sma20_pct": 0.9910979530897427,
+        "h4_close_vs_sma20_pct": 0.9439960474468325,
+        "h1_mom_5bars_pct": 0.8631218956111084,
+        "h4_mom_3bars_pct": 1.1525038552065594
+      }
+    }
+  }
+}

@@ -11,3 +11,8 @@ requests
 notebook
 matplotlib
 seaborn
+vaderSentiment
+google-generativeai
+openai
+anthropic
+pytz
