@@ -1,0 +1,3075 @@
+Directory structure:
+└── dmboynton56-llm-advisor/
+    ├── README.md
+    ├── main.py
+    ├── requirements.txt
+    ├── config/
+    │   ├── init.py
+    │   └── settings.py
+    ├── docs/
+    │   ├── EXECUTION.md
+    │   ├── FILE_STRUCTURE.md
+    │   ├── PROJECT_PLAN.md
+    │   └── STRATEGY.md
+    ├── models/
+    │   ├── AAPL_feature_names.json
+    │   ├── AAPL_label_encoder.pkl
+    │   ├── AMZN_feature_names.json
+    │   ├── AMZN_label_encoder.pkl
+    │   ├── GOOG_feature_names.json
+    │   ├── GOOG_label_encoder.pkl
+    │   ├── IWM_feature_names.json
+    │   ├── IWM_label_encoder.pkl
+    │   ├── META_feature_names.json
+    │   ├── META_label_encoder.pkl
+    │   ├── MSFT_feature_names.json
+    │   ├── MSFT_label_encoder.pkl
+    │   ├── NVDA_feature_names.json
+    │   ├── NVDA_label_encoder.pkl
+    │   ├── QQQ_feature_names.json
+    │   ├── QQQ_label_encoder.pkl
+    │   ├── SPY_feature_names.json
+    │   ├── SPY_label_encoder.pkl
+    │   ├── TSLA_feature_names.json
+    │   ├── TSLA_label_encoder.pkl
+    │   └── feature_importances/
+    │       ├── AAPL_importances.csv
+    │       ├── AMZN_importances.csv
+    │       ├── GOOG_importances.csv
+    │       ├── IWM_importances.csv
+    │       ├── META_importances.csv
+    │       ├── MSFT_importances.csv
+    │       ├── NVDA_importances.csv
+    │       ├── QQQ_importances.csv
+    │       ├── SPY_importances.csv
+    │       └── TSLA_importances.csv
+    ├── prompts/
+    │   └── prompts.json
+    ├── reports/
+    │   ├── AAPL_rf_feature_importances.csv
+    │   ├── AMZN_rf_feature_importances.csv
+    │   ├── GOOG_rf_feature_importances.csv
+    │   ├── IWM_rf_feature_importances.csv
+    │   ├── META_rf_feature_importances.csv
+    │   ├── MSFT_rf_feature_importances.csv
+    │   ├── NVDA_rf_feature_importances.csv
+    │   ├── QQQ_rf_feature_importances.csv
+    │   ├── SPY_rf_feature_importances.csv
+    │   ├── TSLA_rf_feature_importances.csv
+    │   └── 2025-10-06/
+    │       └── daily_bias.json
+    ├── src/
+    │   ├── init.py
+    │   └── data_processing/
+    │       ├── daily_bias_computing.py
+    │       ├── news_scraper.py
+    │       └── synthesize_briefing.py
+    └── training/
+        ├── train_daily_bias_models.py
+        └── notebooks/
+            └── feature_engineering.ipynb
+
+================================================
+FILE: README.md
+================================================
+# llm-advisor
+
+# Liquidity Flow Agent
+
+**An AI-powered day trading bot that combines traditional machine learning with Large Language Models (LLMs) to execute a sophisticated ICT-based trading strategy.**
+
+This project leverages a hybrid approach:
+1.  **Daily Bias Prediction:** Pre-trained ML models (Random Forest/XGBoost) analyze historical data to determine the most probable market direction for the day (Bullish/Bearish/Choppy) for a watchlist of symbols.
+2.  **LLM-Powered Real-Time Analysis:** An AI agent, powered by models like GPT-4o, continuously analyzes real-time market data, looking for specific ICT entry patterns that align with the pre-determined daily bias.
+3.  **Automated Execution:** When the AI agent identifies a high-confidence trade setup, it autonomously calculates risk parameters and executes the trade via the Alpaca API.
+
+---
+
+## 🚀 Quick Start
+
+1.  **Clone the repository:**
+    ```bash
+    git clone [repository-url]
+    cd liquidity_flow_agent
+    ```
+
+2.  **Install dependencies:**
+    ```bash
+    pip install -r requirements.txt
+    ```
+
+3.  **Configure your settings:**
+    * Create a `.env` file and add your `ALPACA_` and `OPENAI_` API keys.
+    * Edit `config/settings.py` to define your symbol watchlist and risk parameters.
+
+4.  **Train Daily Bias Models (if not already present):**
+    ```bash
+    python training/train_daily_bias_models.py
+    ```
+
+5.  **Run the bot:**
+    ```bash
+    python main.py
+    ```
+
+---
+
+## 📚 Project Documentation
+
+For a complete understanding of the system, please refer to the documentation:
+
+* **[Project Plan](./docs/PROJECT_PLAN.md):** The overall architecture, data flow, and development roadmap.
+* **[Trading Strategy](./docs/STRATEGY.md):** A detailed explanation of the 5-step ICT methodology used by the AI agent.
+* **[Execution & Risk](./docs/EXECUTION.md):** The rules governing trade execution, position sizing, and risk management.
+
+
+================================================
+FILE: main.py
+================================================
+import os
+import sys
+import json
+import time
+from datetime import datetime
+import pytz
+
+# Add project root to path to allow for imports
+sys.path.append(os.path.dirname(os.path.abspath(__file__)))
+
+# Import the core modules of our bot
+from src.data_processing.news_scraper import fetch_news_headlines
+from src.strategy.bias_calculator import calculate_all_biases
+from src.api_clients.llm_client import get_ai_analysis # Assumes you build this
+from config.settings import WATCHLIST, CONFIDENCE_THRESHOLD
+
+# --- Placeholder imports for modules to be built ---
+# from src.data_processing.price_aggregator import get_realtime_bars
+# from src.execution.order_manager import execute_trade
+
+# A helper function to load prompts from the JSON file
+def load_prompt(prompt_name):
+    """Loads a specific prompt's content from the prompts.json file."""
+    try:
+        prompts_path = os.path.join(os.path.dirname(__file__), 'prompts', 'prompts.json')
+        with open(prompts_path, 'r') as f:
+            all_prompts = json.load(f)
+        return all_prompts[prompt_name]['content']
+    except (FileNotFoundError, KeyError) as e:
+        print(f"Error loading prompt '{prompt_name}': {e}")
+        return None
+
+def run_pre_market_analysis():
+    """
+    Runs all pre-market tasks and uses an LLM to synthesize them into a final context object.
+    """
+    print("="*60)
+    print("Phase 1: Running Pre-Market Analysis...")
+    print(f"Timestamp: {datetime.now(pytz.timezone('US/Eastern')).strftime('%Y-%m-%d %H:%M:%S')} EST")
+    print("="*60)
+    
+    # === Step 1: Gather Raw Data ===
+    print("  Fetching raw data points...")
+    raw_headlines = fetch_news_headlines()
+    headlines_text = "\n".join(f"- {h}" for h in raw_headlines)
+    
+    raw_ml_biases = calculate_all_biases(WATCHLIST)
+    ml_biases_json_str = json.dumps(raw_ml_biases, indent=2)
+
+    # === Step 2: Synthesize Context with an LLM ===
+    print("  Sending raw data to LLM for synthesis into a 'Daily Briefing'...")
+    
+    synthesis_prompt_template = load_prompt("pre_market_synthesis_prompt")
+    if not synthesis_prompt_template:
+        return None
+
+    synthesis_prompt = synthesis_prompt_template.replace("{{ml_bias_data}}", ml_biases_json_str)
+    synthesis_prompt = synthesis_prompt.replace("{{news_headlines}}", headlines_text)
+
+    # Call the LLM to get the final, synthesized context object
+    final_daily_context = get_ai_analysis(
+        system_prompt="You are a Senior Trading Analyst that provides structured JSON output.",
+        user_prompt=synthesis_prompt,
+        json_response=True # Assume your client can parse a JSON string from the LLM
+    )
+
+    if not final_daily_context:
+        print("  FATAL: Could not generate synthesized daily context from LLM. Exiting.")
+        return None
+
+    print("\n--- Pre-Market 'Daily Briefing' Assembled & Synthesized ---")
+    print(json.dumps(final_daily_context, indent=2))
+    print("="*60)
+    
+    return final_daily_context
+
+def main_trading_loop(daily_context):
+    """
+    The main loop that runs continuously during trading hours.
+    """
+    print("\nPhase 2: Entering Main Trading Loop...")
+    
+    while True: # In a real bot, you'd add logic to check market hours and stop
+        print(f"\n--- New Analysis Cycle: {datetime.now(pytz.timezone('US/Eastern')).strftime('%H:%M:%S')} EST ---")
+        
+        # 1. Get real-time price data for all symbols (Placeholder)
+        # realtime_market_data = get_realtime_bars(WATCHLIST)
+        print("  (Placeholder) Fetched real-time price data...")
+        realtime_market_data = {} # This would be a populated dictionary
+        
+        # 2. Send synthesized context and real-time data to LLM for analysis (Placeholder)
+        # analysis_result = analyze_for_trades(daily_context, realtime_market_data)
+        print("  (Placeholder) Sent data to LLM, querying for trade signals...")
+        analysis_result = {} # This would be the parsed JSON response from the LLM
+
+        # 3. Decision Gate: Check the results for a high-confidence trade
+        if analysis_result and "trade_analysis" in analysis_result:
+            for trade in analysis_result["trade_analysis"]:
+                if trade.get("setup_found") and trade.get("confidence_score", 0) >= CONFIDENCE_THRESHOLD:
+                    print(f"  🚨 HIGH-CONFIDENCE SIGNAL FOUND FOR {trade['symbol']}! 🚨")
+                    print(f"     Confidence: {trade['confidence_score']}%")
+                    print(f"     Reasoning: {trade['reasoning']}")
+                    
+                    # 4. Execute the trade
+                    # execute_trade(trade['trade_parameters'])
+                    print(f"     ---> (SIMULATED) EXECUTING TRADE: {trade['trade_parameters']}")
+                    
+                    print("     Pausing for 5 minutes after trade execution...")
+                    time.sleep(300) 
+                    break 
+            else:
+                 print("  No high-confidence trade setups found in this cycle.")
+        
+        # Wait for the next cycle
+        time.sleep(60)
+
+if __name__ == "__main__":
+    # Run the pre-market analysis once at the start
+    context = run_pre_market_analysis()
+    
+    if context:
+        print("\nPre-market analysis complete. The bot would now enter the main trading loop.")
+        # To run the bot continuously, uncomment the line below:
+        # main_trading_loop(context)
+
+
+================================================
+FILE: requirements.txt
+================================================
+alpaca-py
+openai
+python-dotenv
+pandas
+numpy
+scikit-learn
+xgboost
+yfinance
+beautifulsoup4
+requests
+notebook
+matplotlib
+seaborn
+vaderSentiment
+google-generativeai
+openai
+anthropic
+pytz
+
+
+================================================
+FILE: config/init.py
+================================================
+[Empty file]
+
+
+================================================
+FILE: config/settings.py
+================================================
+# ==============================================================================
+# Liquidity Flow Agent - Configuration File
+# ==============================================================================
+
+# --- API Keys -----------------------------------------------------------------
+# These should be stored in your .env file, not here. This file will read them.
+# Example .env file:
+# ALPACA_API_KEY="PK..."
+# ALPACA_SECRET_KEY="sk..."
+# ALPACA_PAPER_TRADING="true"
+# OPENAI_API_KEY="sk-..."
+# ANTHROPIC_API_KEY="sk-..."
+
+# --- Watchlist ----------------------------------------------------------------
+# List of symbols the bot will actively monitor.
+WATCHLIST = [
+    "SPY", "QQQ", "IWM",  # Indices & Futures
+    "NVDA", "TSLA", "AAPL", "AMZN",       # Tech Stocks
+    "META", "MSFT", "GOOG"                # More Tech Stocks
+]
+
+# --- Trading Parameters -------------------------------------------------------
+# The bot will only trade one position at a time.
+MAX_CONCURRENT_TRADES = 1
+
+# The window during which the bot is allowed to open new trades.
+# Format: "HH:MM" in US/Eastern timezone.
+TRADING_WINDOW_START = "09:30"
+TRADING_WINDOW_END = "12:00"
+
+# The time to close all open positions, regardless of P/L.
+END_OF_DAY_CLOSE_TIME = "15:50"
+
+# --- Risk Management ----------------------------------------------------------
+# The maximum percentage of total account equity to risk on a single trade.
+# Example: 1.0 means 1% risk.
+MAX_RISK_PER_TRADE_PERCENT = 50.0
+
+# The minimum required risk-to-reward ratio for a trade to be considered valid.
+# Example: 2.5 means the potential profit must be at least 2.5 times the potential loss.
+MINIMUM_RISK_REWARD_RATIO = 2.0
+
+# --- Strategy & AI Parameters -------------------------------------------------
+# The confidence score threshold required to trigger a trade.
+# This is the aggregated score from the LLM analysis.
+CONFIDENCE_THRESHOLD = 85  # Integer from 0 to 100
+
+# The LLM provider(s) to use for analysis. Can be "openai", "anthropic", or a list.
+LLM_PROVIDERS = ["openai"]
+
+# The specific model to use for the main analysis.
+LLM_MODEL = "gpt-4o"
+
+# The time in seconds the bot will wait between each analysis loop.
+ANALYSIS_INTERVAL_SECONDS = 30
+
+# --- Logging Configuration ----------------------------------------------------
+LOG_LEVEL = "INFO"  # "DEBUG", "INFO", "WARNING", "ERROR"
+LOG_FILE = "logs/trading_agent.log"
+
+
+
+================================================
+FILE: docs/EXECUTION.md
+================================================
+# Trading Strategy: ICT Liquidity Flow Model
+
+This document defines the 5-step, top-down trading methodology that the AI agent (`LiquidityFlowGPT`) must follow. The strategy is based on Inner Circle Trader (ICT) concepts, focusing on how institutional order flow creates predictable patterns of liquidity.
+
+## The 5-Step Methodology
+
+### Step 1: Determine Daily Bias
+**Objective:** Identify the most likely direction for the day's primary price move.
+* **Method:** Analyze High-Timeframe (HTF) charts (1-hour, 4-hour, Daily) to identify key **Draws on Liquidity**. These are price levels where a significant number of buy-stops or sell-stops are likely resting.
+* **Key Levels to Mark:**
+    * Previous Day High/Low
+    * Previous Session High/Low (Asia, London)
+    * Old Highs/Lows on the 1h/4h chart
+    * Highs/Lows created by major news or volume events.
+* **Thesis:** The market will likely move toward the most obvious pool of liquidity. A bias is **Bullish** if the draw is to the upside; **Bearish** if the draw is to the downside.
+
+### Step 2: Await Reversal at Key Levels
+**Objective:** Wait for a "stop hunt" or liquidity grab at a key HTF level.
+* **Method:** Once the daily bias is established, patiently wait for the price to sweep a key level *against* the expected direction (e.g., a sweep of the previous day's low in a Bullish bias). This is often a manipulation move to fill institutional orders.
+* **Action:** Once the sweep occurs, zoom into the 5-minute chart to watch for the first sign of a reversal.
+
+### Step 3: Confirm Low-Timeframe (LTF) Reversal
+**Objective:** Confirm that the manipulation is over and the true trend is resuming.
+* **Method:** Look for a **confluence** of at least two confirmation signals on the 5-minute chart.
+* **Confirmation Signals:**
+    * **Break of Structure (BOS):** A decisive close above a recent swing high (for bullish) or below a swing low (for bearish). This is the most important signal.
+    * **Inverse Fair Value Gap (iFVG):** A small FVG that forms *against* the new direction and is immediately disrespected and traded through.
+    * **79% Fibonacci Retracement:** A bounce from the 79% ("Optimal Trade Entry") level of the initial reversal move.
+    * **SMT Divergence:** A divergence between correlated assets (e.g., ES/NQ or SPY/QQQ) where one fails to make a new high/low while the other succeeds.
+
+### Step 4: Identify LTF Entry
+**Objective:** Find a precise, low-risk entry point to join the newly confirmed trend.
+* **Method:** After the 5-minute reversal is confirmed, wait for a pullback to a high-probability continuation setup. Then, refine the entry on the 1-minute chart.
+* **5-Minute Continuation Setups:**
+    * **Fair Value Gap (FVG):** A 3-candle imbalance left during the reversal move. This is the highest probability entry.
+    * **Order Block:** The last down-candle before a strong up-move (or vice-versa).
+    * **Breaker Block:** A failed order block that price has traded through.
+* **1-Minute Refinement:** Look for a 1-minute BOS or iFVG *within* the 5-minute FVG to time the entry with maximum precision.
+
+### Step 5: Define Trade Parameters
+**Objective:** Set clear exit points based on market structure.
+* **Entry:** Taken at the 1-minute confirmation within the 5-minute continuation setup.
+* **Stop Loss:** Placed just below the swing low of the reversal structure (for bullish) or above the swing high (for bearish).
+* **Take Profit:** Set at the next major HTF Draw on Liquidity, as identified in Step 1.
+
+
+================================================
+FILE: docs/FILE_STRUCTURE.md
+================================================
+[Binary file]
+
+
+================================================
+FILE: docs/PROJECT_PLAN.md
+================================================
+# Project Plan: Liquidity Flow Agent
+
+This document outlines the architecture, data flow, and development plan for the AI-powered trading bot.
+
+## 1. System Architecture
+
+The system is designed as a modular, event-driven application that operates in distinct phases throughout the trading day.
+
+**Key Components:**
+* **Data Processing:** Gathers, cleans, and formats all necessary data (market prices, news).
+* **Strategy & Analysis:** Contains the core logic for both the ML-based bias prediction and the LLM-based real-time analysis.
+* **API Clients:** Manages all external API communications (Alpaca for trading, LLM providers for analysis).
+* **Execution:** Handles the placement and management of trades.
+
+## 2. Data & Logic Flow
+
+The bot's operational flow is a top-down process, moving from a high-level daily view to a micro-level 1-minute analysis.
+
+**Phase 1: Pre-Market (approx. 9:00 AM EST)**
+1.  **News Scraping:** The `news_scraper.py` module gathers key financial headlines and articles for the monitored symbols.
+2.  **Daily Bias Calculation:** The `bias_calculator.py` module loads the pre-trained `.pkl` models. It uses the latest market data to calculate the daily bias (Bullish/Bearish/Choppy) and a confidence score for each symbol.
+3.  **Context Compilation:** The daily biases and summarized news are compiled as the foundational context for the day.
+
+**Phase 2: Market Open & Monitoring (9:30 AM EST onwards)**
+1.  **Real-Time Data Feed:** The `price_aggregator.py` begins polling the Alpaca API every 30-60 seconds for the latest price data across the watchlist.
+2.  **Feature Calculation:** The `feature_engine.py` calculates key technical metrics from the real-time data.
+3.  **LLM Analysis Loop:**
+    * The `trade_analyzer.py` formats the daily context (bias, news) and the latest real-time data into a structured prompt.
+    * This prompt is sent to one or more LLM APIs via the `llm_client.py`.
+    * The bot asks the LLM to analyze the data according to the ICT strategy and return a verdict, including a confidence score.
+4.  **Decision Gate:** The main loop in `main.py` aggregates the confidence scores from the LLMs.
+
+**Phase 3: Trade Execution**
+1.  **Trigger:** If the combined confidence score for a specific symbol's setup crosses a pre-defined threshold (e.g., 85%), a trade signal is generated.
+2.  **Parameter Calculation:** The LLM is asked for precise stop loss and take profit levels.
+3.  **Order Placement:** The `order_manager.py` receives the final trade parameters and places the bracket order via the `alpaca_client.py`.
+
+## 3. Development Plan
+
+The project will be built in phases to ensure each component is robust before integration.
+
+* **Phase 1: Foundation & Data:** Build the Alpaca client, data aggregators, and feature engine. Ensure a reliable stream of real-time data.
+* **Phase 2: Daily Bias Integration:** Integrate the pre-trained models from `ICTML` to ensure the bot can generate daily biases at the start of each session.
+* **Phase 3: LLM Agent Core:** Develop the `llm_client` and `trade_analyzer`. Focus on prompt engineering and parsing structured JSON responses.
+* **Phase 4: Execution & Paper Trading:** Build the `order_manager` and deploy the full system in Alpaca's paper trading environment for at least 1-2 months.
+* **Phase 5: Live Deployment:** After consistent profitability in paper trading, deploy with a small amount of real capital and scale gradually.
+
+
+================================================
+FILE: docs/STRATEGY.md
+================================================
+# Trading Strategy: ICT Liquidity Flow Model
+
+This document defines the 5-step, top-down trading methodology that the AI agent (`LiquidityFlowGPT`) must follow. The strategy is based on Inner Circle Trader (ICT) concepts, focusing on how institutional order flow creates predictable patterns of liquidity.
+
+## The 5-Step Methodology
+
+### Step 1: Determine Daily Bias
+**Objective:** Identify the most likely direction for the day's primary price move.
+* **Method:** Analyze High-Timeframe (HTF) charts (1-hour, 4-hour, Daily) to identify key **Draws on Liquidity**. These are price levels where a significant number of buy-stops or sell-stops are likely resting.
+* **Key Levels to Mark:**
+    * Previous Day High/Low
+    * Previous Session High/Low (Asia, London)
+    * Old Highs/Lows on the 1h/4h chart
+    * Highs/Lows created by major news or volume events.
+* **Thesis:** The market will likely move toward the most obvious pool of liquidity. A bias is **Bullish** if the draw is to the upside; **Bearish** if the draw is to the downside.
+
+### Step 2: Await Reversal at Key Levels
+**Objective:** Wait for a "stop hunt" or liquidity grab at a key HTF level.
+* **Method:** Once the daily bias is established, patiently wait for the price to sweep a key level *against* the expected direction (e.g., a sweep of the previous day's low in a Bullish bias). This is often a manipulation move to fill institutional orders.
+* **Action:** Once the sweep occurs, zoom into the 5-minute chart to watch for the first sign of a reversal.
+
+### Step 3: Confirm Low-Timeframe (LTF) Reversal
+**Objective:** Confirm that the manipulation is over and the true trend is resuming.
+* **Method:** Look for a **confluence** of at least two confirmation signals on the 5-minute chart.
+* **Confirmation Signals:**
+    * **Break of Structure (BOS):** A decisive close above a recent swing high (for bullish) or below a swing low (for bearish). This is the most important signal.
+    * **Inverse Fair Value Gap (iFVG):** A small FVG that forms *against* the new direction and is immediately disrespected and traded through.
+    * **79% Fibonacci Retracement:** A bounce from the 79% ("Optimal Trade Entry") level of the initial reversal move.
+    * **SMT Divergence:** A divergence between correlated assets (e.g., ES/NQ or SPY/QQQ) where one fails to make a new high/low while the other succeeds.
+
+### Step 4: Identify LTF Entry
+**Objective:** Find a precise, low-risk entry point to join the newly confirmed trend.
+* **Method:** After the 5-minute reversal is confirmed, wait for a pullback to a high-probability continuation setup. Then, refine the entry on the 1-minute chart.
+* **5-Minute Continuation Setups:**
+    * **Fair Value Gap (FVG):** A 3-candle imbalance left during the reversal move. This is the highest probability entry.
+    * **Order Block:** The last down-candle before a strong up-move (or vice-versa).
+    * **Breaker Block:** A failed order block that price has traded through.
+* **1-Minute Refinement:** Look for a 1-minute BOS or iFVG *within* the 5-minute FVG to time the entry with maximum precision.
+
+### Step 5: Define Trade Parameters
+**Objective:** Set clear exit points based on market structure.
+* **Entry:** Taken at the 1-minute confirmation within the 5-minute continuation setup.
+* **Stop Loss:** Placed just below the swing low of the reversal structure (for bullish) or above the swing high (for bearish).
+* **Take Profit:** Set at the next major HTF Draw on Liquidity, as identified in Step 1.
+
+
+================================================
+FILE: models/AAPL_feature_names.json
+================================================
+[
+  "overnight_gap_pct",
+  "premarket_range_pct",
+  "premarket_vol",
+  "premarket_vol_vs_prev5d",
+  "premarket_sweep_prev_high",
+  "premarket_sweep_prev_low",
+  "premarket_close_vs_prev_close_pct",
+  "premarket_return_pct",
+  "prev_close",
+  "prev_day_range_pct",
+  "prev_day_body_pct",
+  "prev_day_bull",
+  "prev_day_swept_prior_high",
+  "prev_day_swept_prior_low",
+  "open_pos_in_prev_range",
+  "open_to_prev_high_pct_rng",
+  "open_to_prev_low_pct_rng",
+  "daily_atr14_pct",
+  "h1_close_vs_sma20_pct",
+  "h4_close_vs_sma20_pct",
+  "h1_mom_5bars_pct",
+  "h4_mom_3bars_pct"
+]
+
+
+================================================
+FILE: models/AAPL_label_encoder.pkl
+================================================
+[Binary file]
+
+
+================================================
+FILE: models/AMZN_feature_names.json
+================================================
+[
+  "overnight_gap_pct",
+  "premarket_range_pct",
+  "premarket_vol",
+  "premarket_vol_vs_prev5d",
+  "premarket_sweep_prev_high",
+  "premarket_sweep_prev_low",
+  "premarket_close_vs_prev_close_pct",
+  "premarket_return_pct",
+  "prev_close",
+  "prev_day_range_pct",
+  "prev_day_body_pct",
+  "prev_day_bull",
+  "prev_day_swept_prior_high",
+  "prev_day_swept_prior_low",
+  "open_pos_in_prev_range",
+  "open_to_prev_high_pct_rng",
+  "open_to_prev_low_pct_rng",
+  "daily_atr14_pct",
+  "h1_close_vs_sma20_pct",
+  "h4_close_vs_sma20_pct",
+  "h1_mom_5bars_pct",
+  "h4_mom_3bars_pct"
+]
+
+
+================================================
+FILE: models/AMZN_label_encoder.pkl
+================================================
+[Binary file]
+
+
+================================================
+FILE: models/GOOG_feature_names.json
+================================================
+[
+  "overnight_gap_pct",
+  "premarket_range_pct",
+  "premarket_vol",
+  "premarket_vol_vs_prev5d",
+  "premarket_sweep_prev_high",
+  "premarket_sweep_prev_low",
+  "premarket_close_vs_prev_close_pct",
+  "premarket_return_pct",
+  "prev_close",
+  "prev_day_range_pct",
+  "prev_day_body_pct",
+  "prev_day_bull",
+  "prev_day_swept_prior_high",
+  "prev_day_swept_prior_low",
+  "open_pos_in_prev_range",
+  "open_to_prev_high_pct_rng",
+  "open_to_prev_low_pct_rng",
+  "daily_atr14_pct",
+  "h1_close_vs_sma20_pct",
+  "h4_close_vs_sma20_pct",
+  "h1_mom_5bars_pct",
+  "h4_mom_3bars_pct"
+]
+
+
+================================================
+FILE: models/GOOG_label_encoder.pkl
+================================================
+[Binary file]
+
+
+================================================
+FILE: models/IWM_feature_names.json
+================================================
+[
+  "overnight_gap_pct",
+  "premarket_range_pct",
+  "premarket_vol",
+  "premarket_vol_vs_prev5d",
+  "premarket_sweep_prev_high",
+  "premarket_sweep_prev_low",
+  "premarket_close_vs_prev_close_pct",
+  "premarket_return_pct",
+  "prev_close",
+  "prev_day_range_pct",
+  "prev_day_body_pct",
+  "prev_day_bull",
+  "prev_day_swept_prior_high",
+  "prev_day_swept_prior_low",
+  "open_pos_in_prev_range",
+  "open_to_prev_high_pct_rng",
+  "open_to_prev_low_pct_rng",
+  "daily_atr14_pct",
+  "h1_close_vs_sma20_pct",
+  "h4_close_vs_sma20_pct",
+  "h1_mom_5bars_pct",
+  "h4_mom_3bars_pct"
+]
+
+
+================================================
+FILE: models/IWM_label_encoder.pkl
+================================================
+[Binary file]
+
+
+================================================
+FILE: models/META_feature_names.json
+================================================
+[
+  "overnight_gap_pct",
+  "premarket_range_pct",
+  "premarket_vol",
+  "premarket_vol_vs_prev5d",
+  "premarket_sweep_prev_high",
+  "premarket_sweep_prev_low",
+  "premarket_close_vs_prev_close_pct",
+  "premarket_return_pct",
+  "prev_close",
+  "prev_day_range_pct",
+  "prev_day_body_pct",
+  "prev_day_bull",
+  "prev_day_swept_prior_high",
+  "prev_day_swept_prior_low",
+  "open_pos_in_prev_range",
+  "open_to_prev_high_pct_rng",
+  "open_to_prev_low_pct_rng",
+  "daily_atr14_pct",
+  "h1_close_vs_sma20_pct",
+  "h4_close_vs_sma20_pct",
+  "h1_mom_5bars_pct",
+  "h4_mom_3bars_pct"
+]
+
+
+================================================
+FILE: models/META_label_encoder.pkl
+================================================
+[Binary file]
+
+
+================================================
+FILE: models/MSFT_feature_names.json
+================================================
+[
+  "overnight_gap_pct",
+  "premarket_range_pct",
+  "premarket_vol",
+  "premarket_vol_vs_prev5d",
+  "premarket_sweep_prev_high",
+  "premarket_sweep_prev_low",
+  "premarket_close_vs_prev_close_pct",
+  "premarket_return_pct",
+  "prev_close",
+  "prev_day_range_pct",
+  "prev_day_body_pct",
+  "prev_day_bull",
+  "prev_day_swept_prior_high",
+  "prev_day_swept_prior_low",
+  "open_pos_in_prev_range",
+  "open_to_prev_high_pct_rng",
+  "open_to_prev_low_pct_rng",
+  "daily_atr14_pct",
+  "h1_close_vs_sma20_pct",
+  "h4_close_vs_sma20_pct",
+  "h1_mom_5bars_pct",
+  "h4_mom_3bars_pct"
+]
+
+
+================================================
+FILE: models/MSFT_label_encoder.pkl
+================================================
+[Binary file]
+
+
+================================================
+FILE: models/NVDA_feature_names.json
+================================================
+[
+  "overnight_gap_pct",
+  "premarket_range_pct",
+  "premarket_vol",
+  "premarket_vol_vs_prev5d",
+  "premarket_sweep_prev_high",
+  "premarket_sweep_prev_low",
+  "premarket_close_vs_prev_close_pct",
+  "premarket_return_pct",
+  "prev_close",
+  "prev_day_range_pct",
+  "prev_day_body_pct",
+  "prev_day_bull",
+  "prev_day_swept_prior_high",
+  "prev_day_swept_prior_low",
+  "open_pos_in_prev_range",
+  "open_to_prev_high_pct_rng",
+  "open_to_prev_low_pct_rng",
+  "daily_atr14_pct",
+  "h1_close_vs_sma20_pct",
+  "h4_close_vs_sma20_pct",
+  "h1_mom_5bars_pct",
+  "h4_mom_3bars_pct"
+]
+
+
+================================================
+FILE: models/NVDA_label_encoder.pkl
+================================================
+[Binary file]
+
+
+================================================
+FILE: models/QQQ_feature_names.json
+================================================
+[
+  "overnight_gap_pct",
+  "premarket_range_pct",
+  "premarket_vol",
+  "premarket_vol_vs_prev5d",
+  "premarket_sweep_prev_high",
+  "premarket_sweep_prev_low",
+  "premarket_close_vs_prev_close_pct",
+  "premarket_return_pct",
+  "prev_close",
+  "prev_day_range_pct",
+  "prev_day_body_pct",
+  "prev_day_bull",
+  "prev_day_swept_prior_high",
+  "prev_day_swept_prior_low",
+  "open_pos_in_prev_range",
+  "open_to_prev_high_pct_rng",
+  "open_to_prev_low_pct_rng",
+  "daily_atr14_pct",
+  "h1_close_vs_sma20_pct",
+  "h4_close_vs_sma20_pct",
+  "h1_mom_5bars_pct",
+  "h4_mom_3bars_pct"
+]
+
+
+================================================
+FILE: models/QQQ_label_encoder.pkl
+================================================
+[Binary file]
+
+
+================================================
+FILE: models/SPY_feature_names.json
+================================================
+[
+  "overnight_gap_pct",
+  "premarket_range_pct",
+  "premarket_vol",
+  "premarket_vol_vs_prev5d",
+  "premarket_sweep_prev_high",
+  "premarket_sweep_prev_low",
+  "premarket_close_vs_prev_close_pct",
+  "premarket_return_pct",
+  "prev_close",
+  "prev_day_range_pct",
+  "prev_day_body_pct",
+  "prev_day_bull",
+  "prev_day_swept_prior_high",
+  "prev_day_swept_prior_low",
+  "open_pos_in_prev_range",
+  "open_to_prev_high_pct_rng",
+  "open_to_prev_low_pct_rng",
+  "daily_atr14_pct",
+  "h1_close_vs_sma20_pct",
+  "h4_close_vs_sma20_pct",
+  "h1_mom_5bars_pct",
+  "h4_mom_3bars_pct"
+]
+
+
+================================================
+FILE: models/SPY_label_encoder.pkl
+================================================
+[Binary file]
+
+
+================================================
+FILE: models/TSLA_feature_names.json
+================================================
+[
+  "overnight_gap_pct",
+  "premarket_range_pct",
+  "premarket_vol",
+  "premarket_vol_vs_prev5d",
+  "premarket_sweep_prev_high",
+  "premarket_sweep_prev_low",
+  "premarket_close_vs_prev_close_pct",
+  "premarket_return_pct",
+  "prev_close",
+  "prev_day_range_pct",
+  "prev_day_body_pct",
+  "prev_day_bull",
+  "prev_day_swept_prior_high",
+  "prev_day_swept_prior_low",
+  "open_pos_in_prev_range",
+  "open_to_prev_high_pct_rng",
+  "open_to_prev_low_pct_rng",
+  "daily_atr14_pct",
+  "h1_close_vs_sma20_pct",
+  "h4_close_vs_sma20_pct",
+  "h1_mom_5bars_pct",
+  "h4_mom_3bars_pct"
+]
+
+
+================================================
+FILE: models/TSLA_label_encoder.pkl
+================================================
+[Binary file]
+
+
+================================================
+FILE: models/feature_importances/AAPL_importances.csv
+================================================
+feature,importance
+overnight_gap_pct,0.06176820224489094
+premarket_range_pct,0.012672809462366472
+premarket_vol,0.019103752155005704
+premarket_vol_vs_prev5d,0.022781069738408606
+premarket_sweep_prev_high,0.001972950250943717
+premarket_sweep_prev_low,0.003616628843341005
+premarket_close_vs_prev_close_pct,0.028496544628411415
+premarket_return_pct,0.010069787538426274
+prev_close,0.06450398834618455
+prev_day_range_pct,0.06598393547911294
+prev_day_body_pct,0.06554848340573015
+prev_day_bull,0.009846227819972783
+prev_day_swept_prior_high,0.01575285368637261
+prev_day_swept_prior_low,0.011186882548615704
+open_pos_in_prev_range,0.05979974769123722
+open_to_prev_high_pct_rng,0.05913382551965716
+open_to_prev_low_pct_rng,0.060839002520841574
+daily_atr14_pct,0.06396688663387277
+h1_close_vs_sma20_pct,0.07209696402474938
+h4_close_vs_sma20_pct,0.06791519603654876
+h1_mom_5bars_pct,0.08701083105671054
+h4_mom_3bars_pct,0.13593343036859984
+
+
+================================================
+FILE: models/feature_importances/AMZN_importances.csv
+================================================
+feature,importance
+overnight_gap_pct,0.06549159877366206
+premarket_range_pct,0.007148638174986415
+premarket_vol,0.01964309140093294
+premarket_vol_vs_prev5d,0.01806151409827803
+premarket_sweep_prev_high,0.0019775900440797745
+premarket_sweep_prev_low,0.0015123599496722918
+premarket_close_vs_prev_close_pct,0.017738924300650688
+premarket_return_pct,0.00330043099862297
+prev_close,0.07685386674138955
+prev_day_range_pct,0.0684035433619144
+prev_day_body_pct,0.07101647792925572
+prev_day_bull,0.01025155427774289
+prev_day_swept_prior_high,0.013341906269901085
+prev_day_swept_prior_low,0.012549119608310748
+open_pos_in_prev_range,0.06248798778390493
+open_to_prev_high_pct_rng,0.060282595555469574
+open_to_prev_low_pct_rng,0.058285273055924694
+daily_atr14_pct,0.06919255066254959
+h1_close_vs_sma20_pct,0.07038445592492665
+h4_close_vs_sma20_pct,0.07858623023373491
+h1_mom_5bars_pct,0.08730080658933209
+h4_mom_3bars_pct,0.1261894842647579
+
+
+================================================
+FILE: models/feature_importances/GOOG_importances.csv
+================================================
+feature,importance
+overnight_gap_pct,0.06576910808680123
+premarket_range_pct,0.006125799306886099
+premarket_vol,0.012888898636392695
+premarket_vol_vs_prev5d,0.013387784981088134
+premarket_sweep_prev_high,0.0014249353009694037
+premarket_sweep_prev_low,0.0017604406073757522
+premarket_close_vs_prev_close_pct,0.015234623343832096
+premarket_return_pct,0.004783197802794013
+prev_close,0.06273584042484534
+prev_day_range_pct,0.08111615088121697
+prev_day_body_pct,0.0667546341287498
+prev_day_bull,0.00997688305426755
+prev_day_swept_prior_high,0.009813324645264085
+prev_day_swept_prior_low,0.011841936501254173
+open_pos_in_prev_range,0.06377317557085638
+open_to_prev_high_pct_rng,0.06348772496282101
+open_to_prev_low_pct_rng,0.06365382900468168
+daily_atr14_pct,0.0679085946628932
+h1_close_vs_sma20_pct,0.08274309673900244
+h4_close_vs_sma20_pct,0.07293825480011251
+h1_mom_5bars_pct,0.08554121752563343
+h4_mom_3bars_pct,0.136340549032262
+
+
+================================================
+FILE: models/feature_importances/IWM_importances.csv
+================================================
+feature,importance
+overnight_gap_pct,0.058215551268003526
+premarket_range_pct,0.022864988776089272
+premarket_vol,0.03428174540830631
+premarket_vol_vs_prev5d,0.034615080705371726
+premarket_sweep_prev_high,0.004239219543676202
+premarket_sweep_prev_low,0.004644033221104469
+premarket_close_vs_prev_close_pct,0.036732763853715246
+premarket_return_pct,0.0244069401715405
+prev_close,0.06279281029872014
+prev_day_range_pct,0.06529107268467926
+prev_day_body_pct,0.06117776362137291
+prev_day_bull,0.008300949850086134
+prev_day_swept_prior_high,0.009551792920843532
+prev_day_swept_prior_low,0.008748922239385299
+open_pos_in_prev_range,0.05085145952265114
+open_to_prev_high_pct_rng,0.050281397750455495
+open_to_prev_low_pct_rng,0.05212919478105392
+daily_atr14_pct,0.0595013174803025
+h1_close_vs_sma20_pct,0.05839187875698897
+h4_close_vs_sma20_pct,0.07343661756023577
+h1_mom_5bars_pct,0.0761215106056214
+h4_mom_3bars_pct,0.1434229889797963
+
+
+================================================
+FILE: models/feature_importances/META_importances.csv
+================================================
+feature,importance
+overnight_gap_pct,0.0685540698856523
+premarket_range_pct,0.00133925110362982
+premarket_vol,0.007249596821452035
+premarket_vol_vs_prev5d,0.008256791419900922
+premarket_sweep_prev_high,0.00286321803573758
+premarket_sweep_prev_low,0.0005515667833597181
+premarket_close_vs_prev_close_pct,0.009339228055763522
+premarket_return_pct,0.0007705365558936493
+prev_close,0.09133133865542395
+prev_day_range_pct,0.06841967644916379
+prev_day_body_pct,0.07195474855400324
+prev_day_bull,0.016445011608016764
+prev_day_swept_prior_high,0.015151304567616623
+prev_day_swept_prior_low,0.009414613055800158
+open_pos_in_prev_range,0.06736804249755474
+open_to_prev_high_pct_rng,0.06945727242069206
+open_to_prev_low_pct_rng,0.06646006419265436
+daily_atr14_pct,0.07842626641919204
+h1_close_vs_sma20_pct,0.07251771741588373
+h4_close_vs_sma20_pct,0.0839953323687055
+h1_mom_5bars_pct,0.08682676649305106
+h4_mom_3bars_pct,0.10330758664085234
+
+
+================================================
+FILE: models/feature_importances/MSFT_importances.csv
+================================================
+feature,importance
+overnight_gap_pct,0.08120332698238351
+premarket_range_pct,0.0017763004258672188
+premarket_vol,0.005940530364059465
+premarket_vol_vs_prev5d,0.005756164726901328
+premarket_sweep_prev_high,0.0004039049500113727
+premarket_sweep_prev_low,0.0006784382007210907
+premarket_close_vs_prev_close_pct,0.008234015384889026
+premarket_return_pct,0.0011163879004022221
+prev_close,0.07022311964275404
+prev_day_range_pct,0.06618617585097115
+prev_day_body_pct,0.0712243651446143
+prev_day_bull,0.009835939599862181
+prev_day_swept_prior_high,0.010073728744256246
+prev_day_swept_prior_low,0.011493137729976777
+open_pos_in_prev_range,0.06944001843862346
+open_to_prev_high_pct_rng,0.06841291381968721
+open_to_prev_low_pct_rng,0.07321237523709864
+daily_atr14_pct,0.07042195870710584
+h1_close_vs_sma20_pct,0.06883165094701288
+h4_close_vs_sma20_pct,0.08266138915353383
+h1_mom_5bars_pct,0.0994447380097557
+h4_mom_3bars_pct,0.12342942003951246
+
+
+================================================
+FILE: models/feature_importances/NVDA_importances.csv
+================================================
+feature,importance
+overnight_gap_pct,0.05423600058769581
+premarket_range_pct,0.022274848704616698
+premarket_vol,0.034811028857306345
+premarket_vol_vs_prev5d,0.033862857399971795
+premarket_sweep_prev_high,0.00272749032599146
+premarket_sweep_prev_low,0.0021768513476999067
+premarket_close_vs_prev_close_pct,0.03667697734964461
+premarket_return_pct,0.021828983346054744
+prev_close,0.04819916902445748
+prev_day_range_pct,0.06197734106974901
+prev_day_body_pct,0.06256694370337705
+prev_day_bull,0.006230855340960221
+prev_day_swept_prior_high,0.008668539507157144
+prev_day_swept_prior_low,0.008823505823055001
+open_pos_in_prev_range,0.05644224695540043
+open_to_prev_high_pct_rng,0.05745215364765562
+open_to_prev_low_pct_rng,0.05952016188452484
+daily_atr14_pct,0.06983171580112602
+h1_close_vs_sma20_pct,0.06525679098657569
+h4_close_vs_sma20_pct,0.06896095408875776
+h1_mom_5bars_pct,0.09876417528342236
+h4_mom_3bars_pct,0.1187104089648001
+
+
+================================================
+FILE: models/feature_importances/QQQ_importances.csv
+================================================
+feature,importance
+overnight_gap_pct,0.043210629184227696
+premarket_range_pct,0.04556983518263797
+premarket_vol,0.04232145786440379
+premarket_vol_vs_prev5d,0.042349705720804834
+premarket_sweep_prev_high,0.004250985312637648
+premarket_sweep_prev_low,0.0021451743925162553
+premarket_close_vs_prev_close_pct,0.04187366862818412
+premarket_return_pct,0.04162088451225733
+prev_close,0.06856441701222912
+prev_day_range_pct,0.04973705807507579
+prev_day_body_pct,0.05815102404256183
+prev_day_bull,0.007353479254426839
+prev_day_swept_prior_high,0.007013178281953998
+prev_day_swept_prior_low,0.011796887382085609
+open_pos_in_prev_range,0.04618764942953758
+open_to_prev_high_pct_rng,0.04412559026995981
+open_to_prev_low_pct_rng,0.04375712246669267
+daily_atr14_pct,0.05616010837530286
+h1_close_vs_sma20_pct,0.052639074112915865
+h4_close_vs_sma20_pct,0.0873415458026789
+h1_mom_5bars_pct,0.05848336944234487
+h4_mom_3bars_pct,0.14534715525456465
+
+
+================================================
+FILE: models/feature_importances/SPY_importances.csv
+================================================
+feature,importance
+overnight_gap_pct,0.061661273558017114
+premarket_range_pct,0.015200801110443923
+premarket_vol,0.024396869179778836
+premarket_vol_vs_prev5d,0.027415320393293068
+premarket_sweep_prev_high,0.004883398678896537
+premarket_sweep_prev_low,0.0015102714072041008
+premarket_close_vs_prev_close_pct,0.02961705242836052
+premarket_return_pct,0.015564215716770404
+prev_close,0.06423669333627484
+prev_day_range_pct,0.07308356646605556
+prev_day_body_pct,0.06018852252664204
+prev_day_bull,0.00804417250813847
+prev_day_swept_prior_high,0.008330048325375426
+prev_day_swept_prior_low,0.008274657547211517
+open_pos_in_prev_range,0.05421269795474021
+open_to_prev_high_pct_rng,0.05019104603723118
+open_to_prev_low_pct_rng,0.05199892906059832
+daily_atr14_pct,0.07169127218947653
+h1_close_vs_sma20_pct,0.06363764021731658
+h4_close_vs_sma20_pct,0.09137596527893663
+h1_mom_5bars_pct,0.07090070994262637
+h4_mom_3bars_pct,0.1435848761366119
+
+
+================================================
+FILE: models/feature_importances/TSLA_importances.csv
+================================================
+feature,importance
+overnight_gap_pct,0.052206252555956276
+premarket_range_pct,0.01836941940391969
+premarket_vol,0.03244889935250075
+premarket_vol_vs_prev5d,0.028877397991778936
+premarket_sweep_prev_high,0.001842859862614565
+premarket_sweep_prev_low,0.0033789859648537344
+premarket_close_vs_prev_close_pct,0.029426424159859573
+premarket_return_pct,0.026408874864063053
+prev_close,0.06505383437443468
+prev_day_range_pct,0.059381158522514105
+prev_day_body_pct,0.059135289171786586
+prev_day_bull,0.018904421817332397
+prev_day_swept_prior_high,0.009122489907775389
+prev_day_swept_prior_low,0.009001535958398508
+open_pos_in_prev_range,0.057538850505026495
+open_to_prev_high_pct_rng,0.06130665760411863
+open_to_prev_low_pct_rng,0.06012410592585278
+daily_atr14_pct,0.058666926101781175
+h1_close_vs_sma20_pct,0.07573384334453746
+h4_close_vs_sma20_pct,0.08618165659975868
+h1_mom_5bars_pct,0.07540310121397006
+h4_mom_3bars_pct,0.11148701479716636
+
+
+================================================
+FILE: prompts/prompts.json
+================================================
+{
+    "system_prompt": {
+      "role": "system",
+      "content": "You are 'LiquidityFlowGPT', an AI trading analyst specializing in ICT (Inner Circle Trader) concepts. Your sole purpose is to provide high-probability trade ideas by executing a precise, top-down market analysis. You must adhere strictly to the following 5-step methodology:\n\n1.  **Determine Daily Bias:** Identify the daily bias (Bullish/Bearish) by analyzing High-Timeframe (HTF) draws on liquidity.\n2.  **Await Reversal at Key Levels:** Wait for an HTF key level to be swept, then monitor the 5-minute (LTF) chart for a change in market structure.\n3.  **Confirm LTF Reversal:** Identify a high-probability reversal on the 5-minute chart using a confluence of confirmation signals (BOS, iFVG, 79% Fib, SMT Divergence).\n4.  **Identify LTF Entry:** After confirming the reversal, identify a 5-minute continuation setup (FVG, Order Block, Breaker Block) for entry, refined on the 1-minute chart.\n5.  **Define Trade Parameters:** Define a precise entry, stop loss, and take profit based on HTF liquidity and new intraday structure.\n\nYour analysis must be objective, data-driven, and strictly follow this sequence. You must respond ONLY in JSON format."
+    },
+    "news_summary_prompt": {
+      "role": "user",
+      "content": "You are a financial news analyst. Your task is to read the following headlines and article snippets and synthesize them into a single, concise paragraph (max 3 sentences) that summarizes the overall market sentiment for the upcoming trading session. Focus on macroeconomic news and sentiment for the major indices (S&P 500, Nasdaq).\n\n**News Articles:**\n**Headline:** {{headline_1}}\n**Snippet:** {{snippet_1}}\n---\n**Headline:** {{headline_2}}\n**Snippet:** {{snippet_2}}\n\n**Your Summary:**"
+    },
+    "pre_market_synthesis_prompt": {
+      "role": "user",
+      "content": "## Pre-Market Analysis Synthesis Request\n\n**Task:** You are a Senior Trading Analyst. Your task is to synthesize the following raw data points into a single, structured JSON object that will serve as the daily briefing for a trading agent. Your analysis should be concise and actionable.\n\n**1. Raw ML Model Daily Bias Predictions:**\n```json\n{{ml_bias_data}}\n```\n\n**2. Raw News Headlines:**\n```text\n{{news_headlines}}\n```\n\n**Your Response:**\nAnalyze both the quantitative model outputs and the qualitative news headlines. Fuse them into a single JSON object with the following structure:\n- `analysis_timestamp`: The current ISO 8601 timestamp.\n- `news_sentiment_summary`: A 1-2 sentence summary of the overall market sentiment based on the news.\n- `key_market_catalysts`: A list of the top 3-4 news events or themes driving the market today.\n- `synthesized_daily_biases`: A list of objects, one for each symbol. For each symbol, provide the ML model's bias and confidence, your `final_bias` (which can be 'Bullish', 'Bearish', 'Choppy', or 'Cautiously Bullish/Bearish'), and a brief `reasoning` explaining how the news confirms, contradicts, or adds nuance to the ML model's prediction."
+    },
+    "main_analysis_prompt": {
+      "role": "user",
+      "content": "## Real-Time Analysis Request\n\n**Task:** Analyze the following market data according to your 5-step methodology and provide a verdict.\n\n**Daily Context (Synthesized Briefing):**\n```json\n{{daily_context}}\n```\n\n**Real-Time Price Data (Latest 15 minutes):**\n```json\n{{realtime_price_data}}\n```\n\n**Your Response:**\nAnalyze each symbol on the watchlist and provide your analysis in the specified JSON format."
+    }
+  }
+
+
+================================================
+FILE: reports/AAPL_rf_feature_importances.csv
+================================================
+,0
+close_vs_range,0.29069298830942136
+body_pct,0.2672324422309135
+lower_wick_pct,0.08067789579973884
+upper_wick_pct,0.07833684755407481
+current_range_pct,0.07624111121128611
+swept_prev_low,0.06184144906831547
+h4_close_vs_sma20,0.022588677885499692
+gap_pct,0.022208024515590667
+prev_day_range_pct,0.02211977040373652
+gap_size_abs,0.021362377715337194
+swept_prev_high,0.020995106934623226
+h1_eod_volume_ratio,0.01851214492628362
+volume_ratio_5d,0.017191163445178965
+
+
+
+================================================
+FILE: reports/AMZN_rf_feature_importances.csv
+================================================
+,0
+close_vs_range,0.3115995919902732
+body_pct,0.25726744769664295
+current_range_pct,0.08722345499323834
+upper_wick_pct,0.0736964989450058
+lower_wick_pct,0.07219058457612328
+volume_ratio_5d,0.037323082396512476
+gap_size_abs,0.027842155522262546
+swept_prev_low,0.027260699822347467
+swept_prev_high,0.026864270022606815
+gap_pct,0.024610596716638393
+h4_close_vs_sma20,0.018743088235870113
+h1_eod_volume_ratio,0.01792223288243958
+prev_day_range_pct,0.017456296200039106
+
+
+
+================================================
+FILE: reports/GOOG_rf_feature_importances.csv
+================================================
+,0
+body_pct,0.2895381998384731
+close_vs_range,0.2844961105112853
+lower_wick_pct,0.0987531194591872
+current_range_pct,0.06639502635524207
+upper_wick_pct,0.06570967177402717
+swept_prev_low,0.03748577250426549
+volume_ratio_5d,0.03189343266991812
+swept_prev_high,0.02678738096031214
+h4_close_vs_sma20,0.0226884839945873
+h1_eod_volume_ratio,0.022074942149685303
+gap_pct,0.02045579976014387
+prev_day_range_pct,0.019041585705943737
+gap_size_abs,0.014680474316929107
+
+
+
+================================================
+FILE: reports/IWM_rf_feature_importances.csv
+================================================
+,0
+close_vs_range,0.3188918680886115
+body_pct,0.2395731309782848
+current_range_pct,0.0949751375035273
+upper_wick_pct,0.07797661140261786
+lower_wick_pct,0.07063526895765085
+gap_pct,0.029831379526608214
+prev_day_range_pct,0.02610309147887848
+h4_close_vs_sma20,0.0260759100445261
+swept_prev_high,0.02501590102679668
+swept_prev_low,0.02405623731295595
+volume_ratio_5d,0.02303073575116789
+gap_size_abs,0.021949303724052415
+h1_eod_volume_ratio,0.021885424204321907
+
+
+
+================================================
+FILE: reports/META_rf_feature_importances.csv
+================================================
+,0
+close_vs_range,0.2923570593544803
+body_pct,0.26624292636347086
+upper_wick_pct,0.0969208619528452
+lower_wick_pct,0.0863499409232801
+current_range_pct,0.06707305922830781
+swept_prev_low,0.03782056690264039
+swept_prev_high,0.030247567198705933
+volume_ratio_5d,0.025777268449602063
+gap_pct,0.023658782851711465
+gap_size_abs,0.01987702914411419
+h4_close_vs_sma20,0.018954182670160396
+h1_eod_volume_ratio,0.01751899655099915
+prev_day_range_pct,0.017201758409682178
+
+
+
+================================================
+FILE: reports/MSFT_rf_feature_importances.csv
+================================================
+,0
+close_vs_range,0.29626346769843237
+body_pct,0.2435288969975542
+lower_wick_pct,0.09174666735488504
+current_range_pct,0.08522678067232266
+upper_wick_pct,0.07898937604714755
+swept_prev_low,0.0485393648165831
+gap_pct,0.029781825775120906
+gap_size_abs,0.027218007715296696
+h4_close_vs_sma20,0.026410360368580705
+volume_ratio_5d,0.02276345386084945
+swept_prev_high,0.01903846043142313
+prev_day_range_pct,0.01725303449946871
+h1_eod_volume_ratio,0.013240303762335563
+
+
+
+================================================
+FILE: reports/NVDA_rf_feature_importances.csv
+================================================
+,0
+body_pct,0.29174751335239546
+close_vs_range,0.28104014130294136
+lower_wick_pct,0.09368930156324458
+upper_wick_pct,0.0803463850334476
+current_range_pct,0.061166284350087356
+volume_ratio_5d,0.03854970894370932
+swept_prev_low,0.03360675311446312
+prev_day_range_pct,0.028017167584981996
+gap_pct,0.022803188773203444
+h1_eod_volume_ratio,0.02113996815405715
+gap_size_abs,0.02008247213925328
+h4_close_vs_sma20,0.019691008548296
+swept_prev_high,0.008120107139919374
+
+
+
+================================================
+FILE: reports/QQQ_rf_feature_importances.csv
+================================================
+,0
+close_vs_range,0.2925132608205889
+body_pct,0.23470597713562377
+current_range_pct,0.11560493698620783
+lower_wick_pct,0.0842024602529014
+upper_wick_pct,0.06285622701672125
+swept_prev_low,0.05807714591653647
+swept_prev_high,0.02694710391356532
+volume_ratio_5d,0.024640280605556092
+h4_close_vs_sma20,0.02263436400193184
+gap_pct,0.02235166302591079
+prev_day_range_pct,0.020057004819392658
+gap_size_abs,0.017871766469784375
+h1_eod_volume_ratio,0.01753780903527926
+
+
+
+================================================
+FILE: reports/SPY_rf_feature_importances.csv
+================================================
+,0
+close_vs_range,0.3038627140419282
+current_range_pct,0.1870991931033024
+body_pct,0.16583037062446773
+upper_wick_pct,0.07470919557458916
+lower_wick_pct,0.05266731727309601
+swept_prev_low,0.05087759749719627
+volume_ratio_5d,0.031103401989721106
+prev_day_range_pct,0.03047976282587159
+h4_close_vs_sma20,0.024691951805304323
+gap_size_abs,0.02340343574393909
+gap_pct,0.019231684388530283
+swept_prev_high,0.018859895390362084
+h1_eod_volume_ratio,0.017183479741691616
+
+
+
+================================================
+FILE: reports/TSLA_rf_feature_importances.csv
+================================================
+,0
+close_vs_range,0.28859172332770033
+body_pct,0.2849662985544357
+lower_wick_pct,0.10996018923917505
+upper_wick_pct,0.07316370688335824
+current_range_pct,0.04670348205099385
+swept_prev_low,0.04462959373222619
+volume_ratio_5d,0.024506627165910184
+h4_close_vs_sma20,0.023667017363231846
+gap_pct,0.02270877850110969
+h1_eod_volume_ratio,0.022623445695060394
+gap_size_abs,0.0205198164738758
+swept_prev_high,0.020299593474729174
+prev_day_range_pct,0.017659727538193653
+
+
+
+================================================
+FILE: reports/2025-10-06/daily_bias.json
+================================================
+[
+  {
+    "symbol": "SPY",
+    "bias": "Choppy",
+    "confidence": 0.995,
+    "notes": "RF; features=HTF+daily ICT; test_acc=93.24%"
+  },
+  {
+    "symbol": "QQQ",
+    "bias": "Bearish",
+    "confidence": 0.953365,
+    "notes": "RF; features=HTF+daily ICT; test_acc=94.59%"
+  },
+  {
+    "symbol": "IWM",
+    "bias": "Choppy",
+    "confidence": 0.987855,
+    "notes": "RF; features=HTF+daily ICT; test_acc=97.30%"
+  },
+  {
+    "symbol": "NVDA",
+    "bias": "Bearish",
+    "confidence": 0.82205,
+    "notes": "RF; features=HTF+daily ICT; test_acc=94.59%"
+  },
+  {
+    "symbol": "TSLA",
+    "bias": "Bearish",
+    "confidence": 0.875017,
+    "notes": "RF; features=HTF+daily ICT; test_acc=97.30%"
+  },
+  {
+    "symbol": "AAPL",
+    "bias": "Bullish",
+    "confidence": 0.932611,
+    "notes": "RF; features=HTF+daily ICT; test_acc=93.24%"
+  },
+  {
+    "symbol": "AMZN",
+    "bias": "Bearish",
+    "confidence": 0.898848,
+    "notes": "RF; features=HTF+daily ICT; test_acc=93.24%"
+  },
+  {
+    "symbol": "META",
+    "bias": "Bearish",
+    "confidence": 0.877773,
+    "notes": "RF; features=HTF+daily ICT; test_acc=93.24%"
+  },
+  {
+    "symbol": "MSFT",
+    "bias": "Choppy",
+    "confidence": 0.996431,
+    "notes": "RF; features=HTF+daily ICT; test_acc=87.84%"
+  },
+  {
+    "symbol": "GOOG",
+    "bias": "Choppy",
+    "confidence": 0.82644,
+    "notes": "RF; features=HTF+daily ICT; test_acc=89.19%"
+  }
+]
+
+
+================================================
+FILE: src/init.py
+================================================
+[Empty file]
+
+
+================================================
+FILE: src/data_processing/daily_bias_computing.py
+================================================
+#!/usr/bin/env python3
+"""
+Compute SAME-DAY daily bias at/just after the 9:30 ET open, per symbol.
+
+- Uses the exact same open-snapshot features as the training script:
+  * Overnight gap vs prev close (prefers 09:30 minute OPEN; falls back to 09:29 premarket CLOSE if needed)
+  * Premarket range/volume, sweep flags, premarket returns
+  * Prior-day OHLC context + sweep flags
+  * Daily ATR14% (computed on prior days), position of today's open within prior day's range
+  * HTF context (1H/4H SMA20 + momentum) using only bars strictly before 9:30 ET
+- Loads models and feature name lists from /models
+- Writes JSON to data/daily_news/YYYY-MM-DD/raw/daily_bias.json  (ET date)
+"""
+
+import os
+import sys
+import json
+import pickle
+from pathlib import Path
+from datetime import datetime, timedelta, timezone
+from alpaca.data.enums import DataFeed, Adjustment
+
+import numpy as np
+import pandas as pd
+from dotenv import load_dotenv
+
+from alpaca.trading.client import TradingClient
+from alpaca.data.historical import StockHistoricalDataClient
+from alpaca.data.requests import StockBarsRequest
+from alpaca.data.timeframe import TimeFrame, TimeFrameUnit
+from alpaca.data.enums import DataFeed
+
+# Project root (this file is under src/data_processing/)
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.append(str(PROJECT_ROOT))
+
+from config.settings import WATCHLIST  # noqa: E402
+
+ET_TZ = "US/Eastern"
+
+# ---------------------- Version-safe time window helper ---------------------- #
+def _bt(df: pd.DataFrame, start: str, end: str, inclusive: str = "both") -> pd.DataFrame:
+    try:
+        return df.between_time(start, end, inclusive=inclusive)
+    except TypeError:
+        out = df.between_time(start, end)
+        st = pd.Timestamp(start).time()
+        en = pd.Timestamp(end).time()
+        if inclusive == "both":
+            return out
+        if inclusive == "left":
+            return out[out.index.time != en]
+        if inclusive == "right":
+            return out[out.index.time != st]
+        if inclusive == "neither":
+            return out[(out.index.time != st) & (out.index.time != en)]
+        return out
+
+# ---------------------- Env + clients ---------------------- #
+def _load_env():
+    dotenv_path = PROJECT_ROOT / ".env"
+    load_dotenv(dotenv_path if dotenv_path.exists() else None)
+
+def _init_alpaca():
+    api_key = os.getenv("ALPACA_API_KEY") or os.getenv("ALPACA_API_KEY_ID")
+    api_secret = os.getenv("ALPACA_SECRET_KEY") or os.getenv("ALPACA_API_SECRET_KEY")
+    if not api_key or not api_secret:
+        raise RuntimeError("Missing Alpaca API credentials in .env")
+    paper = (os.getenv("ALPACA_PAPER_TRADING", "true").lower() == "true")
+    feed_env = (os.getenv("ALPACA_DATA_FEED") or "iex").lower()
+    feed = DataFeed.SIP if feed_env == "sip" else DataFeed.IEX
+    trading = TradingClient(api_key, api_secret, paper=paper)
+    data = StockHistoricalDataClient(api_key, api_secret)
+    return trading, data, feed
+
+def _as_single_symbol_df(bars_df: pd.DataFrame, symbol: str) -> pd.DataFrame:
+    if bars_df is None or bars_df.empty:
+        return pd.DataFrame()
+    if bars_df.index.nlevels == 2:
+        try:
+            df = bars_df.xs(symbol, level=0).copy()
+        except KeyError:
+            return pd.DataFrame()
+    else:
+        df = bars_df.copy()
+    if df.index.tz is None:
+        df.index = df.index.tz_localize(timezone.utc)
+    return df.sort_index()
+
+# ---------------------- Data fetch helpers ---------------------- #
+def _fetch_today_frames(symbol: str, data_client, feed: DataFeed):
+    """
+    Grab just enough history to compute today's open-snapshot features.
+    """
+    now_utc = datetime.now(timezone.utc)
+    start_utc = now_utc - timedelta(days=120)  # enough for ATR14, SMA20, etc.
+
+    # Daily
+    req_d = StockBarsRequest(
+        symbol_or_symbols=[symbol],
+        timeframe=TimeFrame.Day,
+        start=start_utc,
+        end=now_utc,
+        feed=feed,
+        adjustment=Adjustment.RAW,
+    )
+    ddf = _as_single_symbol_df(data_client.get_stock_bars(req_d).df, symbol).tz_convert(ET_TZ)
+
+    # Minute
+    req_m = StockBarsRequest(
+        symbol_or_symbols=[symbol],
+        timeframe=TimeFrame.Minute,
+        start=start_utc,
+        end=now_utc,
+        feed=feed,
+        adjustment=Adjustment.RAW,
+    )
+    mdf = _as_single_symbol_df(data_client.get_stock_bars(req_m).df, symbol).tz_convert(ET_TZ)
+
+    # 1H
+    req_h1 = StockBarsRequest(
+        symbol_or_symbols=[symbol],
+        timeframe=TimeFrame.Hour,
+        start=start_utc,
+        end=now_utc,
+        feed=feed,
+        adjustment=Adjustment.RAW,
+    )
+    h1df = _as_single_symbol_df(data_client.get_stock_bars(req_h1).df, symbol).tz_convert(ET_TZ)
+
+    # 4H
+    req_h4 = StockBarsRequest(
+        symbol_or_symbols=[symbol],
+        timeframe=TimeFrame(4, TimeFrameUnit.Hour),
+        start=start_utc,
+        end=now_utc,
+        feed=feed,
+        adjustment=Adjustment.RAW,
+    )
+    h4df = _as_single_symbol_df(data_client.get_stock_bars(req_h4).df, symbol).tz_convert(ET_TZ)
+
+    return ddf, mdf, h1df, h4df
+
+
+# ---------------------- Feature engineering (mirror training) ---------------------- #
+def _premarket_slice(mdf_et: pd.DataFrame, day_date):
+    return _bt(mdf_et[mdf_et.index.date == day_date], "04:00", "09:29", inclusive="both")
+
+def _first_rth_minute(mdf_et: pd.DataFrame, day_date):
+    rth = _bt(mdf_et[mdf_et.index.date == day_date], "09:30", "16:00", inclusive="left")
+    if rth.empty: return None
+    return rth.iloc[0]
+
+def _daily_atr14_pct(ddf_et: pd.DataFrame, up_to_date) -> float:
+    hist = ddf_et[ddf_et.index.date < up_to_date].tail(60).copy()
+    if hist.empty or len(hist) < 15:
+        return np.nan
+    prev_close = hist["close"].shift(1)
+    tr = np.maximum(hist["high"] - hist["low"],
+                    np.maximum((hist["high"] - prev_close).abs(),
+                               (hist["low"] - prev_close).abs()))
+    atr14 = tr.rolling(14).mean().iloc[-1]
+    ref = hist["close"].iloc[-1]
+    return float((atr14 / max(ref, 1e-10)) * 100.0)
+
+def _compute_open_features_today(symbol: str, ddf_et, mdf_et, h1df, h4df, feature_names):
+    today = pd.Timestamp.now(tz=ET_TZ).date()
+
+    # Use actual prior sessions from the data (handles weekends/holidays)
+    ddf_prior = ddf_et[ddf_et.index.date < today]
+    if len(ddf_prior) < 2:
+        return None, {"error": "insufficient_daily_history"}, None
+
+    prev  = ddf_prior.tail(1)
+    prev2 = ddf_prior.tail(2).head(1)
+
+
+    prev_close = float(prev.iloc[-1]["close"])
+    prev_high  = float(prev.iloc[-1]["high"])
+    prev_low   = float(prev.iloc[-1]["low"])
+    prev_open  = float(prev.iloc[-1]["open"])
+    prev_range = max(prev_high - prev_low, 1e-10)
+    prev_day_range_pct = (prev_range / max(prev_close, 1e-10)) * 100.0
+    prev_day_body_pct = (abs(prev.iloc[-1]["close"] - prev_open) / prev_range) * 100.0
+    prev_day_bull = int(prev.iloc[-1]["close"] > prev_open)
+
+    prev2_high = float(prev2.iloc[-1]["high"])
+    prev2_low  = float(prev2.iloc[-1]["low"])
+    prev_day_swept_prior_high = int(prev_high > prev2_high)
+    prev_day_swept_prior_low  = int(prev_low < prev2_low)
+
+    pre = _premarket_slice(mdf_et, today)
+    if pre.empty:
+        pre_hi = np.nan; pre_lo = np.nan; pre_vol = 0.0
+        pre_first = None; pre_last = None
+    else:
+        pre_hi = float(pre["high"].max())
+        pre_lo = float(pre["low"].min())
+        pre_vol = float(pre["volume"].sum())
+        pre_first = pre.iloc[0]
+        pre_last  = pre.iloc[-1]
+
+    pre_rng_pct = ((pre_hi - pre_lo) / max(prev_close, 1e-10) * 100.0
+                   if not (np.isnan(pre_hi) or np.isnan(pre_lo)) else 0.0)
+    pre_close_vs_prev_close_pct = (((float(pre_last["close"]) - prev_close) / max(prev_close, 1e-10) * 100.0)
+                                   if pre_last is not None else 0.0)
+    pre_return_pct = (((float(pre_last["close"]) - float(pre_first["open"])) / max(float(pre_first["open"]), 1e-10) * 100.0)
+                      if (pre_first is not None and pre_last is not None) else 0.0)
+    pre_sweep_prev_high = int((not np.isnan(pre_hi)) and (pre_hi > prev_high))
+    pre_sweep_prev_low  = int((not np.isnan(pre_lo)) and (pre_lo < prev_low))
+
+    # Prefer 09:30 OPEN, else last premarket CLOSE as proxy if 09:30 isn't published yet
+    open_source = "09:30_minute_open"
+    m0930 = _first_rth_minute(mdf_et, today)
+    if m0930 is not None and not np.isnan(m0930["open"]):
+        open_0930 = float(m0930["open"])
+    else:
+        open_source = "09:29_close_proxy"
+        if pre_last is None or np.isnan(pre_last["close"]):
+            return None, {"error": "no_open_or_premarket"}, None
+        open_0930 = float(pre_last["close"])
+
+    open_pos_in_prev_range = float((open_0930 - prev_low) / max(prev_range, 1e-10))
+    open_to_prev_high_pct_rng = float((prev_high - open_0930) / max(prev_range, 1e-10) * 100.0)
+    open_to_prev_low_pct_rng  = float((open_0930 - prev_low) / max(prev_range, 1e-10) * 100.0)
+    overnight_gap_pct = float((open_0930 - prev_close) / max(prev_close, 1e-10) * 100.0)
+    atr14_pct = _daily_atr14_pct(ddf_et, today)
+
+    open_ts = pd.Timestamp.combine(pd.Timestamp(today), pd.Timestamp("09:30").time()).tz_localize(ET_TZ)
+    h1 = h1df[h1df.index < open_ts]
+    h4 = h4df[h4df.index < open_ts]
+    if h1.empty or h4.empty:
+        return None, {"error": "insufficient_htf_bars"}, None
+
+    h1_close = h1["close"]; h4_close = h4["close"]
+    h1_sma20 = h1_close.rolling(20).mean()
+    h4_sma20 = h4_close.rolling(20).mean()
+    if np.isnan(h1_sma20.iloc[-1]) or np.isnan(h4_sma20.iloc[-1]):
+        return None, {"error": "insufficient_sma_history"}, None
+
+    h1_close_vs_sma20_pct = float(((h1_close.iloc[-1] - h1_sma20.iloc[-1]) / max(h1_sma20.iloc[-1], 1e-10)) * 100.0)
+    h4_close_vs_sma20_pct = float(((h4_close.iloc[-1] - h4_sma20.iloc[-1]) / max(h4_sma20.iloc[-1], 1e-10)) * 100.0)
+    h1_mom_5bars_pct = float(((h1_close.iloc[-1] - (h1_close.iloc[-6] if len(h1_close) > 5 else h1_close.iloc[0])) /
+                               max((h1_close.iloc[-6] if len(h1_close) > 5 else h1_close.iloc[0]), 1e-10)) * 100.0)
+    h4_mom_3bars_pct = float(((h4_close.iloc[-1] - (h4_close.iloc[-4] if len(h4_close) > 3 else h4_close.iloc[0])) /
+                               max((h4_close.iloc[-4] if len(h4_close) > 3 else h4_close.iloc[0]), 1e-10)) * 100.0)
+
+    feature_row = {
+        "overnight_gap_pct": overnight_gap_pct,
+        "premarket_range_pct": pre_rng_pct,
+        "premarket_vol": pre_vol,
+        "premarket_vol_vs_prev5d": float(pre_vol / max(ddf_et[ddf_et.index.date < today]["volume"].tail(5).mean() or 1.0, 1.0)),
+        "premarket_sweep_prev_high": pre_sweep_prev_high,
+        "premarket_sweep_prev_low": pre_sweep_prev_low,
+        "premarket_close_vs_prev_close_pct": pre_close_vs_prev_close_pct,
+        "premarket_return_pct": pre_return_pct,
+
+        "prev_close": prev_close,
+        "prev_day_range_pct": float((prev_high - prev_low) / max(prev_close, 1e-10) * 100.0),
+        "prev_day_body_pct": prev_day_body_pct,
+        "prev_day_bull": prev_day_bull,
+        "prev_day_swept_prior_high": prev_day_swept_prior_high,
+        "prev_day_swept_prior_low": prev_day_swept_prior_low,
+        "open_pos_in_prev_range": open_pos_in_prev_range,
+        "open_to_prev_high_pct_rng": open_to_prev_high_pct_rng,
+        "open_to_prev_low_pct_rng": open_to_prev_low_pct_rng,
+        "daily_atr14_pct": atr14_pct,
+
+        "h1_close_vs_sma20_pct": h1_close_vs_sma20_pct,
+        "h4_close_vs_sma20_pct": h4_close_vs_sma20_pct,
+        "h1_mom_5bars_pct": h1_mom_5bars_pct,
+        "h4_mom_3bars_pct": h4_mom_3bars_pct,
+    }
+
+    # Align to the saved feature order
+    X = pd.DataFrame([[feature_row.get(f, 0.0) for f in feature_names]], columns=feature_names)
+    meta = {
+        "et_date": str(today),
+        "open_source": open_source,
+        "premarket_last_ts": (pre.index[-1].isoformat() if not pre.empty else None),
+    }
+    return X, None, meta
+
+# ---------------------- Model I/O ---------------------- #
+def _load_model_and_encoder(symbol: str):
+    models_dir = PROJECT_ROOT / "models"
+    with open(models_dir / f"{symbol}_daily_bias.pkl", "rb") as f:
+        model = pickle.load(f)
+    with open(models_dir / f"{symbol}_label_encoder.pkl", "rb") as f:
+        le = pickle.load(f)
+    # Feature list (symbol-specific; fallback to project-wide default if needed)
+    feat_path = models_dir / f"{symbol}_feature_names.json"
+    if feat_path.exists():
+        feature_names = json.loads(feat_path.read_text(encoding="utf-8"))
+    else:
+        # Fallback (shouldn't happen if trained by the companion script)
+        feature_names = [
+            "overnight_gap_pct","premarket_range_pct","premarket_vol","premarket_vol_vs_prev5d",
+            "premarket_sweep_prev_high","premarket_sweep_prev_low","premarket_close_vs_prev_close_pct",
+            "premarket_return_pct","prev_close","prev_day_range_pct","prev_day_body_pct","prev_day_bull",
+            "prev_day_swept_prior_high","prev_day_swept_prior_low","open_pos_in_prev_range",
+            "open_to_prev_high_pct_rng","open_to_prev_low_pct_rng","daily_atr14_pct",
+            "h1_close_vs_sma20_pct","h4_close_vs_sma20_pct","h1_mom_5bars_pct","h4_mom_3bars_pct",
+        ]
+    return model, le, feature_names
+
+def _predict(model, le, X_row: pd.DataFrame):
+    proba = model.predict_proba(X_row)[0]
+    classes = list(le.classes_)
+    idx = int(np.argmax(proba))
+    return {
+        "bias": str(classes[idx]),
+        "confidence": float(proba[idx]),
+        "probabilities": {c: float(proba[i]) for i, c in enumerate(classes)}
+    }
+
+# ---------------------- Output ---------------------- #
+def _write_json(results_by_symbol: dict, feed: DataFeed, et_date: str):
+    out_dir = PROJECT_ROOT / "data" / "daily_news" / et_date / "raw"
+    out_dir.mkdir(parents=True, exist_ok=True)
+    out_path = out_dir / "daily_bias.json"
+    payload = {
+        "generated_at_utc": datetime.now(timezone.utc).isoformat(),
+        "generated_for_date_et": et_date,
+        "data_feed": feed.value,
+        "feature_set": "open_snapshot_premarket+HTF",
+        "symbols": results_by_symbol,
+    }
+    with open(out_path, "w", encoding="utf-8") as f:
+        json.dump(payload, f, indent=2)
+    print(f"✅ Wrote: {out_path}")
+
+# ---------------------- Main ---------------------- #
+def main():
+    _load_env()
+    _trading, data_client, feed = _init_alpaca()
+    et_date = str(pd.Timestamp.now(tz=ET_TZ).date())
+
+    results = {}
+    for symbol in WATCHLIST:
+        print(f"--- {symbol} ---")
+        try:
+            model, le, feature_names = _load_model_and_encoder(symbol)
+        except Exception as e:
+            results[symbol] = {"error": f"model_load_failed: {e}"}
+            continue
+
+        ddf, mdf, h1df, h4df = _fetch_today_frames(symbol, data_client, feed)
+        if any(x is None or x.empty for x in [ddf, mdf, h1df, h4df]):
+            results[symbol] = {"error": "insufficient_market_data"}
+            continue
+
+        X_row, err, meta = _compute_open_features_today(symbol, ddf, mdf, h1df, h4df, feature_names)
+        if err is not None:
+            results[symbol] = {"error": err}
+            continue
+
+        pred = _predict(model, le, X_row)
+        results[symbol] = {
+            **pred,
+            "asof_open_meta": meta,
+            "features_snapshot": {k: float(X_row.iloc[0][k]) for k in feature_names}
+        }
+
+    _write_json(results, feed, et_date)
+
+if __name__ == "__main__":
+    main()
+
+
+
+================================================
+FILE: src/data_processing/news_scraper.py
+================================================
+#!/usr/bin/env python3
+"""
+Multi-source market & watchlist news scraper.
+
+Sources:
+- Alpaca News API (if ALPACA_API_KEY/SECRET found)
+- Google News RSS (macro, per-symbol, per-industry)
+- Finviz ticker pages (per-symbol headlines + Sector/Industry discovery)
+
+Window:
+- By default (for the morning run): previous ET day 16:00 -> today ET 09:30
+- Override via env:
+  NEWS_WINDOW_START_ET="YYYY-MM-DDTHH:MM"  (ET)
+  NEWS_WINDOW_END_ET="YYYY-MM-DDTHH:MM"    (ET)
+
+Output:
+  data/daily_news/YYYY-MM-DD/raw/news.json
+Schema (top-level):
+{
+  "date_et": "YYYY-MM-DD",
+  "window_et": {"start": "...", "end": "..."},
+  "sources_used": ["alpaca","google_news","finviz"],
+  "universe": ["SPY","QQQ",...],
+  "industries": {"NVDA": {"sector":"Technology","industry":"Semiconductors"}, ...},
+  "macro": [Article, ...],
+  "symbols": {"SPY": [Article, ...], "NVDA": [...], ...}
+}
+
+Article fields:
+{
+  "headline": str,
+  "source": str,
+  "published_utc": ISO-8601 UTC with tz,
+  "url": str,
+  "summary": str,
+  "tags": [str],
+  "tickers": [str],
+  "keywords": [str],
+  "sentiment": {"compound": float, "label": "positive|neutral|negative", "method": "vader|lexicon"}
+}
+
+Dependencies:
+  pip install requests beautifulsoup4 python-dotenv pandas
+  (optional) pip install vaderSentiment
+"""
+
+import os, sys, json, time, re, html, urllib.parse
+from pathlib import Path
+from datetime import datetime, timezone
+import requests
+import pandas as pd
+from bs4 import BeautifulSoup
+import time
+
+# Project root (this file lives in src/data_processing/)
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.append(str(PROJECT_ROOT))
+
+from dotenv import load_dotenv
+from config.settings import WATCHLIST  # list[str]
+
+ET_TZ = "US/Eastern"
+UA = {"User-Agent": "Mozilla/5.0 (compatible; LLM-Advisor/1.0)"}
+
+# ---------------------- Time helpers ---------------------- #
+def _today_et_date():
+    return pd.Timestamp.now(tz=ET_TZ).date()
+
+def _parse_env_window_or_default():
+    """Prev ET 16:00 -> Today ET 09:30, unless NEWS_WINDOW_* override."""
+    start_env = os.getenv("NEWS_WINDOW_START_ET")
+    end_env = os.getenv("NEWS_WINDOW_END_ET")
+    if start_env and end_env:
+        start = pd.Timestamp(start_env).tz_localize(ET_TZ) if pd.Timestamp(start_env).tzinfo is None else pd.Timestamp(start_env).tz_convert(ET_TZ)
+        end   = pd.Timestamp(end_env).tz_localize(ET_TZ) if pd.Timestamp(end_env).tzinfo is None else pd.Timestamp(end_env).tz_convert(ET_TZ)
+        return start, end
+    now_et = pd.Timestamp.now(tz=ET_TZ)
+    prev = (now_et - pd.Timedelta(days=1)).date()
+    start = pd.Timestamp.combine(pd.Timestamp(prev), pd.Timestamp("16:00").time()).tz_localize(ET_TZ)
+    end   = pd.Timestamp.combine(pd.Timestamp(now_et.date()), pd.Timestamp("09:30").time()).tz_localize(ET_TZ)
+    return start, end
+
+# ---------------------- Tagging / keyword / sentiment ---------------------- #
+_TAG_RULES = [
+    ("earnings", ["earnings","eps","revenue","guidance","outlook","beat","miss"]),
+    ("upgrade", ["upgrade","raised to","overweight","outperform","buy rating","upgrade to"]),
+    ("downgrade", ["downgrade","underweight","underperform","sell rating","cut to"]),
+    ("price_target", ["price target","pt raised","pt cut"]),
+    ("mna", ["merger","acquisition","acquires","combine","takeover","buyout","deal"]),
+    ("sec", ["sec","investigation","subpoena","settlement","charges"]),
+    ("macro_cpi", ["cpi","inflation","consumer price"]),
+    ("macro_ppi", ["ppi","producer price"]),
+    ("macro_jobs", ["nonfarm","payrolls","jobs report","initial claims","unemployment"]),
+    ("macro_fomc", ["fed","fomc","powell","rate hike","rate cut","dot plot","minutes"]),
+    ("macro_gdp", ["gdp","growth"]),
+    ("macro_isms", ["ism","pmi","manufacturing index"]),
+    ("yields", ["treasury","yield","10-year","2-year","curve","term premium"]),
+    ("strike", ["strike","walkout","union"]),
+    ("legal", ["lawsuit","litigation","court","injunction"]),
+    ("guidance", ["guidance","forecast","outlook"]),
+    ("ai", ["ai","artificial intelligence","genai","chatbot","llm"]),
+    ("chips", ["chip","semiconductor","gpu","foundry","node"]),
+    ("ev", ["ev","electric vehicle","battery","gigafactory"]),
+    ("cloud", ["cloud","saas","hyperscaler"]),
+    ("cyber", ["cyber","ransomware","breach","vulnerability"]),
+    ("oil", ["oil","crude","opec","barrel"]),
+    ("energy", ["energy","refinery","gas","lng"]),
+    ("regulatory", ["regulator","antitrust","doj","ftc"])
+]
+
+_STOPWORDS = set("""
+a an and are as at be by for from has have if in into is it its of on or than that the their there they this to was were will with over under up down ahead amid
+""".split())
+
+def _tag_text(text: str) -> list:
+    t = (text or "").lower()
+    tags = [name for name, keys in _TAG_RULES if any(k in t for k in keys)]
+    # rollups
+    if any(x in tags for x in ["macro_cpi","macro_ppi","macro_jobs","macro_fomc","macro_gdp","macro_isms","yields"]):
+        tags.append("macro")
+    if "downgrade" in tags or "sec" in tags or "legal" in tags: tags.append("risk")
+    if "upgrade" in tags or "price_target" in tags: tags.append("potential_tailwind")
+    return sorted(set(tags))
+
+def _extract_keywords(text: str, k: int = 6) -> list:
+    """Very light keyword pick: top non-stopword tokens (letters/#/dash), length>=3."""
+    if not text: return []
+    text = re.sub(r"[^A-Za-z0-9\- ]+", " ", text)
+    tokens = [w.lower() for w in text.split() if len(w) >= 3 and w.lower() not in _STOPWORDS]
+    if not tokens: return []
+    freq = {}
+    for w in tokens:
+        freq[w] = freq.get(w, 0) + 1
+    ranked = sorted(freq.items(), key=lambda x: (-x[1], x[0]))
+    return [w for w, _ in ranked[:k]]
+
+def _sentiment(text: str):
+    """Try VADER, fallback to a tiny lexicon."""
+    t = (text or "").strip()
+    if not t:
+        return {"compound": 0.0, "label": "neutral", "method": "lexicon"}
+    try:
+        from vaderSentiment.vaderSentiment import SentimentIntensityAnalyzer
+        vs = SentimentIntensityAnalyzer().polarity_scores(t)
+        comp = float(vs.get("compound", 0.0))
+        label = "positive" if comp >= 0.05 else ("negative" if comp <= -0.05 else "neutral")
+        return {"compound": comp, "label": label, "method": "vader"}
+    except Exception:
+        pos_words = {"beat","up","surge","record","strong","expand","growth","accelerate","raise","upgrade","buy"}
+        neg_words = {"miss","down","fall","drop","weak","slow","cut","downgrade","lawsuit","investigation","risk","layoff"}
+        score = 0
+        tl = t.lower()
+        for w in pos_words:
+            if w in tl: score += 1
+        for w in neg_words:
+            if w in tl: score -= 1
+        comp = max(-1.0, min(1.0, score / 5.0))
+        label = "positive" if comp > 0.2 else ("negative" if comp < -0.2 else "neutral")
+        return {"compound": comp, "label": label, "method": "lexicon"}
+
+# ---------------------- Normalize article ---------------------- #
+def _to_utc_iso(ts) -> str:
+    try:
+        p = pd.to_datetime(ts)
+    except Exception:
+        p = pd.Timestamp.utcnow()
+    if p.tzinfo is None:
+        try:
+            p = p.tz_localize("UTC")
+        except Exception:
+            p = pd.Timestamp.utcnow().tz_localize("UTC")
+    else:
+        p = p.tz_convert("UTC")
+    return p.isoformat()
+
+def _norm(headline, source, published, url, summary="", tickers=None):
+    text_for_tags = f"{headline or ''}. {summary or ''}"
+    return {
+        "headline": (headline or "").strip(),
+        "source": (source or "").strip(),
+        "published_utc": _to_utc_iso(published),
+        "url": url,
+        "summary": (summary or "").strip(),
+        "tags": _tag_text(text_for_tags),
+        "tickers": sorted(set(tickers or [])),
+        "keywords": _extract_keywords(text_for_tags),
+        "sentiment": _sentiment(text_for_tags),
+    }
+
+# ---------------------- Finviz: Sector/Industry + per-symbol news ---------------------- #
+def _finviz_sector_industry(symbol: str):
+    url = f"https://finviz.com/quote.ashx?t={urllib.parse.quote(symbol)}"
+    try:
+        r = requests.get(url, headers=UA, timeout=20)
+        if r.status_code != 200: return None, None
+        soup = BeautifulSoup(r.text, "html.parser")
+        # Sector/Industry typically in snapshot table
+        meta = {}
+        for td in soup.select("table.snapshot-table2 td"):
+            txt = td.get_text(" ", strip=True)
+            if txt.lower() in ("sector", "industry"):
+                nxt = td.find_next_sibling("td")
+                if nxt:
+                    meta[txt.lower()] = nxt.get_text(" ", strip=True)
+        return meta.get("sector"), meta.get("industry")
+    except Exception:
+        return None, None
+
+def _finviz_symbol_news(symbol: str, start_et, end_et):
+    out = []
+    url = f"https://finviz.com/quote.ashx?t={urllib.parse.quote(symbol)}"
+    try:
+        r = requests.get(url, headers=UA, timeout=20)
+        if r.status_code != 200: return out
+        soup = BeautifulSoup(r.text, "html.parser")
+        tbl = soup.find("table", id="news-table")
+        if not tbl: return out
+        rows = tbl.find_all("tr")
+        # Finviz mixes date-only and time-only rows; assume today if time only
+        cur_date = None
+        for tr in rows[:60]:
+            date_td = tr.find("td", class_="nn-date")
+            a = tr.find("a")
+            if not a: continue
+            headline = a.get_text(" ", strip=True)
+            link = a.get("href")
+            stamp = date_td.get_text(" ", strip=True) if date_td else ""
+            # parse possible patterns
+            ts = pd.to_datetime(stamp, errors="coerce")
+            if ts is None or pd.isna(ts):
+                # if only time, attach today's ET date
+                if re.search(r"\d{1,2}:\d{2}\s*(am|pm|AM|PM)", stamp):
+                    ts = pd.to_datetime(f"{_today_et_date()} {stamp}", errors="coerce")
+            if ts is None or pd.isna(ts):
+                continue
+            ts = ts.tz_localize(ET_TZ) if ts.tzinfo is None else ts.tz_convert(ET_TZ)
+            if not (start_et <= ts <= end_et):
+                continue
+            out.append(_norm(headline, "Finviz", ts, link, "", [symbol]))
+            time.sleep(0.02)
+    except Exception:
+        return out
+    return out
+
+# ---------------------- Google News RSS ---------------------- #
+def _google_rss(query: str, start_et, end_et, max_items=30):
+    url = f"https://news.google.com/rss/search?q={urllib.parse.quote(query)}&hl=en-US&gl=US&ceid=US:en"
+    out = []
+    try:
+        r = requests.get(url, headers=UA, timeout=20)
+        if r.status_code != 200: return out
+        import xml.etree.ElementTree as ET
+        root = ET.fromstring(r.content)
+        items = root.findall(".//item")
+        for it in items[:max_items]:
+            title = (it.findtext("title") or "").strip()
+            link = (it.findtext("link") or "").strip()
+            pub = it.findtext("{http://purl.org/dc/elements/1.1/}date") or it.findtext("pubDate") or ""
+            src_node = it.find("{http://news.google.com}source")
+            source = (src_node.text or "").strip() if src_node is not None else "GoogleNews"
+            ts = pd.to_datetime(pub, errors="coerce")
+            if ts is None or pd.isna(ts): ts = pd.Timestamp.utcnow()
+            ts = ts.tz_localize("UTC") if ts.tzinfo is None else ts.tz_convert("UTC")
+            # ET window filter
+            ts_et = ts.tz_convert(ET_TZ)
+            if not (start_et <= ts_et <= end_et): continue
+            out.append(_norm(title, source, ts, link, "", []))
+    except Exception:
+        return out
+    return out
+
+# ---------------------- Alpaca News ---------------------- #
+def _alpaca_available():
+    return bool(os.getenv("ALPACA_API_KEY") or os.getenv("ALPACA_API_KEY_ID"))
+
+def _fetch_alpaca(symbols, start_et, end_et, per_page=50, max_pages=10):
+    api_key = os.getenv("ALPACA_API_KEY") or os.getenv("ALPACA_API_KEY_ID")
+    api_secret = os.getenv("ALPACA_SECRET_KEY") or os.getenv("ALPACA_API_SECRET_KEY")
+    if not api_key or not api_secret:
+        return []
+    headers = {
+        "Apca-Api-Key-Id": api_key,
+        "Apca-Api-Secret-Key": api_secret,
+        "Accept": "application/json",
+    }
+    params = {
+        "symbols": ",".join(symbols),
+        "start": start_et.tz_convert("UTC").isoformat(),
+        "end": end_et.tz_convert("UTC").isoformat(),
+        "include_content": "false",
+        "limit": str(per_page),
+        "sort": "desc",
+    }
+    base = "https://data.alpaca.markets/v1beta1/news"
+    all_items, tok, pages = [], None, 0
+    while pages < max_pages:
+        q = params.copy()
+        if tok: q["page_token"] = tok
+        resp = requests.get(base, headers=headers, params=q, timeout=20)
+        if resp.status_code != 200: break
+        js = resp.json()
+        items = js.get("news") or js.get("data") or []
+        all_items.extend(items)
+        tok = js.get("next_page_token")
+        if not tok: break
+        pages += 1
+        time.sleep(0.25)
+
+    out = []
+    for it in all_items:
+        syms = it.get("symbols") or []
+        headline = it.get("headline") or it.get("title") or ""
+        source = (it.get("source") or {}).get("name") if isinstance(it.get("source"), dict) else it.get("source") or ""
+        published = it.get("created_at") or it.get("updated_at") or it.get("published_at") or it.get("time_published")
+        url = it.get("url") or it.get("link")
+        summary = it.get("summary") or ""
+        out.append(_norm(headline, source, published, url, summary, syms))
+    return out
+
+# ---------------------- Build industry map via Finviz ---------------------- #
+def _build_industry_map(symbols):
+    ind = {}
+    for s in symbols:
+        sec, indus = _finviz_sector_industry(s)
+        ind[s] = {"sector": sec, "industry": indus}
+        time.sleep(0.2)
+    return ind
+
+# ---------------------- De-duplication ---------------------- #
+def _dedupe_sort(items):
+    seen, out = set(), []
+    for a in items:
+        key = (a.get("url") or "") + "||" + (a.get("headline") or "")
+        if key in seen: continue
+        seen.add(key); out.append(a)
+    return sorted(out, key=lambda x: x.get("published_utc",""), reverse=True)
+
+# ---------------------- MAIN ---------------------- #
+def main():
+    start_time = time.time()
+    # env
+    dotenv_path = PROJECT_ROOT / ".env"
+    load_dotenv(dotenv_path if dotenv_path.exists() else None)
+
+    et_date = str(_today_et_date())
+    start_et, end_et = _parse_env_window_or_default()
+
+    watchlist = list(dict.fromkeys(WATCHLIST))  # preserve order; dedupe
+    sources_used = []
+    macro_items = []
+    symbol_items = {s: [] for s in watchlist}
+
+    # 1) Industry discovery (Finviz)
+    industries = _build_industry_map(watchlist)
+
+    # 2) Alpaca news (watchlist + macro proxies)
+    alpaca_symbols = watchlist + ["SPY","QQQ","IWM","DIA","TLT","XLF","XLE","XLK","XLY","XLP","XLV"]
+    alpaca_items = _fetch_alpaca(alpaca_symbols, start_et, end_et) if _alpaca_available() else []
+    if alpaca_items:
+        sources_used.append("alpaca")
+        # Split into macro vs symbol: anything with broad ETFs or no direct WL symbol → macro
+        wl_set = set(watchlist)
+        for a in alpaca_items:
+            syms = set(a.get("tickers", []))
+            if "SPY" in syms or "QQQ" in syms or "IWM" in syms or ("XL" in "".join(syms)):  # sector ETFs heuristic
+                macro_items.append(a)
+            added_to_symbol = False
+            for s in wl_set.intersection(syms):
+                symbol_items.setdefault(s, []).append(a)
+                added_to_symbol = True
+            if not added_to_symbol and not syms:
+                macro_items.append(a)
+
+    # 3) Google News RSS — Macro queries (always)
+    sources_used.append("google_news")
+    macro_queries = [
+        "US stocks OR equities premarket OR Wall Street",
+        "Federal Reserve OR FOMC OR interest rates",
+        "CPI inflation OR PPI inflation",
+        "jobs report OR nonfarm payrolls OR unemployment claims",
+        "Treasury yields OR 10-year yield OR 2-year yield",
+        "VIX volatility OR risk-off OR risk-on",
+        "GDP growth OR recession",
+        "ISM PMI manufacturing services",
+        "oil prices OR OPEC OR crude",
+    ]
+    for q in macro_queries:
+        macro_items.extend(_google_rss(q, start_et, end_et, max_items=25))
+        time.sleep(0.15)
+
+    # 4) Google News RSS — Industry queries
+    for s, meta in industries.items():
+        ind = meta.get("industry")
+        sec = meta.get("sector")
+        if ind:
+            macro_items.extend(_google_rss(f'{ind} industry', start_et, end_et, max_items=15))
+            time.sleep(0.1)
+        if sec:
+            macro_items.extend(_google_rss(f'{sec} sector stocks', start_et, end_et, max_items=10))
+            time.sleep(0.1)
+
+    # 5) Google News RSS — Per-symbol queries
+    for s in watchlist:
+        items = _google_rss(f'{s} stock', start_et, end_et, max_items=25)
+        if items:
+            symbol_items.setdefault(s, []).extend(items)
+        time.sleep(0.1)
+
+    # 6) Finviz per-symbol headlines
+    sources_used.append("finviz")
+    for s in watchlist:
+        items = _finviz_symbol_news(s, start_et, end_et)
+        if items:
+            symbol_items.setdefault(s, []).extend(items)
+
+    # 7) Dedupe + sort
+    macro_items = _dedupe_sort(macro_items)
+    for s in watchlist:
+        symbol_items[s] = _dedupe_sort(symbol_items.get(s, []))
+
+    # 8) Write out
+    out_dir = PROJECT_ROOT / "data" / "daily_news" / et_date / "raw"
+    out_dir.mkdir(parents=True, exist_ok=True)
+    out_path = out_dir / "news.json"
+    payload = {
+        "date_et": et_date,
+        "window_et": {"start": start_et.isoformat(), "end": end_et.isoformat()},
+        "sources_used": sources_used,
+        "universe": watchlist,
+        "industries": industries,
+        "macro": macro_items,
+        "symbols": symbol_items,
+    }
+    out_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+    print(f"✅ Wrote news file: {out_path}")
+    end_time = time.time()
+    elapsed = end_time - start_time
+    print(f"✅ Time taken: {elapsed:.2f} seconds")
+
+if __name__ == "__main__":
+    main()
+
+
+
+================================================
+FILE: src/data_processing/synthesize_briefing.py
+================================================
+import os
+import sys
+import json
+from datetime import datetime
+import pytz
+from dotenv import load_dotenv
+
+# --- LLM API Client Imports ---
+import google.generativeai as genai
+import openai
+import anthropic
+
+# --- Add project root to path for local imports ---
+# This allows us to import from the 'prompts' and 'config' directories
+sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+
+# --- Configuration ---
+# Load environment variables from the .env file in the project root
+load_dotenv()
+
+# Configure API clients
+try:
+    genai.configure(api_key=os.getenv("GOOGLE_API_KEY"))
+    openai.api_key = os.getenv("OPENAI_API_KEY")
+    anthropic_client = anthropic.Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
+except TypeError:
+    print("Error: One or more API keys are not set in the .env file. Please check your configuration.")
+    sys.exit(1)
+
+# --- Define the models you want to query ---
+# NOTE: The models you requested are not yet released.
+# I am substituting them with the latest appropriate models available.
+MODELS_TO_QUERY = {
+    "gemini": "gemini-2.5-flash-lite",
+    "openai": "gpt-5-nano",
+    "anthropic": "claude-sonnet-4-5-20250929"
+}
+
+def get_file_paths():
+    """Generates the absolute paths for today's data files."""
+    project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    today_str = datetime.now(pytz.timezone('US/Eastern')).strftime('%Y-%m-%d')
+    daily_folder_processed = os.path.join(project_root, 'data', 'daily_news', today_str, 'processed')
+    daily_folder = os.path.join(project_root, 'data', 'daily_news', today_str, 'raw')
+    os.makedirs(daily_folder_processed, exist_ok=True) # Ensure the directory exists
+
+    return {
+        "bias_input": os.path.join(daily_folder, 'daily_bias.json'),
+        "news_input": os.path.join(daily_folder, 'news.json'),
+        "prompt_template": os.path.join(project_root, 'prompts', 'prompts.json'),
+        "processed_output": os.path.join(daily_folder_processed, 'processed_briefing.json')
+    }
+
+def construct_prompt(paths):
+    """Loads raw data and constructs the final prompt for the LLMs."""
+    try:
+        with open(paths['bias_input'], 'r') as f:
+            ml_bias_data = json.load(f)
+        
+        # NOTE: Using your updated file structure where news.json is in the daily folder
+        with open(paths['news_input'], 'r') as f:
+            news_data = json.load(f)
+            # We only need the headlines for this prompt
+            raw_headlines = [article['headline'] for article in news_data.get('macro', [])]
+            headlines_text = "\n".join(f"- {h}" for h in raw_headlines)
+
+        with open(paths['prompt_template'], 'r') as f:
+            synthesis_prompt_template = json.load(f)['pre_market_synthesis_prompt']['content']
+
+    except FileNotFoundError as e:
+        print(f"Error loading data: {e}. Make sure raw data files exist.")
+        return None
+    except json.JSONDecodeError as e:
+        print(f"Error decoding JSON from a file: {e}")
+        return None
+
+    # Replace placeholders in the prompt template
+    prompt = synthesis_prompt_template.replace(
+        "{{ml_bias_data}}", json.dumps(ml_bias_data, indent=2)
+    )
+    prompt = prompt.replace("{{news_headlines}}", headlines_text)
+    
+    return prompt
+
+def get_llm_opinions(prompt):
+    """Queries the specified LLMs and returns their raw responses."""
+    if not prompt:
+        return None
+
+    all_responses = {"generated_at_utc": datetime.utcnow().isoformat(), "model_responses": {}}
+    
+    print("\nQuerying LLMs for pre-market analysis...")
+
+    # --- Gemini ---
+    try:
+        print(f"  - Requesting analysis from Gemini ({MODELS_TO_QUERY['gemini']})...")
+        model = genai.GenerativeModel(MODELS_TO_QUERY['gemini'])
+        response = model.generate_content(prompt)
+        # Gemini often returns JSON wrapped in markdown, so we clean it
+        cleaned_response = response.text.strip().replace('```json\n', '').replace('\n```', '')
+        all_responses["model_responses"]["gemini"] = json.loads(cleaned_response)
+        print("    ...Success.")
+    except Exception as e:
+        all_responses["model_responses"]["gemini"] = {"error": str(e)}
+        print(f"    ...FAILED. Error: {e}")
+
+    # --- OpenAI ---
+    try:
+        print(f"  - Requesting analysis from OpenAI ({MODELS_TO_QUERY['openai']})...")
+        response = openai.chat.completions.create(
+            model=MODELS_TO_QUERY['openai'],
+            response_format={"type": "json_object"},
+            messages=[
+                {"role": "system", "content": "You are a Senior Trading Analyst providing structured JSON output."},
+                {"role": "user", "content": prompt}
+            ]
+        )
+        all_responses["model_responses"]["openai"] = json.loads(response.choices[0].message.content)
+        print("    ...Success.")
+    except Exception as e:
+        all_responses["model_responses"]["openai"] = {"error": str(e)}
+        print(f"    ...FAILED. Error: {e}")
+
+    # # --- Anthropic ---
+    # try:
+    #     print(f"  - Requesting analysis from Anthropic ({MODELS_TO_QUERY['anthropic']})...")
+    #     message = anthropic_client.messages.create(
+    #         model=MODELS_TO_QUERY['anthropic'],
+    #         max_tokens=4096,
+    #         messages=[
+    #              {"role": "user", "content": prompt}
+    #         ]
+    #     )
+    #     # Anthropic doesn't have a forced JSON mode, so we extract it from the text block
+    #     cleaned_response = message.content[0].text.strip().replace('```json\n', '').replace('\n```', '')
+    #     all_responses["model_responses"]["anthropic"] = json.loads(cleaned_response)
+    #     print("    ...Success.")
+    # except Exception as e:
+    #     all_responses["model_responses"]["anthropic"] = {"error": str(e)}
+    #     print(f"    ...FAILED. Error: {e}")
+
+    return all_responses
+
+def main():
+    """Main execution function."""
+    print("="*50)
+    print("Starting Pre-Market Synthesis Process")
+    print("="*50)
+
+    # 1. Get file paths
+    paths = get_file_paths()
+    print(f"Output will be saved to: {paths['processed_output']}")
+
+    # 2. Construct the prompt
+    prompt = construct_prompt(paths)
+    if not prompt:
+        sys.exit(1) # Exit if prompt construction failed
+
+    # 3. Get opinions from all LLMs
+    final_data = get_llm_opinions(prompt)
+
+    # 4. Save the combined responses to a processed JSON file
+    if final_data:
+        try:
+            with open(paths['processed_output'], 'w') as f:
+                json.dump(final_data, f, indent=4)
+            print(f"\nSuccessfully saved all LLM responses to {paths['processed_output']}")
+        except Exception as e:
+            print(f"Error saving the final JSON file: {e}")
+    
+    print("\nSynthesis process complete.")
+    print("="*50)
+
+
+if __name__ == "__main__":
+    main()
+
+
+================================================
+FILE: training/train_daily_bias_models.py
+================================================
+#!/usr/bin/env python3
+"""
+Open-Snapshot Daily Bias Training (premarket + HTF context strictly before 9:30 ET)
+
+What it does
+------------
+Per symbol:
+- Downloads Daily + Minute + 1H + 4H bars.
+- For each trading day, builds features that are available up to the 9:30 ET open.
+- Labels the SAME DAY by end-of-day return from the 09:30 ET open to that day's close.
+- Trains a classifier (RandomForest by default).
+- Saves:
+    models/<SYMBOL>_daily_bias.pkl
+    models/<SYMBOL>_label_encoder.pkl
+    models/<SYMBOL>_feature_names.json
+    models/feature_importances/<SYMBOL>_importances.csv
+    models/feature_importances/<SYMBOL>_importances.png
+"""
+
+import os
+import sys
+import json
+import pickle
+import warnings
+from pathlib import Path
+from datetime import datetime, timedelta, timezone
+from alpaca.data.enums import DataFeed, Adjustment
+
+import numpy as np
+import pandas as pd
+from dotenv import load_dotenv
+
+from sklearn.model_selection import train_test_split
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.preprocessing import LabelEncoder
+from sklearn.metrics import accuracy_score, classification_report
+
+import matplotlib
+matplotlib.use("Agg")  # headless
+import matplotlib.pyplot as plt
+
+# ---- Alpaca (alpaca-py) ----
+from alpaca.trading.client import TradingClient
+from alpaca.data.historical import StockHistoricalDataClient
+from alpaca.data.requests import StockBarsRequest
+from alpaca.data.timeframe import TimeFrame, TimeFrameUnit
+from alpaca.data.enums import DataFeed
+
+# Project root (this file sits under training/)
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.append(str(PROJECT_ROOT))
+
+# Expect config/settings.py with WATCHLIST
+from config.settings import WATCHLIST  # noqa: E402
+
+warnings.filterwarnings("ignore")
+ET_TZ = "US/Eastern"
+
+# ---------------------- Version-safe time window helper ---------------------- #
+def _bt(df: pd.DataFrame, start: str, end: str, inclusive: str = "both") -> pd.DataFrame:
+    """
+    Pandas between_time compatibility across versions.
+    inclusive: 'both' | 'left' | 'right' | 'neither'
+    """
+    try:
+        return df.between_time(start, end, inclusive=inclusive)
+    except TypeError:
+        out = df.between_time(start, end)  # old pandas defaults ~inclusive of both
+        st = pd.Timestamp(start).time()
+        en = pd.Timestamp(end).time()
+        if inclusive == "both":
+            return out
+        if inclusive == "left":
+            return out[out.index.time != en]
+        if inclusive == "right":
+            return out[out.index.time != st]
+        if inclusive == "neither":
+            return out[(out.index.time != st) & (out.index.time != en)]
+        return out
+
+# ---------------------- Env + clients ---------------------- #
+def _load_env():
+    dotenv_path = PROJECT_ROOT / ".env"
+    load_dotenv(dotenv_path if dotenv_path.exists() else None)
+
+def _init_alpaca():
+    api_key = os.getenv("ALPACA_API_KEY") or os.getenv("ALPACA_API_KEY_ID")
+    api_secret = os.getenv("ALPACA_SECRET_KEY") or os.getenv("ALPACA_API_SECRET_KEY")
+    if not api_key or not api_secret:
+        raise RuntimeError("Missing Alpaca API credentials in .env")
+
+    paper = (os.getenv("ALPACA_PAPER_TRADING", "true").lower() == "true")
+    feed_env = (os.getenv("ALPACA_DATA_FEED") or "iex").lower()
+    feed = DataFeed.SIP if feed_env == "sip" else DataFeed.IEX
+
+    trading = TradingClient(api_key, api_secret, paper=paper)
+    data = StockHistoricalDataClient(api_key, api_secret)
+    return trading, data, feed
+
+def _as_single_symbol_df(bars_df: pd.DataFrame, symbol: str) -> pd.DataFrame:
+    if bars_df is None or bars_df.empty:
+        return pd.DataFrame()
+    if bars_df.index.nlevels == 2:
+        try:
+            df = bars_df.xs(symbol, level=0).copy()
+        except KeyError:
+            return pd.DataFrame()
+    else:
+        df = bars_df.copy()
+    if df.index.tz is None:
+        df.index = df.index.tz_localize(timezone.utc)
+    return df.sort_index()
+
+# ---------------------- Data fetch ---------------------- #
+def _fetch_all_frames(symbol: str, data_client, feed: DataFeed,
+                      lookback_days: int = 1200):
+    """
+    Get Daily, Minute, 1H, 4H bars for lookback_days.
+    """
+    end_utc = datetime.now(timezone.utc)
+    start_utc = end_utc - timedelta(days=lookback_days)
+
+    # Daily
+    req_d = StockBarsRequest(
+        symbol_or_symbols=[symbol],
+        timeframe=TimeFrame.Day,
+        start=start_utc,
+        end=end_utc,
+        feed=feed,
+        adjustment=Adjustment.RAW,
+    )
+    ddf = _as_single_symbol_df(data_client.get_stock_bars(req_d).df, symbol).tz_convert(ET_TZ)
+
+    # Minute
+    req_m = StockBarsRequest(
+        symbol_or_symbols=[symbol],
+        timeframe=TimeFrame.Minute,
+        start=start_utc,
+        end=end_utc,
+        feed=feed,
+        adjustment=Adjustment.RAW,
+    )
+    mdf = _as_single_symbol_df(data_client.get_stock_bars(req_m).df, symbol).tz_convert(ET_TZ)
+
+    # 1H
+    req_h1 = StockBarsRequest(
+        symbol_or_symbols=[symbol],
+        timeframe=TimeFrame.Hour,
+        start=start_utc,
+        end=end_utc,
+        feed=feed,
+        adjustment=Adjustment.RAW,
+    )
+    h1df = _as_single_symbol_df(data_client.get_stock_bars(req_h1).df, symbol).tz_convert(ET_TZ)
+
+    # 4H
+    req_h4 = StockBarsRequest(
+        symbol_or_symbols=[symbol],
+        timeframe=TimeFrame(4, TimeFrameUnit.Hour),
+        start=start_utc,
+        end=end_utc,
+        feed=feed,
+        adjustment=Adjustment.RAW,
+    )
+    h4df = _as_single_symbol_df(data_client.get_stock_bars(req_h4).df, symbol).tz_convert(ET_TZ)
+
+    return ddf, mdf, h1df, h4df
+
+
+# ---------------------- Feature engineering (strictly <= 9:30 ET) ---------------------- #
+FEATURES = [
+    # Overnight & premarket
+    "overnight_gap_pct",
+    "premarket_range_pct",
+    "premarket_vol",
+    "premarket_vol_vs_prev5d",
+    "premarket_sweep_prev_high",
+    "premarket_sweep_prev_low",
+    "premarket_close_vs_prev_close_pct",
+    "premarket_return_pct",
+
+    # Previous-day context
+    "prev_close",
+    "prev_day_range_pct",
+    "prev_day_body_pct",
+    "prev_day_bull",
+    "prev_day_swept_prior_high",
+    "prev_day_swept_prior_low",
+    "open_pos_in_prev_range",
+    "open_to_prev_high_pct_rng",
+    "open_to_prev_low_pct_rng",
+    "daily_atr14_pct",
+
+    # HTF context (bars strictly before 9:30 ET)
+    "h1_close_vs_sma20_pct",
+    "h4_close_vs_sma20_pct",
+    "h1_mom_5bars_pct",
+    "h4_mom_3bars_pct",
+]
+
+def _first_rth_minute(mdf_et: pd.DataFrame, day_date):
+    rth = _bt(mdf_et[mdf_et.index.date == day_date], "09:30", "16:00", inclusive="left")
+    if rth.empty: return None
+    return rth.iloc[0]
+
+def _premarket_slice(mdf_et: pd.DataFrame, day_date):
+    return _bt(mdf_et[mdf_et.index.date == day_date], "04:00", "09:29", inclusive="both")
+
+def _last_before(ts_series: pd.Series, cutoff_ts: pd.Timestamp):
+    return ts_series[ts_series.index < cutoff_ts].iloc[-1] if not ts_series[ts_series.index < cutoff_ts].empty else None
+
+def _sma(series: pd.Series, n: int):
+    return series.rolling(n).mean()
+
+def _daily_atr14_pct(ddf_et: pd.DataFrame, up_to_date) -> float:
+    # Use prior days only (<= prev day)
+    hist = ddf_et[ddf_et.index.date < up_to_date].tail(60).copy()
+    if hist.empty or len(hist) < 15:
+        return np.nan
+    prev_close = hist["close"].shift(1)
+    tr = np.maximum(hist["high"] - hist["low"],
+                    np.maximum((hist["high"] - prev_close).abs(),
+                               (hist["low"] - prev_close).abs()))
+    atr14 = tr.rolling(14).mean().iloc[-1]
+    ref = hist["close"].iloc[-1]
+    return float((atr14 / max(ref, 1e-10)) * 100.0)
+
+def _build_row_for_day(day_ts, ddf_et, mdf_et, h1df, h4df):
+    day_date = day_ts.date()
+    prev_day = (pd.Timestamp(day_ts).tz_convert(ET_TZ) - pd.Timedelta(days=1)).date()
+    prev2_day = (pd.Timestamp(day_ts).tz_convert(ET_TZ) - pd.Timedelta(days=2)).date()
+
+    prev = ddf_et[ddf_et.index.date == prev_day]
+    prev2 = ddf_et[ddf_et.index.date == prev2_day]
+    if prev.empty or prev2.empty:
+        return None  # need at least prior two days for sweep flags
+
+    prev_close = float(prev.iloc[-1]["close"])
+    prev_high  = float(prev.iloc[-1]["high"])
+    prev_low   = float(prev.iloc[-1]["low"])
+    prev_open  = float(prev.iloc[-1]["open"])
+    prev_range = max(prev_high - prev_low, 1e-10)
+    prev_day_range_pct = (prev_range / max(prev_close, 1e-10)) * 100.0
+    prev_day_body_pct = (abs(prev.iloc[-1]["close"] - prev_open) / prev_range) * 100.0
+    prev_day_bull = int(prev.iloc[-1]["close"] > prev_open)
+
+    prev2_high = float(prev2.iloc[-1]["high"])
+    prev2_low  = float(prev2.iloc[-1]["low"])
+    prev_day_swept_prior_high = int(prev_high > prev2_high)
+    prev_day_swept_prior_low  = int(prev_low < prev2_low)
+
+    # Premarket
+    pre = _premarket_slice(mdf_et, day_date)
+    if pre.empty:
+        pre_hi = np.nan; pre_lo = np.nan; pre_vol = 0.0
+        pre_first = None; pre_last = None
+    else:
+        pre_hi = float(pre["high"].max())
+        pre_lo = float(pre["low"].min())
+        pre_vol = float(pre["volume"].sum())
+        pre_first = pre.iloc[0]
+        pre_last  = pre.iloc[-1]
+
+    pre_rng_pct = ((pre_hi - pre_lo) / max(prev_close, 1e-10) * 100.0
+                   if not (np.isnan(pre_hi) or np.isnan(pre_lo)) else 0.0)
+    pre_close_vs_prev_close_pct = (((float(pre_last["close"]) - prev_close) / max(prev_close, 1e-10) * 100.0)
+                                   if pre_last is not None else 0.0)
+    pre_return_pct = (((float(pre_last["close"]) - float(pre_first["open"])) / max(float(pre_first["open"]), 1e-10) * 100.0)
+                      if (pre_first is not None and pre_last is not None) else 0.0)
+    pre_sweep_prev_high = int((not np.isnan(pre_hi)) and (pre_hi > prev_high))
+    pre_sweep_prev_low  = int((not np.isnan(pre_lo)) and (pre_lo < prev_low))
+
+    # Open (09:30) and label
+    m0930 = _first_rth_minute(mdf_et, day_date)
+    if m0930 is None or np.isnan(m0930["open"]):
+        return None  # cannot label day without a proper 09:30 open
+    open_0930 = float(m0930["open"])
+
+    # HTF context strictly before 09:30
+    open_ts = pd.Timestamp.combine(pd.Timestamp(day_date), pd.Timestamp("09:30").time()).tz_localize(ET_TZ)
+    h1 = h1df[h1df.index < open_ts]
+    h4 = h4df[h4df.index < open_ts]
+    if h1.empty or h4.empty:
+        return None
+
+    h1_close = h1["close"]
+    h4_close = h4["close"]
+    h1_sma20 = _sma(h1_close, 20)
+    h4_sma20 = _sma(h4_close, 20)
+
+    h1_close_vs_sma20_pct = float(((h1_close.iloc[-1] - h1_sma20.iloc[-1]) / max(h1_sma20.iloc[-1], 1e-10)) * 100.0) if not np.isnan(h1_sma20.iloc[-1]) else np.nan
+    h4_close_vs_sma20_pct = float(((h4_close.iloc[-1] - h4_sma20.iloc[-1]) / max(h4_sma20.iloc[-1], 1e-10)) * 100.0) if not np.isnan(h4_sma20.iloc[-1]) else np.nan
+
+    h1_mom_5bars_pct = float(((h1_close.iloc[-1] - (h1_close.iloc[-6] if len(h1_close) > 5 else h1_close.iloc[0])) /
+                               max((h1_close.iloc[-6] if len(h1_close) > 5 else h1_close.iloc[0]), 1e-10)) * 100.0)
+    h4_mom_3bars_pct = float(((h4_close.iloc[-1] - (h4_close.iloc[-4] if len(h4_close) > 3 else h4_close.iloc[0])) /
+                               max((h4_close.iloc[-4] if len(h4_close) > 3 else h4_close.iloc[0]), 1e-10)) * 100.0)
+
+    # Open position relative to prev day's range
+    open_pos_in_prev_range = float((open_0930 - prev_low) / max(prev_range, 1e-10))
+    open_to_prev_high_pct_rng = float((prev_high - open_0930) / max(prev_range, 1e-10) * 100.0)
+    open_to_prev_low_pct_rng  = float((open_0930 - prev_low) / max(prev_range, 1e-10) * 100.0)
+
+    # ATR14% based on prior days only
+    atr14_pct = _daily_atr14_pct(ddf_et, day_date)
+
+    # Overnight gap
+    overnight_gap_pct = float((open_0930 - prev_close) / max(prev_close, 1e-10) * 100.0)
+
+    # LABEL (same-day EOD movement from 09:30 open)
+    today_row = ddf_et[ddf_et.index.date == day_date]
+    if today_row.empty:
+        return None
+    close_px = float(today_row.iloc[-1]["close"])
+    ret_pct = float((close_px - open_0930) / max(open_0930, 1e-10) * 100.0)
+    if ret_pct > 0.25:
+        label = "bullish"
+    elif ret_pct < -0.25:
+        label = "bearish"
+    else:
+        label = "choppy"
+
+    row = {
+        "date_et": pd.Timestamp(day_ts).tz_convert(ET_TZ).normalize(),
+        "overnight_gap_pct": overnight_gap_pct,
+        "premarket_range_pct": pre_rng_pct,
+        "premarket_vol": pre_vol,
+        "premarket_vol_vs_prev5d": float(pre_vol / max(ddf_et[ddf_et.index.date < day_date]["volume"].tail(5).mean() or 1.0, 1.0)),
+        "premarket_sweep_prev_high": pre_sweep_prev_high,
+        "premarket_sweep_prev_low": pre_sweep_prev_low,
+        "premarket_close_vs_prev_close_pct": pre_close_vs_prev_close_pct,
+        "premarket_return_pct": pre_return_pct,
+
+        "prev_close": prev_close,
+        "prev_day_range_pct": prev_day_range_pct,
+        "prev_day_body_pct": prev_day_body_pct,
+        "prev_day_bull": prev_day_bull,
+        "prev_day_swept_prior_high": prev_day_swept_prior_high,
+        "prev_day_swept_prior_low": prev_day_swept_prior_low,
+        "open_pos_in_prev_range": open_pos_in_prev_range,
+        "open_to_prev_high_pct_rng": open_to_prev_high_pct_rng,
+        "open_to_prev_low_pct_rng": open_to_prev_low_pct_rng,
+        "daily_atr14_pct": atr14_pct,
+
+        "h1_close_vs_sma20_pct": h1_close_vs_sma20_pct,
+        "h4_close_vs_sma20_pct": h4_close_vs_sma20_pct,
+        "h1_mom_5bars_pct": h1_mom_5bars_pct,
+        "h4_mom_3bars_pct": h4_mom_3bars_pct,
+
+        "label": label,
+    }
+    # clean missing HTF SMA if insufficient history
+    if any(np.isnan([row["h1_close_vs_sma20_pct"], row["h4_close_vs_sma20_pct"], atr14_pct])):
+        return None
+    return row
+
+def _build_training_frame(symbol: str, ddf_et: pd.DataFrame, mdf_et: pd.DataFrame, h1df: pd.DataFrame, h4df: pd.DataFrame) -> pd.DataFrame:
+    rows = []
+    for ts, _ in ddf_et.iterrows():
+        r = _build_row_for_day(ts, ddf_et, mdf_et, h1df, h4df)
+        if r is not None:
+            rows.append(r)
+    if not rows:
+        return pd.DataFrame()
+    df = pd.DataFrame(rows).set_index("date_et").sort_index()
+    df = df.replace([np.inf, -np.inf], np.nan).dropna()
+    return df
+
+# ---------------------- Train + save ---------------------- #
+def _train_and_save(symbol: str, df: pd.DataFrame):
+    X = df[FEATURES]
+    y = df["label"]
+
+    le = LabelEncoder()
+    y_enc = le.fit_transform(y)
+
+    X_train, X_test, y_train, y_test = train_test_split(
+        X, y_enc, test_size=0.2, random_state=42, stratify=y_enc
+    )
+
+    model = RandomForestClassifier(
+        n_estimators=600,
+        max_depth=None,
+        min_samples_split=4,
+        min_samples_leaf=2,
+        random_state=42,
+        class_weight="balanced_subsample",
+        n_jobs=-1,
+    )
+    model.fit(X_train, y_train)
+
+    y_pred = model.predict(X_test)
+    acc = accuracy_score(y_test, y_pred)
+    print(f"[{symbol}] Test Accuracy: {acc:.2%}")
+    print(classification_report(y_test, y_pred, target_names=list(le.classes_)))
+
+    models_dir = PROJECT_ROOT / "models"
+    models_dir.mkdir(parents=True, exist_ok=True)
+    with open(models_dir / f"{symbol}_daily_bias.pkl", "wb") as f:
+        pickle.dump(model, f)
+    with open(models_dir / f"{symbol}_label_encoder.pkl", "wb") as f:
+        pickle.dump(le, f)
+    with open(models_dir / f"{symbol}_feature_names.json", "w") as f:
+        json.dump(FEATURES, f, indent=2)
+
+    # Feature importances
+    importances = getattr(model, "feature_importances_", None)
+    if importances is not None:
+        fi_dir = models_dir / "feature_importances"
+        fi_dir.mkdir(parents=True, exist_ok=True)
+        imp_map = {feat: float(val) for feat, val in zip(FEATURES, importances)}
+        (fi_dir / f"{symbol}_importances.csv").write_text(
+            "feature,importance\n" + "\n".join([f"{k},{v}" for k, v in imp_map.items()]),
+            encoding="utf-8"
+        )
+        # Plot
+        order = np.argsort(importances)[::-1]
+        plt.figure(figsize=(10, 6))
+        plt.bar(range(len(FEATURES)), importances[order])
+        plt.xticks(range(len(FEATURES)), [FEATURES[i] for i in order], rotation=60, ha="right")
+        plt.tight_layout()
+        plt.savefig(fi_dir / f"{symbol}_importances.png")
+        plt.close()
+
+def run_training_pipeline():
+    print("=" * 68)
+    print("Open-Snapshot Daily Bias Training (premarket + HTF context)")
+    print("Symbols:", ", ".join(WATCHLIST))
+    print("=" * 68)
+
+    _load_env()
+    _trading, data_client, feed = _init_alpaca()
+
+    for symbol in WATCHLIST:
+        print(f"\n--- {symbol} ---")
+        ddf, mdf, h1df, h4df = _fetch_all_frames(symbol, data_client, feed)
+        if any(x is None or x.empty for x in [ddf, mdf, h1df, h4df]):
+            print("  Skipping: missing data.")
+            continue
+        frame = _build_training_frame(symbol, ddf, mdf, h1df, h4df)
+        if frame.empty:
+            print("  Skipping: no rows after feature engineering.")
+            continue
+        _train_and_save(symbol, frame)
+
+    print("\n✅ Training complete — models saved under /models")
+
+if __name__ == "__main__":
+    run_training_pipeline()
+
+
+
+================================================
+FILE: training/notebooks/feature_engineering.ipynb
+================================================
+# Jupyter notebook converted to Python script.
+
+"""
+# Feature Engineering Workbench
+
+**Objective:** This notebook is a laboratory for exploring, visualizing, and testing new features for the Daily Bias prediction models. 
+
+**Workflow:**
+1.  Load historical multi-timeframe data for a single symbol.
+2.  Apply the existing feature engineering logic (from `train_daily_bias_models.py`).
+3.  Visualize the relationships between features and the target bias.
+4.  Experiment with creating new, experimental features.
+5.  Once a new feature is proven to be valuable, its logic should be copied into the main `engineer_features` function in the production training script.
+"""
+
+"""
+## 1. Setup and Data Loading
+"""
+
+import os
+import sys
+import pandas as pd
+import numpy as np
+import pickle
+from datetime import datetime, timedelta
+import warnings
+import alpaca_trade_api as tradeapi
+from dotenv import load_dotenv
+import matplotlib.pyplot as plt
+import seaborn as sns
+
+# Add project root to path to allow imports from config
+sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath('__file__')))))
+from config.settings import WATCHLIST
+
+warnings.filterwarnings('ignore')
+sns.set_style('whitegrid')
+
+# --- Load API Keys ---
+load_dotenv(dotenv_path='../../.env')
+api_key = os.getenv('ALPACA_API_KEY')
+secret_key = os.getenv('ALPACA_SECRET_KEY')
+
+api = tradeapi.REST(
+    key_id=api_key,
+    secret_key=secret_key,
+    base_url='https://paper-api.alpaca.markets'
+)
+
+print("Libraries loaded and Alpaca API client initialized.")
+
+# --- Single Symbol Data Loading ---
+SYMBOL_TO_ANALYZE = 'SPY' # Change this to analyze different symbols
+
+print(f"Fetching data for {SYMBOL_TO_ANALYZE}...")
+
+end_date = datetime.now().isoformat()
+start_1d = (datetime.now() - timedelta(days=5*365)).isoformat()
+
+df_daily = api.get_bars(SYMBOL_TO_ANALYZE, '1Day', start=start_1d, end=end_date).df
+
+print(f"Downloaded {len(df_daily)} daily bars.")
+df_daily.head()
+
+"""
+## 2. Feature Engineering Logic
+
+This section contains the exact same feature engineering functions from the production `train_daily_bias_models.py` script. This ensures our research environment matches our production environment.
+"""
+
+def _safe_divide(numerator, denominator, default=0):
+    return np.where(denominator != 0, numerator / denominator, default)
+
+def engineer_features(df):
+    df = df.copy()
+    df.columns = [x.lower() for x in df.columns]
+
+    df['prev_close'] = df['close'].shift(1)
+    df['prev_high'] = df['high'].shift(1)
+    df['prev_low'] = df['low'].shift(1)
+
+    # Basic & ICT Features
+    df['gap_pct'] = _safe_divide((df['open'] - df['prev_close']), df['prev_close']) * 100
+    df['gap_size_abs'] = abs(df['gap_pct'])
+    df['prev_day_range_pct'] = _safe_divide((df['prev_high'] - df['prev_low']), df['prev_close']) * 100
+    df['current_range_pct'] = _safe_divide((df['high'] - df['low']), df['open']) * 100
+    df['volume_ratio_5d'] = _safe_divide(df['volume'], df['volume'].rolling(5, min_periods=1).mean(), 1.0)
+    df['swept_prev_high'] = np.where(df['high'] > df['prev_high'], 1, 0)
+    df['swept_prev_low'] = np.where(df['low'] < df['prev_low'], 1, 0)
+    df['body_size'] = abs(df['close'] - df['open'])
+    df['total_range'] = df['high'] - df['low']
+    df['body_pct'] = _safe_divide(df['body_size'], df['total_range']) * 100
+    df['upper_wick_pct'] = _safe_divide(df['high'] - df[['open', 'close']].max(axis=1), df['total_range']) * 100
+    df['lower_wick_pct'] = _safe_divide(df[['open', 'close']].min(axis=1) - df['low'], df['total_range']) * 100
+    range_nonzero = np.maximum(df['high'] - df['low'], 1e-10)
+    df['close_vs_range'] = _safe_divide((df['close'] - df['low']), range_nonzero)
+    
+    df = df.replace([np.inf, -np.inf], np.nan).dropna()
+    return df
+
+def define_bias_label(df, threshold=0.5):
+    daily_move_pct = _safe_divide(df['close'] - df['open'], df['open']) * 100
+    conditions = [daily_move_pct > threshold, daily_move_pct < -threshold]
+    choices = ['bullish', 'bearish']
+    df['bias_label'] = np.select(conditions, choices, default='choppy')
+    return df
+
+# --- Run the feature engineering pipeline ---
+df_features = engineer_features(df_daily)
+df_labeled = define_bias_label(df_features)
+
+print("Feature engineering complete.")
+df_labeled[['gap_pct', 'volume_ratio_5d', 'swept_prev_high', 'body_pct', 'bias_label']].head()
+
+"""
+## 3. Visualization and Analysis
+
+Let's visualize some of the features we created to understand their relationship with the daily bias.
+"""
+
+# Visualize the distribution of the target variable
+plt.figure(figsize=(8, 5))
+sns.countplot(data=df_labeled, x='bias_label', palette='viridis')
+plt.title(f'Distribution of Daily Bias Labels for {SYMBOL_TO_ANALYZE}', fontsize=16)
+plt.ylabel('Count')
+plt.xlabel('Bias Label')
+plt.show()
+
+# Visualize the relationship between Gap Percentage and Bias
+plt.figure(figsize=(10, 6))
+sns.boxplot(data=df_labeled, x='bias_label', y='gap_pct', palette='coolwarm')
+plt.title('Gap Percentage vs. Daily Bias', fontsize=16)
+plt.axhline(0, color='grey', linestyle='--')
+plt.ylabel('Gap %')
+plt.xlabel('Bias Label')
+plt.show()
+
+# --- Correlation Heatmap ---
+feature_names = [
+    'gap_pct', 'gap_size_abs', 'prev_day_range_pct', 'current_range_pct',
+    'volume_ratio_5d', 'swept_prev_high', 'swept_prev_low', 'body_pct',
+    'upper_wick_pct', 'lower_wick_pct', 'close_vs_range'
+]
+
+corr_matrix = df_labeled[feature_names].corr()
+
+plt.figure(figsize=(12, 10))
+sns.heatmap(corr_matrix, annot=True, cmap='viridis', fmt='.2f')
+plt.title('Feature Correlation Matrix', fontsize=16)
+plt.show()
+
+"""
+## 4. Experimental Zone: Creating a New Feature
+
+This is where you can test ideas for new features. Let's try creating a 'consecutive_day_direction' feature.
+"""
+
+def add_experimental_feature(df):
+    df_exp = df.copy()
+    
+    # Calculate the direction of the previous day's move
+    daily_move = df_exp['close'] - df_exp['open']
+    direction = np.sign(daily_move).shift(1).fillna(0)
+    
+    # Calculate consecutive days in the same direction
+    consecutive_days = direction.groupby((direction != direction.shift()).cumsum()).cumcount() + 1
+    df_exp['consecutive_day_direction'] = consecutive_days * direction
+    
+    return df_exp
+
+df_experimental = add_experimental_feature(df_labeled)
+
+# Visualize the new feature
+plt.figure(figsize=(10, 6))
+sns.boxplot(data=df_experimental, x='bias_label', y='consecutive_day_direction', palette='plasma')
+plt.title('Experimental Feature: Consecutive Day Direction vs. Bias', fontsize=16)
+plt.ylabel('Consecutive Days (Positive=Up, Negative=Down)')
+plt.xlabel('Bias Label')
+plt.show()
+
+df_experimental[['consecutive_day_direction', 'bias_label']].head(10)
+
+

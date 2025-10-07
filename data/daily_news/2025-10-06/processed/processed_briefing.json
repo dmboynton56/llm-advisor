@@ -1,169 +1,336 @@
 {
-    "generated_at_utc": "2025-10-07T02:18:03.425589",
+    "generated_at_utc": "2025-10-07T03:54:16.520801",
     "model_responses": {
         "gemini": {
-            "analysis_timestamp": "2025-10-07T02:15:08.190520+00:00",
-            "news_sentiment_summary": "Market sentiment is mixed, with an underlying cautious tone due to the ongoing government shutdown and potential recessionary signals, offset by positive economic data from Vietnam and strength in specific tech sectors like AI.",
-            "key_market_catalysts": [
-                "Ongoing US Government Shutdown and its economic implications (Treasury yields, potential delays).",
-                "Mixed signals on US job market: Moody's citing 'sputtering' and weak job growth versus private data and stimulus potential.",
-                "OPEC+ output decisions influencing oil prices and related sectors.",
-                "AI sector strength and Nvidia's performance, alongside broader tech sector performance and valuation concerns."
-            ],
-            "synthesized_daily_biases": [
-                {
-                    "symbol": "SPY",
-                    "ml_bias": "choppy",
-                    "ml_confidence": 0.5925982321345185,
-                    "final_bias": "Choppy",
-                    "reasoning": "The ML model's 'choppy' bias aligns with the mixed news signals: the government shutdown and potential recessionary concerns could lead to volatility, while positive economic indicators elsewhere offer some support. The lack of pre-market price action (indicated by 0.0 for premarket_range_pct, premarket_vol, and premarket_return_pct) further suggests uncertainty ahead of the open."
-                },
-                {
-                    "symbol": "QQQ",
-                    "ml_bias": "bearish",
-                    "ml_confidence": 0.40011354049203285,
-                    "final_bias": "Bearish",
-                    "reasoning": "The ML model's bearish bias is somewhat supported by concerns about the tech sector's valuation and potential headwinds from AI spending impacting electricity rates (Chamath Palihapitiya's warning). However, the 'High Growth Tech Stocks in US to Watch for Potential Portfolio Boost' headline and Nvidia's AI ambitions suggest some bullish elements are at play. The overnight gap up and significant premarket range hint at potential for movement, but the overall cautious sentiment weighs it down."
-                },
-                {
-                    "symbol": "IWM",
-                    "ml_bias": "bearish",
-                    "ml_confidence": 0.5642329079756598,
-                    "final_bias": "Bearish",
-                    "reasoning": "The ML model's bearish bias is reinforced by the general recessionary fears and economic weakness flagged by Moody's. The pre-market return of -0.088% and a decent range suggest some downward pressure is already in play. The headline about 22 states with persistent economic weakness could disproportionately impact small-cap companies represented by IWM."
-                },
-                {
-                    "symbol": "NVDA",
-                    "ml_bias": "bullish",
-                    "ml_confidence": 0.5625211307283421,
-                    "final_bias": "Bullish",
-                    "reasoning": "Despite Goldman Sachs flagging 'circular revenue' risks for Nvidia, the overall narrative around AI is a dominant theme. The ML model's bullish bias aligns with the strong AI focus in the news and the potential for tech stocks to gain, although the valuation concerns add a layer of caution. The significant premarket range and overnight gap down (-1.12%) suggest potential for price discovery, but the underlying AI narrative remains a strong bullish driver."
-                },
-                {
-                    "symbol": "TSLA",
-                    "ml_bias": "bullish",
-                    "ml_confidence": 0.5292485000160825,
-                    "final_bias": "Bullish",
-                    "reasoning": "The ML model's bullish bias is consistent with the large overnight gap up (2.55%) and the strong previous day's range which TSLA has historically shown strength in. While no specific news directly supports TSLA, the broader positive sentiment for some growth sectors and the continued focus on AI (which TSLA is involved in, albeit indirectly with Nvidia chips) could provide tailwinds. The lack of pre-market price action is unusual given the overnight gap, suggesting potential for opening volatility."
-                },
-                {
-                    "symbol": "AAPL",
-                    "ml_bias": "bearish",
-                    "ml_confidence": 0.5296998868254558,
-                    "final_bias": "Bearish",
-                    "reasoning": "The ML model's bearish bias is reinforced by the negative pre-market return (-0.13%) and the general economic uncertainty. While the news doesn't specifically target AAPL, broad market concerns about recession and the ongoing government shutdown could weigh on consumer discretionary spending, impacting a company like Apple. The substantial prior day range and strong bull action suggest prior momentum may be tested."
-                },
-                {
-                    "symbol": "AMZN",
-                    "ml_bias": "bearish",
-                    "ml_confidence": 0.6042460001487576,
-                    "final_bias": "Bearish",
-                    "reasoning": "The ML model's strong bearish bias is supported by the persistent economic weakness concerns and potential impacts on e-commerce from a slowdown. The headline about AI spending and electricity rates, along with the general market uncertainty, could pressure Amazon. The overnight gap up and strong prior day bull action are somewhat contradictory, but the high confidence in the bearish ML prediction, combined with recessionary fears, leans towards a bearish outlook."
-                },
-                {
-                    "symbol": "META",
-                    "ml_bias": "bearish",
-                    "ml_confidence": 0.5415852828497375,
-                    "final_bias": "Bearish",
-                    "reasoning": "The ML model's bearish bias is amplified by the news regarding AI pushing up electricity rates, which could impact META's extensive data center operations. The overnight gap down (-0.80%) and negative H1/H4 momentum indicators reinforce this. While broad market sentiment is mixed, the specific AI cost concerns provide a bearish catalyst for META."
-                },
-                {
-                    "symbol": "MSFT",
-                    "ml_bias": "bullish",
-                    "ml_confidence": 0.5185485157507177,
-                    "final_bias": "Bullish",
-                    "reasoning": "The ML model's bullish bias is supported by the strong positive momentum in the H1 and H4 close vs. SMA20 indicators, and the positive prior day action. While AI cost concerns exist (Chamath Palihapitiya), MSFT's diversified business and strong cloud performance likely outweigh these immediate worries for the trading agent. The overnight gap up also supports a bullish stance."
-                },
-                {
-                    "symbol": "GOOG",
-                    "ml_bias": "bullish",
-                    "ml_confidence": 0.5670420006560167,
-                    "final_bias": "Bullish",
-                    "reasoning": "The ML model's bullish bias is consistent with the strong positive momentum indicators (H1/H4 close vs. SMA20, H1/H4 momentum) and the overnight gap up. While AI cost concerns were raised, GOOG's significant AI investments are also seen as a growth driver. The overall strong technicals and positive news surrounding tech growth sectors provide a bullish outlook."
-                }
-            ]
+            "SPY": {
+                "model_bias": "choppy",
+                "model_confidence": 0.59,
+                "final_bias": "choppy",
+                "reasoning": "I agree with the model's 'choppy' bias. The market is gapping up (+0.36%) but into an area of potential resistance. The previous day swept a prior high before closing with a very small body (17.7%), indicating indecision or a loss of bullish momentum. While broad market internals are strong (Adv/Decl ratio of 4.0), the overarching news about a prolonged government shutdown and recession warnings from Moody's creates significant uncertainty. This conflict between a risk-on open and negative macro headlines supports a range-bound or choppy session."
+            },
+            "QQQ": {
+                "model_bias": "bearish",
+                "model_confidence": 0.4,
+                "final_bias": "choppy",
+                "reasoning": "I am overriding the model's low-confidence 'bearish' bias to 'choppy'. The technical picture is highly conflicting. There is a very large gap up (+0.88%) opening above the prior day's range, which is typically bullish. However, this follows a bearish outside day and a pre-market session that swept the prior day's high\u2014a potential liquidity grab before a reversal. This 'gap-and-crap' setup argues for the model's bearish view. But, the HTF momentum is still positive. Given these strong opposing signals and the mixed macro news, a volatile, two-sided session is more likely than a clean directional move."
+            },
+            "IWM": {
+                "model_bias": "bearish",
+                "model_confidence": 0.56,
+                "final_bias": "bearish",
+                "reasoning": "I agree with the model's 'bearish' bias. IWM is gapping up significantly (+0.75%) into the top of the prior day's range. Similar to SPY, the prior day swept a high and closed with a small body, suggesting exhaustion. While HTF momentum is strong, small caps are particularly sensitive to the recession fears highlighted in the Moody's headlines. A gap up into potential exhaustion combined with a negative macro narrative for the underlying companies makes a fade of this morning strength a high probability."
+            },
+            "NVDA": {
+                "model_bias": "bullish",
+                "model_confidence": 0.56,
+                "final_bias": "bearish",
+                "reasoning": "I strongly disagree with the model and am overriding its 'bullish' prediction. The technicals are overwhelmingly bearish: a large gap down (-1.12%), opening near the prior day's low after pre-market action already swept that low. This follows a weak prior session. Most importantly, there are multiple negative, company-specific headlines from Goldman Sachs and Chamath Palihapitiya questioning revenue and business model costs. The combination of bearish price action and a clear negative catalyst makes a bullish outcome highly unlikely."
+            },
+            "TSLA": {
+                "model_bias": "bullish",
+                "model_confidence": 0.53,
+                "final_bias": "bullish",
+                "reasoning": "I agree with the 'bullish' bias. The key feature is the massive overnight gap up (+2.55%), which shows immense buying pressure. This move comes after the prior day saw a huge range but ultimately swept a prior low, suggesting a potential capitulation bottom was found. The very strong positive momentum on both H1 and H4 timeframes provides a significant tailwind. This is a classic explosive reversal setup, and the path of least resistance appears to be higher as long as the gap holds."
+            },
+            "AAPL": {
+                "model_bias": "bearish",
+                "model_confidence": 0.53,
+                "final_bias": "bearish",
+                "reasoning": "I agree with the model's 'bearish' bias. Although the prior day was a strong bullish outside bar, the open is flat to slightly down, indicating a complete lack of bullish follow-through. The most compelling evidence is the technical weakness on the H1 timeframe, with price below its 20-period SMA and strong negative momentum (-0.98%). This suggests that yesterday's strength was an anomaly and the shorter-term trend is reasserting itself to the downside."
+            },
+            "AMZN": {
+                "model_bias": "bearish",
+                "model_confidence": 0.6,
+                "final_bias": "bearish",
+                "reasoning": "I agree with the model's high-conviction 'bearish' bias. Despite a gap up (+0.68%), all other factors point to weakness. The HTF context is definitively bearish, with price below key moving averages and strong negative momentum on both H1 and H4 charts. Furthermore, the open is occurring in the lower third of the prior day's very bearish candle. This is a classic setup for a gap fade, where the opening strength is likely to be sold into, continuing the established downtrend."
+            },
+            "META": {
+                "model_bias": "bearish",
+                "model_confidence": 0.54,
+                "final_bias": "bearish",
+                "reasoning": "I agree with the 'bearish' bias. The evidence is clear and consistent across all timeframes. The stock is gapping down significantly (-0.80%) and opening below the prior day's range, which was itself an extremely powerful bearish candle. The HTF technicals are exceptionally weak, with price far below its H1 and H4 SMAs and showing strong negative momentum. This is a textbook example of continuation weakness, and there are no technical or news-based reasons to expect a reversal."
+            },
+            "MSFT": {
+                "model_bias": "bullish",
+                "model_confidence": 0.52,
+                "final_bias": "bullish",
+                "reasoning": "I agree with the 'bullish' model prediction. The primary driver for this bias is the very strong underlying HTF structure. Price is well above its H1 and H4 SMAs with solid positive momentum. The market is gapping up from a prior day of indecision (a doji-like candle with a small 9% body), suggesting a resolution to the upside in line with the prevailing trend. Given the risk-on tone at the market open, continuation of the trend is the most likely scenario."
+            },
+            "GOOG": {
+                "model_bias": "bullish",
+                "model_confidence": 0.57,
+                "final_bias": "bullish",
+                "reasoning": "I agree with the 'bullish' bias. The context from the prior day is key: it was a bullish candle that formed after sweeping a prior day's low, which is a strong reversal signal. This bullish structure is supported by a strong HTF trend, with price above its H1 and H4 SMAs and positive momentum. Even though the open is flat, the underlying technical posture suggests buyers are in control and are likely to defend dips and push for higher prices."
+            }
         },
         "openai": {
-            "analysis_timestamp": "2025-10-07T12:15:30Z",
-            "news_sentiment_summary": "The headlines present a mixed-to-cautious session: AI/tech leadership and manufacturing positives offer upside, but macro headwinds (recession worries, job-market uncertainty, and a looming government shutdown) create a backdrop of risk and potential volatility. Energy price moves and policy signals add further uncertainty.",
-            "key_market_catalysts": [
-                "AI/Tech momentum with Nvidia, Google, and Microsoft driving relative strength (even as Nvidia faces questions about revenue constructs).",
-                "Macro risk signals resurfacing: Moody's note on states with weakness and reports of soft job growth; potential impact on consumer/tech demand.",
-                "Government shutdown risk and policy outlook creating near-term fiscal uncertainty and potential market volatility.",
-                "Oil/energy backdrop: OPEC+ production shifts and sustained oil-price moves affecting inflation outlook and energy equities."
-            ],
-            "synthesized_daily_biases": [
-                {
-                    "symbol": "SPY",
-                    "ml_bias": "choppy",
-                    "confidence": 0.5926,
-                    "final_bias": "Choppy",
-                    "reasoning": "Model indicates a mixed posture for the broad market. News flows support a range-bound/intermittently directional day as macro risks and policy uncertainties coexist with selective tech/AI upside."
+            "analysis_run_at_utc": "2025-10-07T03:54:05.824083+00:00",
+            "for_date_et": "2025-10-06",
+            "data_quality_note": "Qualitative cross-check of the ML bias with key feature signals and headlines. Overrides are only where clear technical/news signals diverge from the model.",
+            "symbols": {
+                "SPY": {
+                    "ml_prediction": {
+                        "bias": "choppy",
+                        "confidence": 0.5925982321345185,
+                        "probabilities": {
+                            "bearish": 0.21386390518322107,
+                            "bullish": 0.19353786268226006,
+                            "choppy": 0.5925982321345185
+                        }
+                    },
+                    "features_snapshot_review": [
+                        "overnight_gap_pct: 0.3609 (up)",
+                        "premarket_vol: 0.0 (no clear premkt move)",
+                        "prev_close: 669.21",
+                        "prev_day_range_pct: 0.6709 (wide range)",
+                        "open_pos_in_prev_range: 0.7695 (near upper end of prior range)",
+                        "open_to_prev_high_pct_rng: 23.05 (price below prior high but within upward path)",
+                        "daily_atr14_pct: 0.736% (moderate volatility)",
+                        "h4_close_vs_sma20_pct: 0.944 (positive trend signal)",
+                        "h1_mom_5bars_pct: -0.336 (slightly negative short-term momentum)"
+                    ],
+                    "headline_sentiment": "Mixed macro/news; some recession/downgrade concerns alongside manufacturing/energy optimism.",
+                    "final_bias": "choppy",
+                    "reasoning": "The model flags a choppy bias. Technically, SPY shows a modest positive overnight gap with a significant prior-range context, but near-term momentum is mixed (positive longer-horizon signal via h4 momentum, yet negative 5-bar momentum). News headlines are a blend of cautionary macro signals and some positive data points, supporting a lack of a clear directional breakout. In sum, the technicals and headlines justify a cautious, range-bound posture rather than a clear up or down trend."
                 },
-                {
-                    "symbol": "QQQ",
-                    "ml_bias": "bearish",
-                    "confidence": 0.4001,
-                    "final_bias": "Bearish",
-                    "reasoning": "Nasdaq-weighted tech exposure aligns with a cautious to negative tilt given macro concerns and selective earnings/AI risk signals, despite some upbeat energy and broader optimism in select headlines."
+                "QQQ": {
+                    "ml_prediction": {
+                        "bias": "bearish",
+                        "confidence": 0.40011354049203285,
+                        "probabilities": {
+                            "bearish": 0.40011354049203285,
+                            "bullish": 0.23958570417505579,
+                            "choppy": 0.36030075533291117
+                        }
+                    },
+                    "features_snapshot_review": [
+                        "overnight_gap_pct: 0.8854 (up)",
+                        "premarket_vol: 3069.0",
+                        "premarket_close_vs_prev_close_pct: 0.8954",
+                        "prev_day_range_pct: 0.9766",
+                        "prev_day_body_pct: 59.42",
+                        "open_pos_in_prev_range: 1.1919 (slightly above prior range)",
+                        "open_to_prev_high_pct_rng: -19.19 (open below prior high but within up move)",
+                        "h1_mom_5bars_pct: 0.7384 (positive short-term momentum)",
+                        "h4_mom_3bars_pct: 0.2621 (positive momentum)"
+                    ],
+                    "headline_sentiment": "Mixed-to-positive on tech/AI themes but tempered by macro risk headlines (e.g., shutdown noise, recession talk).",
+                    "final_bias": "bullish",
+                    "reasoning": "While the ML model calls for bearish exposure, the intraday signals show constructive momentum and an outright gap-up in the premarket with meaningful volume. Momentum on both 1H and 4H frames is positive, suggesting potential continuation unless macro headlines overwhelm. Given the premarket strength and positive momentum, a bullish tilt is justified, though with respect for the risk of a pullback in a mixed-news environment."
                 },
-                {
-                    "symbol": "IWM",
-                    "ml_bias": "bearish",
-                    "confidence": 0.5642,
-                    "final_bias": "Bearish",
-                    "reasoning": "Small-cap risk-off tone supported by macro headlines and a risk-averse mood; downside bias remains unless broad-market catalysts shift decisively."
+                "IWM": {
+                    "ml_prediction": {
+                        "bias": "bearish",
+                        "confidence": 0.5642329079756597,
+                        "probabilities": {
+                            "bearish": 0.5642329079756597,
+                            "bullish": 0.3093153582390011,
+                            "choppy": 0.12645173378533928
+                        }
+                    },
+                    "features_snapshot_review": [
+                        "overnight_gap_pct: 0.7524 (up)",
+                        "premarket_vol: 720.0",
+                        "premarket_close_vs_prev_close_pct: 0.6121",
+                        "prev_day_range_pct: 1.2161",
+                        "prev_day_body_pct: 18.23",
+                        "open_pos_in_prev_range: 0.8913",
+                        "open_to_prev_high_pct_rng: 10.87",
+                        "h1_mom_5bars_pct: 0.3030",
+                        "h4_mom_3bars_pct: 0.0807"
+                    ],
+                    "headline_sentiment": "Macro caution with selective bullish breadth; no stock-specific headlines driving IWM sentiment.",
+                    "final_bias": "bullish",
+                    "reasoning": "Although the model leans bearish, the IWM shows a solid overnight gap and positive short-term momentum, suggesting potential upside in the small-cap arena. The breadth signals (open_pos_in_prev_range modestly positive, momentum positives) support a constructive tilt, albeit with macro Headwinds likely capping gains. Thus, a bullish bias better aligns with the price action and momentum features."
                 },
-                {
-                    "symbol": "NVDA",
-                    "ml_bias": "bullish",
-                    "confidence": 0.5625,
-                    "final_bias": "Bullish",
-                    "reasoning": "Strong AI/semiconductor momentum and positive price action provide upside odds, though there are cited questions on revenue constructs; overall trend remains bullish given AI tailwinds."
+                "NVDA": {
+                    "ml_prediction": {
+                        "bias": "bullish",
+                        "confidence": 0.5625211307283421,
+                        "probabilities": {
+                            "bearish": 0.29642717716373645,
+                            "bullish": 0.5625211307283421,
+                            "choppy": 0.1410516921079216
+                        }
+                    },
+                    "features_snapshot_review": [
+                        "overnight_gap_pct: -1.1246 (down)",
+                        "premarket_range_pct: 0.9274",
+                        "premarket_vol: 2803.0",
+                        "premarket_sweep_prev_high: 0.0",
+                        "premarket_sweep_prev_low: 1.0",
+                        "premarket_close_vs_prev_close_pct: -1.1459",
+                        "premarket_return_pct: -0.6588",
+                        "prev_day_range_pct: 2.6408",
+                        "prev_day_body_pct: 32.8961",
+                        "open_pos_in_prev_range: 0.0232",
+                        "open_to_prev_high_pct_rng: 97.6791",
+                        "daily_atr14_pct: 2.8635",
+                        "h1_mom_5bars_pct: -0.8646",
+                        "h4_mom_3bars_pct: -1.1011"
+                    ],
+                    "headline_sentiment": "Negative AI/valuation narrative around NVDA; AI-computing concerns highlighted in headlines.",
+                    "final_bias": "bearish",
+                    "reasoning": "The overnight move is downside-biased with a negative premarket close-to-prev-close change and negative short-term momentum. Large 97.7% open-to-high metric implies trading near the prior high on a down move, suggesting selling pressure into the open. Coupled with headlines noting risk flags around AI revenue, this argues for a bearish tilt despite the model's bullish stance."
                 },
-                {
-                    "symbol": "TSLA",
-                    "ml_bias": "bullish",
-                    "confidence": 0.5292,
-                    "final_bias": "Bullish",
-                    "reasoning": "Positive overnight gap and momentum indicators support a bullish stance, with-headline mix not offering a clear near-term contrarian signal."
+                "TSLA": {
+                    "ml_prediction": {
+                        "bias": "bullish",
+                        "confidence": 0.5292485000160826,
+                        "probabilities": {
+                            "bearish": 0.41636632255615785,
+                            "bullish": 0.5292485000160826,
+                            "choppy": 0.0543851774277595
+                        }
+                    },
+                    "features_snapshot_review": [
+                        "overnight_gap_pct: 2.5590 (up)",
+                        "premarket_vol: 0.0",
+                        "premarket_range_pct: 0.0",
+                        "prev_close: 429.86",
+                        "prev_day_range_pct: 6.9616",
+                        "prev_day_body_pct: 45.731",
+                        "open_pos_in_prev_range: 0.8037",
+                        "open_to_prev_high_pct_rng: 19.6324",
+                        "daily_atr14_pct: 4.4178",
+                        "h1_mom_5bars_pct: 2.2557",
+                        "h4_mom_3bars_pct: 2.4944"
+                    ],
+                    "headline_sentiment": "No stock-specific negatives in headlines; macro risk themes present but not Tesla-centric.",
+                    "final_bias": "bullish",
+                    "reasoning": "Strong upside gap and robust positive momentum signals on both 1H and 4H frames support a bullish stance. Despite broad macro caution headlines, TSLA's intraday signals imply demand and potential continuation, justifying a bullish bias."
                 },
-                {
-                    "symbol": "AAPL",
-                    "ml_bias": "bearish",
-                    "confidence": 0.5297,
-                    "final_bias": "Bearish",
-                    "reasoning": "Bearish model posture aligns with a cautious/macro-sensitive backdrop; no strong countervailing news to push a bullish case for Apple today."
+                "AAPL": {
+                    "ml_prediction": {
+                        "bias": "bearish",
+                        "confidence": 0.5296998868254558,
+                        "probabilities": {
+                            "bearish": 0.5296998868254558,
+                            "bullish": 0.2804702032178104,
+                            "choppy": 0.18982990995673366
+                        }
+                    },
+                    "features_snapshot_review": [
+                        "overnight_gap_pct: -0.0213 (down slightly)",
+                        "premarket_range_pct: 0.2441",
+                        "premarket_vol: 605.0",
+                        "premarket_close_vs_prev_close_pct: 0.1783",
+                        "prev_day_body_pct: 64.1635",
+                        "open_pos_in_prev_range: 0.7652",
+                        "open_to_prev_high_pct_rng: 23.4791",
+                        "daily_atr14_pct: 1.8623",
+                        "h1_mom_5bars_pct: -0.9834",
+                        "h4_mom_3bars_pct: -0.0816"
+                    ],
+                    "headline_sentiment": "Mixed macro headlines; no Apple-specific headlines driving sentiment strongly.",
+                    "final_bias": "bearish",
+                    "reasoning": "The price action and momentum signals show weakness: a small negative overnight gap, negative 5-bar momentum, and negative 1H momentum indicate posture toward downside. While macro headlines are mixed, the internal technicals lean bearish, supporting a cautious/sell-biased stance."
                 },
-                {
-                    "symbol": "AMZN",
-                    "ml_bias": "bearish",
-                    "confidence": 0.6042,
-                    "final_bias": "Bearish",
-                    "reasoning": "Macro headwinds and risk-off sentiment weigh on a heavyweight consumer/tech name; signals align with a bearish tilt absent decisive upside catalysts."
+                "AMZN": {
+                    "ml_prediction": {
+                        "bias": "bearish",
+                        "confidence": 0.6042460001487577,
+                        "probabilities": {
+                            "bearish": 0.6042460001487577,
+                            "bullish": 0.28705361444554667,
+                            "choppy": 0.10870038540569583
+                        }
+                    },
+                    "features_snapshot_review": [
+                        "overnight_gap_pct: 0.6811 (up)",
+                        "premarket_vol: 0.0",
+                        "prev_close: 219.495",
+                        "prev_day_body_pct: 82.6178",
+                        "open_pos_in_prev_range: 0.3455",
+                        "open_to_prev_high_pct_rng: 65.4450",
+                        "open_to_prev_low_pct_rng: 34.5550",
+                        "daily_atr14_pct: 2.0669",
+                        "h1_mom_5bars_pct: -2.0049",
+                        "h4_mom_3bars_pct: -1.0205"
+                    ],
+                    "headline_sentiment": "General market caution; no AMZN-specific positives in the headlines; broad risk-off backdrop noted.",
+                    "final_bias": "bearish",
+                    "reasoning": "Despite a modest intraday up gap, the momentum signals are strongly negative (5-bar and 3-bar momentum). The price action suggests distribution into the move rather than continuation. In the context of cautious macro headlines, this supports a bearish bias."
                 },
-                {
-                    "symbol": "META",
-                    "ml_bias": "bearish",
-                    "confidence": 0.5416,
-                    "final_bias": "Bearish",
-                    "reasoning": "Ad/online-advertising cycle concerns and risk-off cues reinforce a bearish orientation despite broad tech enthusiasm elsewhere."
+                "META": {
+                    "ml_prediction": {
+                        "bias": "bearish",
+                        "confidence": 0.5415852828497375,
+                        "probabilities": {
+                            "bearish": 0.5415852828497375,
+                            "bullish": 0.17230435420771126,
+                            "choppy": 0.2861103629425514
+                        }
+                    },
+                    "features_snapshot_review": [
+                        "overnight_gap_pct: -0.8076 (down)",
+                        "premarket_vol: 0.0",
+                        "prev_close: 710.775",
+                        "prev_day_body_pct: 89.7549",
+                        "open_pos_in_prev_range: -0.2527",
+                        "open_to_prev_high_pct_rng: 125.270",
+                        "open_to_prev_low_pct_rng: -25.270",
+                        "daily_atr14_pct: 2.3004",
+                        "h1_mom_5bars_pct: -2.6881",
+                        "h4_mom_3bars_pct: -2.6999"
+                    ],
+                    "headline_sentiment": "AI/tech policy and market sentiment themes dominate; some investor skepticism on AI-driven revenue narratives.",
+                    "final_bias": "bearish",
+                    "reasoning": "Strong negative momentum signals and a negative overnight gap indicate distribution risk. The combination of a high open-to-high range and bleak momentum metrics supports a bearish bias, even as broader headlines remain mixed."
                 },
-                {
-                    "symbol": "MSFT",
-                    "ml_bias": "bullish",
-                    "confidence": 0.5185,
-                    "final_bias": "Bullish",
-                    "reasoning": "MSFT benefits from AI/cloud demand and appears insulated to a degree by diversified revenue streams; bullish stance stands unless macro risk deteriorates materially."
+                "MSFT": {
+                    "ml_prediction": {
+                        "bias": "bullish",
+                        "confidence": 0.5185485157507176,
+                        "probabilities": {
+                            "bearish": 0.1680109733479541,
+                            "bullish": 0.5185485157507176,
+                            "choppy": 0.3134405109013284
+                        }
+                    },
+                    "features_snapshot_review": [
+                        "overnight_gap_pct: 0.3034 (up)",
+                        "premarket_vol: 0.0",
+                        "prev_close: 517.39",
+                        "prev_day_body_pct: 9.3023",
+                        "open_pos_in_prev_range: 0.7209",
+                        "open_to_prev_high_pct_rng: 27.907",
+                        "open_to_prev_low_pct_rng: 72.093",
+                        "daily_atr14_pct: 1.3818",
+                        "h1_mom_5bars_pct: 0.6360",
+                        "h4_mom_3bars_pct: 1.7687"
+                    ],
+                    "headline_sentiment": "General tech exposure with positive/neutral macro cues; no MSFT-specific negative headlines.",
+                    "final_bias": "bullish",
+                    "reasoning": "Technicals show persistent positive momentum across multiple horizons and a constructive overnight move. The headlines do not present MSFT-specific headwinds, aligning with a bullish bias."
                 },
-                {
-                    "symbol": "GOOG",
-                    "ml_bias": "bullish",
-                    "confidence": 0.567,
-                    "final_bias": "Bullish",
-                    "reasoning": "Strong AI/advertising momentum and search/Cloud strength support a bullish case, with macro noise unlikely to derail near-term upside."
+                "GOOG": {
+                    "ml_prediction": {
+                        "bias": "bullish",
+                        "confidence": 0.5670420006560166,
+                        "probabilities": {
+                            "bearish": 0.23646243452915394,
+                            "bullish": 0.5670420006560166,
+                            "choppy": 0.19649556481482985
+                        }
+                    },
+                    "features_snapshot_review": [
+                        "overnight_gap_pct: -0.0589 (flat/down small)",
+                        "premarket_vol: 100.0",
+                        "premarket_close_vs_prev_close_pct: -0.6209",
+                        "prev_close: 246.38",
+                        "prev_day_body_pct: 23.6343",
+                        "open_pos_in_prev_range: 0.8105",
+                        "open_to_prev_high_pct_rng: 18.952",
+                        "daily_atr14_pct: 2.0737",
+                        "h1_mom_5bars_pct: 0.8631",
+                        "h4_mom_3bars_pct: 1.1525"
+                    ],
+                    "headline_sentiment": "AI/tech headlines present mixed signals but GOOG-specific metrics show momentum support.",
+                    "final_bias": "bullish",
+                    "reasoning": "Momentum signals are positive across multiple horizons with only a minor overnight dip. The lack of negative GOOG-specific headlines and the presence of positive momentum metrics support a bullish tilt, aligning with the model but reinforced by intraday strength indicators."
                 }
-            ]
+            }
         }
     }
 }

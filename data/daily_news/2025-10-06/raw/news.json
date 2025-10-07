@@ -125,6 +125,31 @@
       }
     },
     {
+      "headline": "JELD-WEN Holding, Inc.'s (NYSE:JELD) 28% Dip In Price Shows Sentiment Is Matching Revenues - simplywall.st",
+      "source": "GoogleNews",
+      "published_utc": "2025-10-06T13:06:26+00:00",
+      "url": "https://news.google.com/rss/articles/CBMi1AFBVV95cUxQYUNILU5ZQUpHMFdRMS1RcUFROVZHUWRWd09Lb1BabUxCa05hVjZYcFNEVTE1QVMteDdnNS1pT0JIUFppRFlIMEYyV2xYMXdQWTVkbjltU1ZIVGJSRE5DM2RyYTc1MHhmSDlMczdVZnM0akFoNjNyWUF4WmtHckF3anVNaF9Ta3RwbTBHSF9ZeTRVQjlxZm9iaEJfakhsa01JS1Z3cXNFUVdTbkk4Z3JQRENUQ3VwQ1JNT1d2NkFNdlk3a2lXVDFQYldtV3I2b2VNdV8xV9IB2gFBVV95cUxOd0hXSnd2MXpWVGVid2w3LVBVRE0xaE5pZ0NOekJFaEI1OE9qZWxQVUhNX2MxaEluQ0FnRXVFREVhcjZ3Sk5KVVVzb3NOeWdiSVV5OVFpOUtCNE81alJLZWJheFhwQkNGTFBnd3ByWENqWE1IQU1EM1NTUEwzWTFtR3VURTRxSmIzcnBOeHMzeDdVN09wSEZ3bkpNNlEtZ3VJbVhlaHZPalN1RTNzVllUWEZEekRjcmhWakVHWXc1d0Jpd1duVlN1cjMwZVhaR3JEM2ptTjM2b3FIZw?oc=5",
+      "summary": "",
+      "tags": [
+        "earnings",
+        "ev"
+      ],
+      "tickers": [],
+      "keywords": [
+        "dip",
+        "holding",
+        "inc",
+        "jeld",
+        "jeld-wen",
+        "matching"
+      ],
+      "sentiment": {
+        "compound": 0.0,
+        "label": "neutral",
+        "method": "vader"
+      }
+    },
+    {
       "headline": "US likely to fall into recession? Moody\u2019s chief economist Mark Zandi flags 22 states with persistent economic weakness - Mint",
       "source": "GoogleNews",
       "published_utc": "2025-10-06T13:02:07+00:00",
@@ -488,52 +513,24 @@
       }
     },
     {
-      "headline": "Trump's economic plans called for more oil drilling and lower gas prices. He's only getting the latter. - Yahoo Finance",
+      "headline": "Time for Germany's 'sugar rush' to hit - Reuters",
       "source": "GoogleNews",
-      "published_utc": "2025-10-06T09:56:57+00:00",
-      "url": "https://news.google.com/rss/articles/CBMi3gFBVV95cUxNRnZKaVpWVmFDTXpzS1JkMXlJbEhOVVdfWjAtSWlJUG1PZzZ6Yk5NTFk0cHhsaE1MMVYyVDBGU2U0N0RBT29MQm9uNjVIVmxDWmVRZXB2dERmYUpYOUpnLTVRM19TZDYzaWstYzB6TmM4SWZUbVVmVmdkTVdINHdxdmpMdVdwLU1HMVlIM1BhcVBfWU5uMDFyRXlLMy0zTW9wRWs1YkhrOEcwZVFSczNPVy1hRXQ0ZUpoUmRrU2pnaU1EaTVnYTVsbXJFUTQ2WHNqVXRtOURtLVhxMG1yTGc?oc=5",
+      "published_utc": "2025-10-06T10:00:00+00:00",
+      "url": "https://news.google.com/rss/articles/CBMihgFBVV95cUxNOHdwMExIT21qY3l0NWN0d2NmZzY2eXVnem5GQmhfdHdDY204SkJ6Q19TSXBGMHZFSlNxc1lIY0xoN1dPSGE2U1JUeVpmbVVRUHhxMDZOMDNyRGJ3SDN0d052bHU4STBCaV83dXlXakpUWElwTm03V0NFc0RCYS1FeXI5R3JxZw?oc=5",
       "summary": "",
-      "tags": [
-        "energy",
-        "oil"
-      ],
+      "tags": [],
       "tickers": [],
       "keywords": [
-        "called",
-        "drilling",
-        "economic",
-        "finance",
-        "gas",
-        "getting"
+        "germany",
+        "hit",
+        "reuters",
+        "rush",
+        "sugar",
+        "time"
       ],
       "sentiment": {
-        "compound": -0.296,
-        "label": "negative",
-        "method": "vader"
-      }
-    },
-    {
-      "headline": "Vietnam\u2019s Growth Quickens on Manufacturing Despite Trump Tariffs - Bloomberg.com",
-      "source": "GoogleNews",
-      "published_utc": "2025-10-06T09:56:20+00:00",
-      "url": "https://news.google.com/rss/articles/CBMitgFBVV95cUxPNnZrUWtfNmdjWmlMUVhRMldjZzFhTEZpc1lWaWlGcjFZZHVBRnByTFV1ellULVRDaFR1c2JsX0xBNTc5NXFCRUl1LWIzWVFobUtJRVNDeWx1ZGZvSG1teFdGcGRGX1A5bzI0WVpGME9yQktraFFqWWVRYVpVUVJHOGtQbEdUZ2NweHRoWUFYVENJd20tdjhkZXRSdUVGV1RoRF9kRTlQTEkwZ0RVVXl6dm5MTE1Cdw?oc=5",
-      "summary": "",
-      "tags": [
-        "macro",
-        "macro_gdp"
-      ],
-      "tickers": [],
-      "keywords": [
-        "bloomberg",
-        "com",
-        "despite",
-        "growth",
-        "manufacturing",
-        "quickens"
-      ],
-      "sentiment": {
-        "compound": 0.3818,
-        "label": "positive",
+        "compound": 0.0,
+        "label": "neutral",
         "method": "vader"
       }
     },
@@ -610,30 +607,6 @@
       }
     },
     {
-      "headline": "Oil prices surge after OPEC+ announces smaller-than-feared output hike - Yahoo",
-      "source": "GoogleNews",
-      "published_utc": "2025-10-06T08:39:33+00:00",
-      "url": "https://news.google.com/rss/articles/CBMimgFBVV95cUxNeHFNV0hsVjNXTnItUnVRVlBXTEJmM0xoVTAtY0xXbm4zemh3Mmt6U3pnczg1R3I3VmU5RjQtNTNRbmRVMjN3VklSUXl0UWp3VEF1clhkWXhRNXE2ajhLUHRpQWFCZWFwVFJCeXdVemowRmwzVV9CSG1pbnVRQW9IVDBkWllnandGcXlsTXdVUF9ZU1JUYm0yRjZB?oc=5",
-      "summary": "",
-      "tags": [
-        "oil"
-      ],
-      "tickers": [],
-      "keywords": [
-        "after",
-        "announces",
-        "hike",
-        "oil",
-        "opec",
-        "output"
-      ],
-      "sentiment": {
-        "compound": 0.0,
-        "label": "neutral",
-        "method": "vader"
-      }
-    },
-    {
       "headline": "Chamath Palihapitiya Warns AI Push By GOOGL, META, MSFT And AMZN Using NVDA Chips Could Double Electricity Rates",
       "source": "benzinga",
       "published_utc": "2025-10-06T08:35:15+00:00",
@@ -678,7 +651,7 @@
       "headline": "Stocks open higher as Wall Street's winning streak looks set to continue - MarketWatch",
       "source": "GoogleNews",
       "published_utc": "2025-10-06T08:27:00+00:00",
-      "url": "https://news.google.com/rss/articles/CBMi5ARBVV95cUxOY185UzBYQ1JOQVJHeDh4ak8wMFUweTlKZ2pTZ0oxRmlSYTZVejNRNVhVT2M3MlRWVTRpSkVnTVFYZm5NU3JiRjB6ZEdyQi1FSVdpY0gzTWpwWUFkdHF0YTVQZGxFX3p3aFgxTEw0RENZblRjOFFGTEtjQV9jc0tPSXA1OGhEazVuX1dBejJVQWZuWlFVcU1sWjBzbURRdnUybnpWZ1dtUlY0YWh4WVZKU3ZwT0pnbVNpLTBhekFFdEpLOWY1ME1vb0F0NDJtQUFabEV4bkhodERpYXpYc0ZpeG5wZXNyMFd0a3ZaRkIyV0pnYWlRUy1oaTFSdHlOQjk2LXhwdG1aSjI3cnowdHpWamdqSEhEMjlEZ190cW5reUd6X2daMGV0a3hTVHpvTFZnR3FacmdmZ09Ua2VuSE0ycVFPS056RmRNTGJLSUlfb29UUHVNQU5Hdm1DX3lNT0xnSlFQWTB6clZxV1B4N1BNeE1tSDZZc0llSEYwNlJvQmJCX0xacWJ0VHVjZDVLN3p6NEdpZlkwVmN5NEZhRElBUHQwdVRpYWU3SnllbjRSWFRReXFKZUxJbGFqa1BQVUkzRElUU2FPdVFjMWM1TThNNEY4dEhrTlZCdllHeFgyb3JDSVM0bTgwTkRnUFd3QTVtSVNObUxZRk10akRoTUlZUTdSQnV5Z3dyRm5tVnlYSlhuYUdxOUQ3SXJSV01kYmJ3ZjFQZ0k2bUtqdnRyYXlEal9GV0xiU0dEVjd2NGZyTU84RDgwMnV3a2dTazkySGNYTFZtY01aUDAtcDVPVjBsSEg3Rmc?oc=5",
+      "url": "https://news.google.com/rss/articles/CBMi5ARBVV95cUxORU9xUFJodk1PZjNoa3Q0dllrN3lTUWhKNURWODdQS0xENVhtOE5mT0MzczR0SXNpaTA4RTIwR25nZF9UM1RUM0dHRmZ1dFhmZlBZV09wSFNISTBFUFdhblJ5Z3M5N0RHWXdEbG5BdEtVVHN6VU80TDB4eXJQcDlKcGVvWmdqOF94Z0JCOWRqSXFiYjlSaExQOUJ4Y09tel9jWm14R3A4RC15Q0RhY3FLd0g2cWdMNnpQbTFOblVIczRUU0RRR0VzcVZ5cnYzYVdjcTVqUGVUemE4bEVPVjQ0R0NOYi1iZTlVUnA5ZmVBeW5BdW15bXpYcHN1UkdJVXdTSDBkTXp1empyVEs2YU02QV8wTzY2Z0NwVlZEVmZlM2xlTmNvWkRWRzAxTVg0d0tpd1dLeGRacUtTSVlvWFoxNFQtclpSSkM0MUxqc2RIdjhzUFhVYzhpNWlUNGJBZGFFcWZzQk9DRnd0UHk0a0ZlRWRJeUw2alktaHgwTE85dFBJWHlnbjB2aExUa2RYOVA2azFjUWRPR1YzTlVQWE9fT3B3LXd4U2Ewcms1SEtRMFhXaWV1S1pVbzlaYnhtem10ZFh2a0ZuMnJYLXpfN3VRZy1NdlZ3XzRQUHNBRFp6SEl1VGVpNDZsT1gtdFZKemhWSG1fRVVkSDRFeFM4cXd5Qmg0al9ucXhuR29UZ3BtcnB3STU2SUw0N09YQUUxOHV6SEFRcDl6QmNkOWY1MkdDUmpoZVpnMmwySlFVZTVaZmFzdS04bWxObXVucjdES1VtRFV0QzVoYTdpT3o3b2NaQXBWWlU?oc=5",
       "summary": "",
       "tags": [],
       "tickers": [],
@@ -722,78 +695,6 @@
       }
     },
     {
-      "headline": "Oil rises more than 1% after OPEC+ hikes output less than expected - CNBC",
-      "source": "GoogleNews",
-      "published_utc": "2025-10-06T07:07:42+00:00",
-      "url": "https://news.google.com/rss/articles/CBMipwFBVV95cUxPc0duYnRkQkpBYkNuR0JxZEUzXzR6SVBSNTI3NlFsSUJXSF9MQ2Y2TFVVYVFIREs4b0oyNElaQnJ5NEtQMFR4SHNXa05vX3BBZ3QzVmtDd2ozXzlGSF9wT1hUcjBpQkkwREJ0eXlna3VzaC1EZTEtQUlVQ0w4dDNSaDVWU2VFellJdEstX1pQQ1dBbUxwYWV2QUY1ajJsOHlEWTJ2Q2Nrb9IBrAFBVV95cUxQc0RuUGhGbHczOTVzZlJFQUNSRFBMZGJESkJVbDJmLTFFNlI0U3NoQVl1THI1MWtScDc2QlRqci1xc2tyTEt5RjVfeFJkLUZnZG8tS0ZCOXZweERnVzhhVGVOM05HdF9fLTlIeklyel94ZkNCY1R2VTY4QmF0Q04tTncwaXJzWS0zN1ZyMUtINUN6bGVpZXh4TXRBaElHdE9RelhPMmpYVmpIdWlF?oc=5",
-      "summary": "",
-      "tags": [
-        "oil"
-      ],
-      "tickers": [],
-      "keywords": [
-        "after",
-        "cnbc",
-        "expected",
-        "hikes",
-        "less",
-        "more"
-      ],
-      "sentiment": {
-        "compound": 0.0,
-        "label": "neutral",
-        "method": "vader"
-      }
-    },
-    {
-      "headline": "Oil prices jump after OPEC+ announces modest monthly output hike - Euronews.com",
-      "source": "GoogleNews",
-      "published_utc": "2025-10-06T06:59:00+00:00",
-      "url": "https://news.google.com/rss/articles/CBMirAFBVV95cUxQTGxxWC14LVl5ZDEzeWg0NjQzenFYenRraHNiLUk5cGw3T0pXNzlHQUVDM1V1RmRPZDhtaTBsT3hqcThsT0dBY3h4RTlabXRqZ1BDMk5WY2xhMi1fVEFpRWNqOFZQZnB3UUEtQ0FmcWM1eVY4THVCU3MxWmNvN3piS29yNDFfSnotbFZhZ1g1X2pnRVFhblNQRFJNMFlOeEdoWVlBaXZob3lvNlp6?oc=5",
-      "summary": "",
-      "tags": [
-        "oil"
-      ],
-      "tickers": [],
-      "keywords": [
-        "after",
-        "announces",
-        "com",
-        "euronews",
-        "hike",
-        "jump"
-      ],
-      "sentiment": {
-        "compound": 0.0,
-        "label": "neutral",
-        "method": "vader"
-      }
-    },
-    {
-      "headline": "Surging OPEC+ oil output leaves market with shrinking shock absorbers - Reuters",
-      "source": "GoogleNews",
-      "published_utc": "2025-10-06T06:00:00+00:00",
-      "url": "https://news.google.com/rss/articles/CBMiwgFBVV95cUxNTHpNTTVQVjZqNUk0TUNCaTZpbzFiVTlpRF8xb2NxcEZEYzM1U0ZGb2dJbWtQdV9Eb1J0N2RudTg4Z3dQeG80RzUyWXkxVGFOM2NWUkdNMThycmxFQ1hmSmFaTUI4WXEzeHhBczJoc1JsRGNaR2VlYUdpZW9QUHlXMTlDMmtlNjZBSi1YNHNyWDlwQUY4M0Q5TllSSmRxWVNoM0w4UFUyM0ZWbkJRQ25HdWhKdmhWMklPZDRHbW05anZCUQ?oc=5",
-      "summary": "",
-      "tags": [
-        "oil"
-      ],
-      "tickers": [],
-      "keywords": [
-        "absorbers",
-        "leaves",
-        "market",
-        "oil",
-        "opec",
-        "output"
-      ],
-      "sentiment": {
-        "compound": -0.3818,
-        "label": "negative",
-        "method": "vader"
-      }
-    },
-    {
       "headline": "Vietnam's economy accelerates despite dip in US exports, footwear drop - Reuters",
       "source": "GoogleNews",
       "published_utc": "2025-10-06T05:36:00+00:00",
@@ -816,26 +717,29 @@
       }
     },
     {
-      "headline": "America is now one big bet on AI - Financial Times",
+      "headline": "Thai inflation negative for six straight months as full year forecast lowers - Reuters",
       "source": "GoogleNews",
-      "published_utc": "2025-10-06T04:00:48+00:00",
-      "url": "https://news.google.com/rss/articles/CBMicEFVX3lxTE54SWNQaG40RkdqTE5nT2NEeExfY1FyWjNpY3Z1Z1FwRmVWWHhjOGlOUFlNX0o3WkpCYTEtbmtqM2NVUk1UaWZkZFBkSUQ0blJ4VTJJX3hqal9oMWRlNnNkSHNKY3VNRDB5N2ZFbnVYZUc?oc=5",
+      "published_utc": "2025-10-06T04:41:00+00:00",
+      "url": "https://news.google.com/rss/articles/CBMiwgFBVV95cUxNbkUxNkZzVUVyUG5FWUNXODI1eG1ncmhPUk41U2E3cllEOTZVdXJkbmJJdTJ5czFodWVfRUVQdGlnZjVycUFnU1dmSUY5VDdNYXNUWllzcllVcENQOG43MFNqY1loX2tOSW84djRkYlRWd3J0RDdxUDJSTWZxVWlITDM3WU1rSUllOVlGUS05bVBGb2Rsd2hBTy1Lcld6M0l6ZUhEYnJiZEZKQ21pM19mTXl6aGVWZEVmSEs1MGNINU1sdw?oc=5",
       "summary": "",
       "tags": [
-        "ai"
+        "ai",
+        "guidance",
+        "macro",
+        "macro_cpi"
       ],
       "tickers": [],
       "keywords": [
-        "america",
-        "bet",
-        "big",
-        "financial",
-        "now",
-        "one"
+        "forecast",
+        "full",
+        "inflation",
+        "lowers",
+        "months",
+        "negative"
       ],
       "sentiment": {
-        "compound": 0.0,
-        "label": "neutral",
+        "compound": -0.5106,
+        "label": "negative",
         "method": "vader"
       }
     },
@@ -1352,28 +1256,6 @@
         }
       },
       {
-        "headline": "Why ProShares Short QQQ stock could break out in 2025 - Portfolio Performance Summary & Real-Time Sentiment Analysis - newser.com",
-        "source": "GoogleNews",
-        "published_utc": "2025-10-06T10:19:14+00:00",
-        "url": "https://news.google.com/rss/articles/CBMikgFBVV95cUxNUFVzTThGRnpyal93VHBvbVlLYU1PZTFzMnR1V3R3R1U1UDcxY0xOdTZ0RVBwT3BKcm1RQ1ZQN2lPV2h2enprcDdMeElzNXBWYVVtdXI0bmotY19NTElfNU5GUWJHN3h5NnBWXzd0cU5WU0JnS2R2bXQ3UkkxcTcycklfQ2R5Z3pRSUJkSWI5TmVnQQ?oc=5",
-        "summary": "",
-        "tags": [],
-        "tickers": [],
-        "keywords": [
-          "2025",
-          "analysis",
-          "break",
-          "com",
-          "could",
-          "newser"
-        ],
-        "sentiment": {
-          "compound": 0.0,
-          "label": "neutral",
-          "method": "vader"
-        }
-      },
-      {
         "headline": "Why ProShares Short QQQ stock could break out in 2025 - 2025 Historical Comparison & Risk Adjusted Buy and Sell Alerts - newser.com",
         "source": "GoogleNews",
         "published_utc": "2025-10-06T09:10:25+00:00",
@@ -1669,7 +1551,7 @@
         }
       },
       {
-        "headline": "Here are Monday's biggest analyst calls: Nvidia, Tesla, Apple, Klarna, Micron, Oracle, Amazon, Broadcom, Affirm, Disney and more - CNBC",
+        "headline": "Monday stocks from analyst calls: Nvidia, Klarna, Oracle and more - CNBC",
         "source": "GoogleNews",
         "published_utc": "2025-10-06T12:19:45+00:00",
         "url": "https://news.google.com/rss/articles/CBMiqAFBVV95cUxPVWJyWXhDWXo4Nm1iajBPWlRlNTNoUVRlRjR5MlFLWXJuTkRvcjNGUEc3ZGNVaTNvYThYM0ZEOFktTFpBUnBGS0w5ZklqanZVTlVQVlEwRjVtMEF0eU8tYmVpbmpfU1M2NXUyRV9LcHR3T3YwTjg4SEpTRGVPMGJFNXVFSEphNXVQN3JfUXYwS0RZbXFzQ0trcjhaRko1RS0wYTdaQUhpUDc?oc=5",
@@ -1677,16 +1559,16 @@
         "tags": [],
         "tickers": [],
         "keywords": [
-          "affirm",
-          "amazon",
           "analyst",
-          "apple",
-          "biggest",
-          "broadcom"
+          "calls",
+          "cnbc",
+          "klarna",
+          "monday",
+          "more"
         ],
         "sentiment": {
-          "compound": 0.1779,
-          "label": "positive",
+          "compound": 0.0,
+          "label": "neutral",
           "method": "vader"
         }
       },
@@ -1694,7 +1576,7 @@
         "headline": "Nvidia Stock Drops. It Isn\u2019t the Only Chip Maker With a Big OpenAI Deal. - Barron's",
         "source": "GoogleNews",
         "published_utc": "2025-10-06T11:50:00+00:00",
-        "url": "https://news.google.com/rss/articles/CBMijwNBVV95cUxPZjlyQ1VTcFdZU3ZmSDA3MUtyY2RUb3dGbi16a0FhUTVrS3hpMFdMbFpsbmRzdDZMX2JhN2pTUXlFWHRSdU5oNkRiSXlkVGo2dTFVZ1ctdUo2TUdHUkxyT19hOWFuZlN5UDZobTFYMXlBalQ3X2ZzWElIeTFHYkVxLTZDc0NmV29UOEJJcm1Wd3UxanR5eEZpUXNieXJfeU81Mk82NUVvVHZmR2pRTE83NXpUa3ZlUkRjWFZma2ZvYkFWSFVGNXNSWmgyU192a3BWbnF0M3puSGZZbnRfVWdmRHlyYTRkNVlqX3FvUDItNFBzdFVMcWsyZ18zMEFRbDhiR2NkdWFyRWpZOHNsYXF1QUtwUGZRZDdZak1GSkt1bHhOY09XcVg5bnBrb09aN3liZGwzT2owakdFR0dhSXZvRXNWbk0xVXBraWdtRml1YTVPc0Y1N1p4VFVycmV0VEt4X0ozUGdCWmhoSFVQMURpM3l6WHJjWkc5ZVJxMFBiMU5fV0l1eFhEWEJRWUZqZ2s?oc=5",
+        "url": "https://news.google.com/rss/articles/CBMijwNBVV95cUxPUWQ5azRqbjNiZ1FQUGdDbGROR3RlQ0N3QXRzMmFqekxsZVpMMUJBWEFaa2gxUHFQTzRMQm8xcDhlV2NoS2dpc0Yta2pWaTlLNHNMN2dfZ2I4WTE4MDdGdS1KakJ6eC1FNElQVWpGZ1ZIdlpYTkhvMVI5NFVJQ01HVGY1NFRzc2E4V3hHZjhGSnJmNW9uTTVyUVNtTkg3elNQRlFRUHJiSy04ZEIxOFA0Z241Z0ZkLTRYM2tpTXoyRGZHRXI5NmNGWFVFaVBDLTl3YWtYQ0tVZHFzSlpva2ZxYjB1N2VvZGlHZWFhcE9BNnlVWl96LTBySkZKbl9GZC1TQS1DUnF5MjY5dkJkN1BVLW15SV9CQmxCVWFTeTVaeWRnWWlUMlVyRGZKb2MzUHV5QXdKbEszaDZWRkpTRWlHb3I0UE5BZUNIcnlieF9CR19pY2dvME94RkFkMzJkZVY0RXVkeTcwM3FPbnpIV3puSHNYMDZNQ3l1M1dHVkNvZlRteVdjT0gwd0lLcHBGcVU?oc=5",
         "summary": "",
         "tags": [
           "ai",
@@ -1776,31 +1658,6 @@
         }
       },
       {
-        "headline": "This Underrated Growth Opportunity Could Send Nvidia Stock Soaring Over the Next 5 Years - Nasdaq",
-        "source": "GoogleNews",
-        "published_utc": "2025-10-06T10:00:00+00:00",
-        "url": "https://news.google.com/rss/articles/CBMisAFBVV95cUxOMG13SDh4MWtWVDdaTEk1QmJyRmtlOEpfRTBXXzVyNlowZFIwWUYyNktFRkVIQ1FKaXh3Z2xpb1d6STFENzBpVVJuS3VlUXFqVC01RWY3eHZhdGh2UWYwMXFLRGFVZDFVUkVSR2YxRzdnS1ZzcDBfajZMS2Mwd0syNmF0X1dBQVZKSFVuMS1talhVdnk2VWd1MVVrNWZRU0NndG5PeDhjYXBPMFJMQ1VmbQ?oc=5",
-        "summary": "",
-        "tags": [
-          "macro",
-          "macro_gdp"
-        ],
-        "tickers": [],
-        "keywords": [
-          "could",
-          "growth",
-          "nasdaq",
-          "next",
-          "nvidia",
-          "opportunity"
-        ],
-        "sentiment": {
-          "compound": 0.6597,
-          "label": "positive",
-          "method": "vader"
-        }
-      },
-      {
         "headline": "Chamath Palihapitiya Warns AI Push By GOOGL, META, MSFT And AMZN Using NVDA Chips Could Double Electricity Rates",
         "source": "benzinga",
         "published_utc": "2025-10-06T08:35:15+00:00",
@@ -1837,31 +1694,6 @@
         ],
         "sentiment": {
           "compound": -0.7096,
-          "label": "negative",
-          "method": "vader"
-        }
-      },
-      {
-        "headline": "Goldman Sachs Bumps Nvidia Stock (NVDA) Price Target, But With a Warning - TipRanks",
-        "source": "GoogleNews",
-        "published_utc": "2025-10-06T08:26:23+00:00",
-        "url": "https://news.google.com/rss/articles/CBMioAFBVV95cUxOSm1WS2lOd1lLblQ5Y1dxc3BQWVp1S0NSSWNPeUh0QVRTLVpSYWVEMlpzdng3X01HeHU0Ni1TdVd4V3NDMHZRVl9YM3FmOFhjb25zb0FKandjMGpVYVdQazFrUEZkRDlUVlNSbXpTTDRxcWxXYUpfeEtSakxUQXNhNlY4Mk8tU25MMjFZanJwcEpEcmxhOGlEQ1h2Z1B4dU51?oc=5",
-        "summary": "",
-        "tags": [
-          "potential_tailwind",
-          "price_target"
-        ],
-        "tickers": [],
-        "keywords": [
-          "bumps",
-          "but",
-          "goldman",
-          "nvda",
-          "nvidia",
-          "price"
-        ],
-        "sentiment": {
-          "compound": -0.4767,
           "label": "negative",
           "method": "vader"
         }
@@ -1942,6 +1774,28 @@
         }
       },
       {
+        "headline": "Tesla (TSLA) Stock: Gearing Up for the $25K Model Y as October 7 Tease Sparks Buzz - CoinCentral",
+        "source": "GoogleNews",
+        "published_utc": "2025-10-06T12:16:27+00:00",
+        "url": "https://news.google.com/rss/articles/CBMipgFBVV95cUxNTms1em1mUTctdE53S2wwNHcxVWdfNmdaSHlST05PMS16b2lhM1QzRjYtUnlEY1pQYkNpbWZBUnFJcXczQmNLZkFzcm92aWMyOGN4TjJhNms5RTJoYjNnQUt2SXBxcndFNzNVRHllaUI3Z3BwRlFOei02NDZmdzFIS09obFN0clVPV05UWEJvOGlvWlNYVk5FSXhuR0dOczdpbl8xbnVn?oc=5",
+        "summary": "",
+        "tags": [],
+        "tickers": [],
+        "keywords": [
+          "25k",
+          "buzz",
+          "coincentral",
+          "gearing",
+          "model",
+          "october"
+        ],
+        "sentiment": {
+          "compound": -0.3182,
+          "label": "negative",
+          "method": "vader"
+        }
+      },
+      {
         "headline": "UK Becomes Tesla Rival BYD's Largest International Market Amid Europe Expansion",
         "source": "benzinga",
         "published_utc": "2025-10-06T10:18:31+00:00",
@@ -1992,6 +1846,30 @@
         "sentiment": {
           "compound": -0.4404,
           "label": "negative",
+          "method": "vader"
+        }
+      },
+      {
+        "headline": "Tesla hints at possible new model ahead of October 7 reveal (TSLA:NASDAQ) - Seeking Alpha",
+        "source": "GoogleNews",
+        "published_utc": "2025-10-06T07:22:34+00:00",
+        "url": "https://news.google.com/rss/articles/CBMingFBVV95cUxNdm1SbFVKMlgyTXRiNnl6REhRc0lPQVF1RWhnbEFnSFdEMnJESVQxbTBWRGx2STg3aGxOSmpNczlvT2Y0RkRQb1paazFaRkhxSVR1Z2c2YU1JdEh5Q19BR0R6VVZtV3Y2MUc0UVI1S05jVnlZS2pNbHhGWThjNndhczNxWFMzQmVHS0RQcE11SGxpSGFFcmJNb2F1TzYyZw?oc=5",
+        "summary": "",
+        "tags": [
+          "ev"
+        ],
+        "tickers": [],
+        "keywords": [
+          "alpha",
+          "hints",
+          "model",
+          "nasdaq",
+          "new",
+          "october"
+        ],
+        "sentiment": {
+          "compound": 0.0,
+          "label": "neutral",
           "method": "vader"
         }
       },
@@ -2773,32 +2651,6 @@
         }
       },
       {
-        "headline": "Maseco LLP Purchases New Shares in Microsoft Corporation $MSFT - MarketBeat",
-        "source": "GoogleNews",
-        "published_utc": "2025-10-06T07:39:16+00:00",
-        "url": "https://news.google.com/rss/articles/CBMivwFBVV95cUxQNEJZY0kyTjdsRlR0U3NiZHVHTGhwNFlNLXZ6MzRJRktEX183WHZYeTlVWFlhWXlVSmJVeUlaSWQxYjlkN1BIdHhwbUVJTW5pN1B5WkpPZVAyaGNwb1NkZ2RLNFEyT0ZZcFFfeGtMUWt1U0hPeGdLbUpBQ2JpVjkyazJIWEFFdTZtaXRVV2JTMHJKMTFieTZPcGpjdjlmQnYxSkJDcUhJQnNhZlE4UjRwajNndFZadVpOenFvUnNtMA?oc=5",
-        "summary": "",
-        "tags": [
-          "earnings",
-          "risk",
-          "sec"
-        ],
-        "tickers": [],
-        "keywords": [
-          "corporation",
-          "llp",
-          "marketbeat",
-          "maseco",
-          "microsoft",
-          "msft"
-        ],
-        "sentiment": {
-          "compound": 0.296,
-          "label": "positive",
-          "method": "vader"
-        }
-      },
-      {
         "headline": "Fifth Third Bancorp Has $1.45 Billion Stock Holdings in Microsoft Corporation $MSFT - MarketBeat",
         "source": "GoogleNews",
         "published_utc": "2025-10-06T07:38:28+00:00",
@@ -3205,30 +3057,6 @@
         "sentiment": {
           "compound": 0.4939,
           "label": "positive",
-          "method": "vader"
-        }
-      },
-      {
-        "headline": "These 2 Magnificent Seven Stocks are Screaming Buys Right Now - The Motley Fool",
-        "source": "GoogleNews",
-        "published_utc": "2025-10-05T23:10:00+00:00",
-        "url": "https://news.google.com/rss/articles/CBMimAFBVV95cUxQd1gyS21JYUhteWFwVnZLMlpKMjFybVdrbHJoZFo2dWNRc1liVlBEMGtZYlE1STlBcXFPczBsb2VTOVZYOThmUDBwb3dDZENRV282T0RRZ29YMTNDQjNkVXFtdnpLaUZxWGdfV2lVVEpIcXprdkxkSnZORWdhX3NOalBIaG1BOUdpQ3JaQlRfTjNLMTdpSEdsSg?oc=5",
-        "summary": "",
-        "tags": [
-          "ev"
-        ],
-        "tickers": [],
-        "keywords": [
-          "buys",
-          "fool",
-          "magnificent",
-          "motley",
-          "now",
-          "right"
-        ],
-        "sentiment": {
-          "compound": -0.1531,
-          "label": "negative",
           "method": "vader"
         }
       }

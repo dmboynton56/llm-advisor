@@ -31,8 +31,8 @@ except TypeError:
 # NOTE: The models you requested are not yet released.
 # I am substituting them with the latest appropriate models available.
 MODELS_TO_QUERY = {
-    "gemini": "gemini-2.5-flash-lite",
-    "openai": "gpt-5-nano",
+    "gemini": "gemini-2.5-flash",
+    "openai": "gpt-5-mini",
     "anthropic": "claude-sonnet-4-5-20250929"
 }
 

@@ -433,10 +433,10 @@ def main():
         "symbols": symbol_items,
     }
     out_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
-    print(f"✅ Wrote news file: {out_path}")
+    print(f"Wrote news file: {out_path}")
     end_time = time.time()
     elapsed = end_time - start_time
-    print(f"✅ Time taken: {elapsed:.2f} seconds")
+    print(f"Time taken: {elapsed:.2f} seconds")
 
 if __name__ == "__main__":
     main()

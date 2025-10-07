@@ -1,0 +1,60 @@
+{
+    "ict_concepts": [
+      {
+        "name": "Break of Structure",
+        "abbreviation": "BOS",
+        "type": "Market Structure",
+        "description": "A Break of Structure occurs when price moves past a previously established swing high or swing low, signaling a continuation of the current trend. In an uptrend, price creates a higher high, breaking the previous high. In a downtrend, price creates a lower low, breaking the previous low.",
+        "confluence_notes": "Often confirms the validity of a trend direction after a retracement. Look for a BOS after price has pulled back to a key level like an Order Block or Fair Value Gap."
+      },
+      {
+        "name": "Inverse Fair Value Gap",
+        "abbreviation": "IFVG",
+        "type": "Price Action",
+        "description": "An Inverse Fair Value Gap is a standard Fair Value Gap that initially fails to hold as support/resistance and is traded through. Subsequently, price returns to this area, and it flips its role, acting as resistance in a downtrend or support in an uptrend. It signifies a strong rejection and a shift in market sentiment.",
+        "confluence_notes": "A powerful confirmation signal. An IFVG forming after a Stop Hunt or SMT Divergence can indicate a high-probability reversal setup."
+      },
+      {
+        "name": "79% Fibonacci Retracement",
+        "abbreviation": "79% Fib",
+        "type": "Entry/Exit Level",
+        "description": "A specific, deep retracement level within the broader 'Optimal Trade Entry' (OTE) zone, which typically spans from the 62% to 79% Fibonacci levels. The 79% level represents a significant discount (for buys) or premium (for sells) and is considered a precise point for potential reversals.",
+        "confluence_notes": "Extremely effective when it aligns with an Order Block, Breaker Block, or the edge of a Fair Value Gap within a premium or discount zone."
+      },
+      {
+        "name": "SMT Divergence",
+        "abbreviation": "SMT",
+        "type": "Intermarket Analysis",
+        "description": "Smart Money Technique (SMT) Divergence is a discrepancy between two closely correlated assets (e.g., EUR/USD and DXY, or ES and NQ). For a bearish SMT, one asset will make a higher high while the correlated asset fails to do so (making a lower high). This suggests weakness and a potential reversal, as 'smart money' may be engineering liquidity.",
+        "confluence_notes": "Often precedes a major shift in market structure. Look for SMT at key swing highs or lows as a warning that the current move is losing momentum."
+      },
+      {
+        "name": "Fair Value Gap",
+        "abbreviation": "FVG",
+        "type": "Market Imbalance",
+        "description": "A three-candle pattern that represents an inefficiency or imbalance in price delivery. It is identified by the space between the low of the first candle and the high of the third candle (for a bearish FVG) or the high of the first candle and the low of the third candle (for a bullish FVG). The market will often seek to rebalance price by 'filling' this gap in the future.",
+        "confluence_notes": "Acts as a magnet for price. It can be used as both a target for trades and a potential area for entries upon a retracement."
+      },
+      {
+        "name": "Order Block",
+        "abbreviation": "OB",
+        "type": "Liquidity Zone",
+        "description": "An Order Block is typically the last up-close candle before a significant down-move (bearish OB) or the last down-close candle before a significant up-move (bullish OB). These areas represent zones where institutional orders were placed, and price is likely to return to mitigate these positions.",
+        "confluence_notes": "High-probability entries can be found when price retraces to an OB that is located within a premium/discount zone and aligns with a Fibonacci OTE level."
+      },
+      {
+        "name": "Breaker Block",
+        "abbreviation": "BB",
+        "type": "Liquidity Zone",
+        "description": "A Breaker Block is a swing high or low that has been violated or 'run'. After liquidity is taken at that level, the order block associated with that swing point fails and then flips its function. A bullish order block that is broken becomes bearish resistance, and a bearish order block that is broken becomes bullish support.",
+        "confluence_notes": "A key signal of a change in the state of delivery. When price returns to a Breaker Block, it offers a high-probability entry in the direction of the recent liquidity grab."
+      },
+      {
+        "name": "Equilibrium",
+        "abbreviation": "EQ",
+        "type": "Price Level",
+        "description": "Equilibrium is the 50% level of a specific price range, such as a major swing high to a swing low. It represents the 'fair value' price. Any price above the EQ is considered a 'Premium' (a good area to sell), and any price below the EQ is considered a 'Discount' (a good area to buy).",
+        "confluence_notes": "Fundamental to ICT's framework. The goal is to always buy in a discount and sell in a premium. EQ helps define these zones, ensuring you are trading on the right side of the curve."
+      }
+    ]
+}
