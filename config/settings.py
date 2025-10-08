@@ -49,7 +49,7 @@ CONFIDENCE_THRESHOLD = 85  # Integer from 0 to 100
 LLM_PROVIDERS = ["openai"]
 
 # The specific model to use for the main analysis.
-LLM_MODEL = "gpt-4o"
+LLM_MODEL = "gpt-5-mini"
 
 # The time in seconds the bot will wait between each analysis loop.
 ANALYSIS_INTERVAL_SECONDS = 30

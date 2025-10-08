@@ -4,6 +4,7 @@ import json
 from datetime import datetime
 import pytz
 from dotenv import load_dotenv
+import time
 
 # --- LLM API Client Imports ---
 import google.generativeai as genai
@@ -31,8 +32,8 @@ except TypeError:
 # NOTE: The models you requested are not yet released.
 # I am substituting them with the latest appropriate models available.
 MODELS_TO_QUERY = {
-    "gemini": "gemini-2.5-flash",
-    "openai": "gpt-5-mini",
+    "gemini": "gemini-2.5-flash-lite",
+    "openai": "gpt-5-nano",
     "anthropic": "claude-sonnet-4-5-20250929"
 }
 
@@ -105,21 +106,21 @@ def get_llm_opinions(prompt):
         print(f"    ...FAILED. Error: {e}")
 
     # --- OpenAI ---
-    try:
-        print(f"  - Requesting analysis from OpenAI ({MODELS_TO_QUERY['openai']})...")
-        response = openai.chat.completions.create(
-            model=MODELS_TO_QUERY['openai'],
-            response_format={"type": "json_object"},
-            messages=[
-                {"role": "system", "content": "You are a Senior Trading Analyst providing structured JSON output."},
-                {"role": "user", "content": prompt}
-            ]
-        )
-        all_responses["model_responses"]["openai"] = json.loads(response.choices[0].message.content)
-        print("    ...Success.")
-    except Exception as e:
-        all_responses["model_responses"]["openai"] = {"error": str(e)}
-        print(f"    ...FAILED. Error: {e}")
+    # try:
+    #     print(f"  - Requesting analysis from OpenAI ({MODELS_TO_QUERY['openai']})...")
+    #     response = openai.chat.completions.create(
+    #         model=MODELS_TO_QUERY['openai'],
+    #         response_format={"type": "json_object"},
+    #         messages=[
+    #             {"role": "system", "content": "You are a Senior Trading Analyst providing structured JSON output."},
+    #             {"role": "user", "content": prompt}
+    #         ]
+    #     )
+    #     all_responses["model_responses"]["openai"] = json.loads(response.choices[0].message.content)
+    #     print("    ...Success.")
+    # except Exception as e:
+    #     all_responses["model_responses"]["openai"] = {"error": str(e)}
+    #     print(f"    ...FAILED. Error: {e}")
 
     # # --- Anthropic ---
     # try:
@@ -173,4 +174,6 @@ def main():
 
 
 if __name__ == "__main__":
+    start_time = time.time()
     main()
+    print(f"--- Pipeline finished in {time.time() - start_time:.2f} seconds ---")

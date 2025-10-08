@@ -16,6 +16,7 @@ import json
 import pickle
 from pathlib import Path
 from datetime import datetime, timedelta, timezone
+import time
 
 import numpy as np
 import pandas as pd
@@ -599,4 +600,6 @@ def main():
     _write_snapshots_and_cross(et_date, snapshots, cross_market, inline_into_bias=True)
 
 if __name__ == "__main__":
+    start_time = time.time()
     main()
+    print(f"--- Pipeline finished in {time.time() - start_time:.2f} seconds ---")

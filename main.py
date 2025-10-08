@@ -30,6 +30,7 @@ def main():
     scripts_to_run = [
         "src/data_processing/news_scraper.py",
         "src/data_processing/daily_bias_computing.py",
+        "src/data_processing/identify_key_levels.py",
         "src/data_processing/synthesize_briefing.py",
         "src/data_processing/condense_context.py"
     ]
