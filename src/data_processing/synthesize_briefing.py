@@ -32,7 +32,7 @@ except TypeError:
 # NOTE: The models you requested are not yet released.
 # I am substituting them with the latest appropriate models available.
 MODELS_TO_QUERY = {
-    "gemini": "gemini-2.5-flash-lite",
+    "gemini": "gemini-2.5-flash",
     "openai": "gpt-5-nano",
     "anthropic": "claude-sonnet-4-5-20250929"
 }
@@ -48,6 +48,7 @@ def get_file_paths():
     return {
         "bias_input": os.path.join(daily_folder, 'daily_bias.json'),
         "news_input": os.path.join(daily_folder, 'news.json'),
+        "key_levels_input": os.path.join(daily_folder, 'key_levels.json'),
         "prompt_template": os.path.join(project_root, 'prompts', 'prompts.json'),
         "processed_output": os.path.join(daily_folder_processed, 'processed_briefing.json')
     }
@@ -65,6 +66,9 @@ def construct_prompt(paths):
             raw_headlines = [article['headline'] for article in news_data.get('macro', [])]
             headlines_text = "\n".join(f"- {h}" for h in raw_headlines)
 
+        with open(paths['key_levels_input'], 'r') as f:
+            key_levels_data = json.load(f)
+
         with open(paths['prompt_template'], 'r') as f:
             synthesis_prompt_template = json.load(f)['pre_market_synthesis_prompt']['content']
 
@@ -79,6 +83,7 @@ def construct_prompt(paths):
     prompt = synthesis_prompt_template.replace(
         "{{ml_bias_data}}", json.dumps(ml_bias_data, indent=2)
     )
+    prompt = prompt.replace("{{key_levels}}", json.dumps(key_levels_data, indent=2))
     prompt = prompt.replace("{{news_headlines}}", headlines_text)
     
     return prompt

@@ -14,7 +14,7 @@
 # --- Watchlist ----------------------------------------------------------------
 # List of symbols the bot will actively monitor.
 WATCHLIST = [
-    "SPY", "QQQ", "IWM",  # Indices & Futures
+    "SPY", "QQQ", "IWM", #"SPX", "NDX",  # Indices & Futures
     "NVDA", "TSLA", "AAPL", "AMZN",       # Tech Stocks
     "META", "MSFT", "GOOG"                # More Tech Stocks
 ]
