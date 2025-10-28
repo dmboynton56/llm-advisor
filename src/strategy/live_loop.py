@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 """
-Live analyzer with time-compressed TEST mode.
-
-Core behavior
-- SPLIT-adjusted bars
-- Default feed: IEX (override with ALPACA_DATA_FEED=sip)
+Live analyzer with time-compressed TEST mode, now with:
+- Focus list ingestion (SPY/QQQ/IWM + 1–2 picks from premarket step)
+- Per-symbol LLM calls (fan-out) with concurrency
+- Strict post-validation of trade outputs
+- SPLIT-adjusted IEX by default
 - Rolling window: 150 minutes
 - Session window: 07:30–11:00 ET (adjustable via env)
 - Preopen context: start at 06:30 ET
@@ -26,18 +26,19 @@ Env:
   SLOW_MODEL=gemini-2.5-flash-lite
 """
 
-import os, sys, json, time, argparse, re, uuid
+import os, sys, json, time, argparse, uuid, re
 from pathlib import Path
 from datetime import datetime, timedelta, timezone
-from typing import Any, Dict, List, Optional, Type
+from time import perf_counter
+from typing import Any, Dict, List, Optional, Tuple
 
 import pytz
 import pandas as pd
 from dotenv import load_dotenv
-from pydantic import BaseModel
+from pydantic import BaseModel, Field, ValidationError
 
 # ---- Google Generative AI SDK (Gemini) ----
-#   pip install google-generativeai
+# pip install google-generativeai
 import google.generativeai as genai
 
 # ---- Alpaca Data (alpaca-py) ----
@@ -45,6 +46,9 @@ from alpaca.data.historical import StockHistoricalDataClient
 from alpaca.data.requests import StockBarsRequest
 from alpaca.data.timeframe import TimeFrame, TimeFrameUnit
 from alpaca.data.enums import DataFeed, Adjustment
+
+# Concurrency
+from concurrent.futures import ThreadPoolExecutor, as_completed, TimeoutError as FuturesTimeoutError
 
 # Project root + settings
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
@@ -54,10 +58,19 @@ if str(PROJECT_ROOT) not in sys.path:
 from config.settings import WATCHLIST  # list[str]
 ET = pytz.timezone("US/Eastern")
 
+# Deterministic confluence engine modules
+try:
+    from src.features.feature_packager import pack_features_for_symbol
+    from src.features.tracker import update_symbol_state
+except Exception:
+    # Allow relative import fallback if running from project root in some tools
+    from features.feature_packager import pack_features_for_symbol  # type: ignore
+    from features.tracker import update_symbol_state  # type: ignore
+
 # ---------------------- Pydantic schemas (structured LLM output) ----------------------
 class Plan(BaseModel):
-    narrative: str | None = None
-    invalidation: str | None = None
+    narrative: Optional[str] = None
+    invalidation: Optional[str] = None
     keep_above_take_profits: Optional[str] = None
 
 class OptionLeg(BaseModel):
@@ -90,7 +103,7 @@ class OverallCtx(BaseModel):
 
 class FastResp(BaseModel):
     generated_at_utc: str
-    overall: Optional[OverallCtx] = None   # tolerant; we backfill if missing
+    overall: Optional[OverallCtx] = None
     symbols: List[SymbolCtx]
 
 class SlowResp(BaseModel):
@@ -98,34 +111,20 @@ class SlowResp(BaseModel):
     overall: OverallCtx
     symbols: List[SymbolCtx]
 
+# Per-symbol LLM response (used in fast loop fan-out)
+class PerSymbolResp(BaseModel):
+    generated_at_utc: str
+    symbol: str
+    active_confluences: List[str] = []
+    ltf_key_levels: List[float] = []
+    price_bias: Optional[str] = None
+    favored_position: Optional[str] = None
+    confidence: int = 0
+    plan: Optional[Plan] = None
+    trade_params: Optional[TradeParams] = None
+    option_leg: Optional[OptionLeg] = None
+
 # ---------------------- IO helpers ----------------------
-def ensure_dir(p: Path):
-    p.mkdir(parents=True, exist_ok=True)
-
-def log_minute(paths, mode: str, et_time: datetime, cur_utc: datetime,
-               start_utc: datetime, end_utc: datetime, watchlist: list, bars: dict):
-    """
-    Append a one-line JSON record indicating the current minute context.
-    mode: 'test' | 'live'
-    """
-    record = {
-        "event": "minute_tick",
-        "mode": mode,
-        "et_time": et_time.isoformat(),
-        "utc_time": cur_utc.isoformat(),
-        "window_start_utc": start_utc.isoformat(),
-        "window_end_utc": end_utc.isoformat(),
-        "watchlist": watchlist,
-        "counts": {
-            "symbols": len(watchlist),
-            "bars_1m_total": sum(len(bars.get("bars_1m", {}).get(s, [])) for s in watchlist),
-            "bars_5m_total": sum(len(bars.get("bars_5m", {}).get(s, [])) for s in watchlist),
-        },
-    }
-    append_jsonl(paths["current_context_log"], record)
-    print(f"[TICK-{mode.upper()}] {et_time.strftime('%H:%M')} ET | "
-          f"{record['counts']['bars_1m_total']}x1m, {record['counts']['bars_5m_total']}x5m")
-
 def load_json(path: Path) -> Any:
     if path.exists():
         with path.open("r", encoding="utf-8") as f:
@@ -162,11 +161,51 @@ def day_paths(day_et: str) -> Dict[str, Path]:
         "signals": base_processed / "signals.json",
         "day": day_et,
         "events_log": base_processed / "backtest_events.jsonl",
+        # NEW: focus + capsules + raw llm dump directory
+        "focus_list": base_processed / "focus_list.json",
+        "capsules_dir": base_processed / "context_capsules",
         "llm_raw_dir": base_processed / "llm_raw",
     }
 
+def load_focus_symbols(paths: Dict[str, Path]) -> List[str]:
+    doc = load_json(paths["focus_list"]) or {}
+    focus = doc.get("focus")
+    if isinstance(focus, list) and focus:
+        return [s.upper() for s in focus]
+    # Fallback: always-on trio if focus list not prepared
+    return ["SPY", "QQQ", "IWM"]
+
+def load_capsule(paths: Dict[str, Path], symbol: str) -> dict:
+    p = paths["capsules_dir"] / f"{symbol}.json"
+    return load_json(p) or {"symbol": symbol, "notes": ["no capsule available"]}
+
+def log_minute(paths, mode: str, et_time: datetime, cur_utc: datetime,
+               start_utc: datetime, end_utc: datetime, watchlist: list, bars: dict):
+    """
+    Append a one-line JSON record indicating the current minute context.
+    mode: 'test' | 'live'
+    """
+    record = {
+        "event": "minute_tick",
+        "mode": mode,
+        "et_time": et_time.isoformat(),
+        "utc_time": cur_utc.isoformat(),
+        "window_start_utc": start_utc.isoformat(),
+        "window_end_utc": end_utc.isoformat(),
+        "watchlist": watchlist,
+        "counts": {
+            "symbols": len(watchlist),
+            "bars_1m_total": sum(len(bars.get("bars_1m", {}).get(s, [])) for s in watchlist),
+            "bars_5m_total": sum(len(bars.get("bars_5m", {}).get(s, [])) for s in watchlist),
+        },
+    }
+    append_jsonl(paths["current_context_log"], record)
+    # concise console line:
+    print(f"[TICK-{mode.upper()}] {et_time.strftime('%H:%M')} ET | "
+          f"{record['counts']['bars_1m_total']}x1m, {record['counts']['bars_5m_total']}x5m")
+
+# ---------------------- LLM schemas (dicts for response_schema) ----------------------
 def fast_schema_dict() -> dict:
-    # No "default" fields anywhere; only permitted schema keys.
     return {
         "type": "OBJECT",
         "properties": {
@@ -225,6 +264,46 @@ def fast_schema_dict() -> dict:
 def slow_schema_dict() -> dict:
     return fast_schema_dict()
 
+def symbol_schema_dict() -> dict:
+    return {
+        "type": "OBJECT",
+        "properties": {
+            "generated_at_utc": {"type": "STRING"},
+            "symbol": {"type": "STRING"},
+            "active_confluences": {"type": "ARRAY", "items": {"type": "STRING"}},
+            "ltf_key_levels": {"type": "ARRAY", "items": {"type": "NUMBER"}},
+            "price_bias": {"type": "STRING"},
+            "favored_position": {"type": "STRING"},
+            "confidence": {"type": "INTEGER"},
+            "plan": {
+                "type": "OBJECT",
+                "properties": {
+                    "narrative": {"type": "STRING"},
+                    "invalidation": {"type": "STRING"},
+                    "keep_above_take_profits": {"type": "STRING"},
+                },
+            },
+            "trade_params": {
+                "type": "OBJECT",
+                "properties": {
+                    "entry_price_target": {"type": "NUMBER"},
+                    "stop_loss": {"type": "NUMBER"},
+                    "take_profits": {"type": "ARRAY", "items": {"type": "NUMBER"}},
+                    "risk_reward": {"type": "NUMBER"},
+                },
+            },
+            "option_leg": {
+                "type": "OBJECT",
+                "properties": {
+                    "strike": {"type": "NUMBER"},
+                    "expiry_days": {"type": "INTEGER"},
+                    "contract_hint": {"type": "STRING"},
+                },
+            },
+        },
+        "required": ["generated_at_utc", "symbol"],
+    }
+
 # ---------------------- Time utilities ----------------------
 def parse_hhmm(s: str) -> tuple[int,int]:
     h, m = s.split(":")
@@ -259,55 +338,58 @@ class Clients:
         feed_env = (os.getenv("ALPACA_DATA_FEED") or "iex").lower()
         self.feed = DataFeed.SIP if feed_env == "sip" else DataFeed.IEX  # default IEX
 
-def _bars_to_records(df: pd.DataFrame, symbol: str) -> list[dict]:
+def _coerce_ts_iso(ts_like: Any) -> str:
     """
-    Robustly converts Alpaca bars DF to a list of dicts for a single symbol.
-    Works whether df is MultiIndex(symbol,timestamp) or already flat.
-    Returns [] if the symbol isn't present in the window.
+    Robustly coerce a timestamp (pd.Timestamp, datetime, or (symbol, ts) tuples from multiindex iter)
+    to ISO string.
     """
-    if df is None or df.empty:
-        return []
-
-    # Make a flat frame with 'symbol' and 'timestamp' columns
-    if isinstance(df.index, pd.MultiIndex):
-        df = df.reset_index()  # columns: ['symbol','timestamp', ...]
+    if isinstance(ts_like, tuple):
+        # Sometimes iterrows on multiindex yields (ts, row) already; guard anyway.
+        ts_like = ts_like[0] if len(ts_like) >= 1 else None
+    if isinstance(ts_like, pd.Timestamp):
+        ts = ts_like.to_pydatetime()
+    elif isinstance(ts_like, datetime):
+        ts = ts_like
     else:
-        df = df.reset_index()  # timestamp may be named 'timestamp' already; ok either way
+        # best effort
+        try:
+            ts = pd.to_datetime(ts_like).to_pydatetime()
+        except Exception:
+            ts = datetime.now(timezone.utc)
+    if ts.tzinfo is None:
+        ts = ts.replace(tzinfo=timezone.utc)
+    return ts.isoformat()
 
-    # If there's no 'symbol' column (edge cases), assume df is already filtered
-    if "symbol" in df.columns:
-        sdf = df[df["symbol"] == symbol].copy()
-    else:
-        sdf = df.copy()
-
-    if sdf.empty:
+def _bars_to_records(df: Optional[pd.DataFrame], symbol: str) -> List[dict]:
+    if df is None or isinstance(df, list):
+        return [] if not df else df  # already a list of records
+    if df.empty:
         return []
-
-    # Ensure we have a timestamp column
-    if "timestamp" not in sdf.columns:
-        # Sometimes the DatetimeIndex name is not preserved; try to find a datetime-like column
-        time_cols = [c for c in sdf.columns if "time" in c.lower() or "stamp" in c.lower()]
-        if time_cols:
-            sdf["timestamp"] = sdf[time_cols[0]]
-        else:
-            # Last resort: the first column after reset_index could be datetime
-            sdf["timestamp"] = sdf.iloc[:, 0]
-
-    sdf = sdf.sort_values("timestamp")
-
-    out: list[dict] = []
+    out = []
+    try:
+        sdf = df.xs(symbol, level=0).sort_index()
+    except Exception:
+        # If df is already filtered to one symbol or index differs
+        sdf = df.sort_index()
+    # Reset index to access timestamp robustly
+    if not isinstance(sdf.index, pd.MultiIndex):
+        sdf = sdf.reset_index().rename(columns={"index": "timestamp"})
+    else:
+        sdf = sdf.reset_index()
+    # Normalize column names
+    cols = {c.lower(): c for c in sdf.columns}
+    ts_col = "timestamp" if "timestamp" in cols else list(sdf.columns)[0]
     for _, r in sdf.iterrows():
-        ts = pd.Timestamp(r["timestamp"]).to_pydatetime()
+        ts_val = r[ts_col]
         out.append({
-            "t": ts.isoformat(),
-            "o": float(r["open"]),
-            "h": float(r["high"]),
-            "l": float(r["low"]),
-            "c": float(r["close"]),
-            "v": float(r["volume"]),
+            "t": _coerce_ts_iso(ts_val),
+            "o": float(r[cols.get("open", "open")]),
+            "h": float(r[cols.get("high", "high")]),
+            "l": float(r[cols.get("low", "low")]),
+            "c": float(r[cols.get("close", "close")]),
+            "v": float(r[cols.get("volume", "volume")]),
         })
     return out
-
 
 def fetch_window_bars(clients: Clients, symbols: List[str], start_utc: datetime, end_utc: datetime) -> dict:
     """Live mode: fetch SPLIT-adjusted IEX/SIP 1m & 5m bars for the window."""
@@ -344,24 +426,22 @@ class TestBarCache:
 
     def slice(self, start_utc: datetime, end_utc: datetime) -> dict:
         out = {"bars_1m": {}, "bars_5m": {}}
-        if self.df_1m is not None and not self.df_1m.empty:
-            df1 = self.df_1m.reset_index()
+        df1 = self.df_1m
+        df5 = self.df_5m
+        if df1 is not None and not df1.empty:
+            df1 = df1.reset_index()
             df1 = df1[(df1["timestamp"] >= pd.Timestamp(start_utc)) & (df1["timestamp"] <= pd.Timestamp(end_utc))]
             df1 = df1.set_index(["symbol", "timestamp"]).sort_index()
-        else:
-            df1 = self.df_1m
-        if self.df_5m is not None and not self.df_5m.empty:
-            df5 = self.df_5m.reset_index()
+        if df5 is not None and not df5.empty:
+            df5 = df5.reset_index()
             df5 = df5[(df5["timestamp"] >= pd.Timestamp(start_utc)) & (df5["timestamp"] <= pd.Timestamp(end_utc))]
             df5 = df5.set_index(["symbol", "timestamp"]).sort_index()
-        else:
-            df5 = self.df_5m
         for sym in self.symbols:
             out["bars_1m"][sym] = _bars_to_records(df1, sym) if df1 is not None else []
             out["bars_5m"][sym] = _bars_to_records(df5, sym) if df5 is not None else []
         return out
 
-# ---------------------- Gemini client & prompts ----------------------
+# ---------------------- Gemini init ----------------------
 def init_gemini():
     # Configure API key for google-generativeai
     load_dotenv()
@@ -370,36 +450,7 @@ def init_gemini():
         raise RuntimeError("Missing GOOGLE_API_KEY")
     genai.configure(api_key=api_key)
 
-def build_fast_prompt(paths: Dict[str, Path], watchlist: List[str], bars: dict) -> str:
-    prompts = load_json(paths["prompts"]) or {}
-    system_prompt = (prompts.get("system_prompt") or {}).get("content", "You are a trading analyst.")
-    main_prompt = (prompts.get("main_analysis_prompt") or {}).get("content", "Analyze the market per strategy.")
-
-    processed_briefing = load_json(paths["processed_briefing"]) or {}
-    key_levels = load_json(paths["key_levels"]) or {}
-    strategy = load_json(paths["strategy"]) or {}
-    confluences = load_json(paths["confluences"]) or {}
-    current_context = load_json(paths["current_context"]) or {}
-
-    return (
-        f"## SYSTEM_PROMPT\n{system_prompt}\n\n"
-        f"## MAIN_ANALYSIS_PROMPT\n{main_prompt}\n\n"
-        f"## WATCHLIST\n{json.dumps(watchlist)}\n\n"
-        f"## PROCESSED_BRIEFING\n{json.dumps(processed_briefing)[:120000]}\n\n"
-        f"## KEY_LEVELS\n{json.dumps(key_levels)[:80000]}\n\n"
-        f"## STRATEGY\n{json.dumps(strategy)[:60000]}\n\n"
-        f"## CONFLUENCES_LIBRARY\n{json.dumps(confluences)[:60000]}\n\n"
-        f"## CURRENT_CONTEXT_SNAPSHOT\n{json.dumps(current_context)[:60000]}\n\n"
-        f"## INTRADAY_BARS_JSON\n{json.dumps(bars)[:180000]}\n\n"
-        f"### TASK\n"
-        f"For EACH symbol in WATCHLIST, identify NEW/RECENT confluences, favored_position ('long'|'short'|'none'), "
-        f"confidence (1-100), LTF key levels, and if confidence >= threshold propose option leg hints and trade params "
-        f"(entry_price_target, stop_loss, take_profits[], risk_reward).\n\n"
-        f"### OUTPUT REQUIREMENTS\n"
-        f"Return ONE JSON object that EXACTLY matches the schema. No commentary before/after. "
-        f"If uncertain, use nulls/empty arrays. Keep strings concise (<=200 chars)."
-    )
-
+# ---------------------- Prompt builders ----------------------
 def build_slow_prompt(paths: Dict[str, Path], watchlist: List[str], bars: dict) -> str:
     prompts = load_json(paths["prompts"]) or {}
     system_prompt = (prompts.get("system_prompt") or {}).get("content", "You are a trading analyst.")
@@ -413,78 +464,195 @@ def build_slow_prompt(paths: Dict[str, Path], watchlist: List[str], bars: dict) 
         f"## PROCESSED_BRIEFING\n{json.dumps(processed_briefing)[:120000]}\n\n"
         f"## CURRENT_CONTEXT_SNAPSHOT\n{json.dumps(current_context)[:60000]}\n\n"
         f"## INTRADAY_BARS_JSON (overview)\n{json.dumps(bars)[:180000]}\n\n"
-        f"### TASK\nSummarize overall market regime/direction and per-symbol bigger-picture context.\n\n"
-        f"### OUTPUT REQUIREMENTS\n"
-        f"Return ONE JSON object that EXACTLY matches the schema. No commentary before/after."
+        f"### TASK\nSummarize overall market regime/direction and per-symbol bigger-picture context. Return JSON per schema."
     )
 
-# ---------- robust LLM JSON handling (raw logs + basic repair) ----------
-def _log_raw(paths, kind: str, text: str):
-    ensure_dir(paths["llm_raw_dir"])
-    fname = paths["llm_raw_dir"] / f"{kind}-{datetime.utcnow().strftime('%H%M%S')}-{uuid.uuid4().hex[:6]}.txt"
-    fname.write_text(text or "", encoding="utf-8")
+def _bars_for_symbol(bars: dict, symbol: str, max_1m: int = 30, max_5m: int = 12) -> dict:
+    """Return a small, capped slice of bars for the symbol to keep prompts tiny."""
+    def tail(lst, n):
+        return lst[-n:] if isinstance(lst, list) and len(lst) > n else (lst or [])
+    one = bars.get("bars_1m", {}).get(symbol, [])
+    five = bars.get("bars_5m", {}).get(symbol, [])
+    return {"bars_1m": {symbol: tail(one, max_1m)}, "bars_5m": {symbol: tail(five, max_5m)}}
 
-def _extract_json_object(text: str) -> str | None:
-    start = text.find("{")
-    if start == -1:
-        return None
-    depth = 0
-    for i, ch in enumerate(text[start:], start):
-        if ch == "{":
-            depth += 1
-        elif ch == "}":
-            depth -= 1
-            if depth == 0:
-                return text[start:i+1]
+def build_symbol_prompt(paths: Dict[str, Path], symbol: str, capsule: dict, bars_for_sym: dict) -> str:
+    prompts = load_json(paths["prompts"]) or {}
+    system_prompt = (prompts.get("system_prompt") or {}).get("content", "You are a trading analyst.")
+    main_prompt = (prompts.get("main_analysis_prompt") or {}).get("content", "Analyze the market per strategy.")
+    strategy = load_json(paths["strategy"]) or {}
+
+    # optional: current_context symbol slice
+    current_ctx = load_json(paths["current_context"]) or {}
+    cur_by_sym = {}
+    if "symbols" in current_ctx and isinstance(current_ctx["symbols"], list):
+        for s in current_ctx["symbols"]:
+            if isinstance(s, dict) and s.get("symbol") == symbol:
+                cur_by_sym = s
+                break
+
+    state_blob = (cur_by_sym.get("state") or {})
+
+    # Stage/trend summary for the model
+    bos_record = next(
+        (c for c in state_blob.get("confluences", []) or []
+         if c.get("status") == "active" and str(c.get("kind", "")).startswith("BOS")),
+        {}
+    )
+    context_state = {
+        "htf_stage": state_blob.get("htf_stage"),
+        "ltf_stage": state_blob.get("ltf_stage"),
+        "trend": state_blob.get("trend"),
+        "last_bos": state_blob.get("last_bos"),
+        "last_bos_level": bos_record.get("level"),
+        "last_update_utc": state_blob.get("last_update_utc"),
+        "price_bias": cur_by_sym.get("price_bias"),
+    }
+
+    # Provide compact active confluence records (full + short form)
+    active_records: List[Dict[str, Any]] = []
+    for rec in state_blob.get("confluences", []) or []:
+        if rec.get("status") != "active":
+            continue
+        active_records.append({
+            "kind": rec.get("kind"),
+            "tf": rec.get("tf"),
+            "direction": rec.get("direction"),
+            "low": rec.get("low"),
+            "high": rec.get("high"),
+            "level": rec.get("level"),
+            "time": rec.get("time"),
+            "id": rec.get("id"),
+        })
+    active_records = active_records[:12]
+    active_short = cur_by_sym.get("active_confluences", []) or []
+
+    # Compact bar payload (very small window for anchor)
+    recent_bars: Dict[str, Any] = {}
+    for key, max_n in (("bars_1m", 6), ("bars_5m", 4)):
+        raw = (bars_for_sym.get(key, {}) or {}).get(symbol, [])
+        trimmed = raw[-max_n:] if isinstance(raw, list) else []
+        recent_bars[key] = trimmed
+
+    # Trim strategy to a lightweight brief if present
+    strategy_brief: Dict[str, Any] = {}
+    if isinstance(strategy, dict):
+        for field in ("name", "summary", "confidence_rules", "execution_rules"):
+            if field in strategy:
+                strategy_brief[field] = strategy[field]
+    strategy_text = json.dumps(strategy_brief)[:8000] if strategy_brief else "{}"
+
+    capsule_text = json.dumps(capsule)[:20000]
+    context_state_text = json.dumps(context_state)
+    active_records_text = json.dumps(active_records)
+    active_short_text = json.dumps(active_short)
+    recent_bars_text = json.dumps(recent_bars)
+
+    return (
+        f"## SYSTEM_PROMPT\n{system_prompt}\n\n"
+        f"## MAIN_ANALYSIS_PROMPT\n{main_prompt}\n\n"
+        f"## SYMBOL\n{symbol}\n\n"
+        f"## CONTEXT_STATE\n{context_state_text}\n\n"
+        f"## ACTIVE_CONFLUENCE_RECORDS\n{active_records_text}\n\n"
+        f"## ACTIVE_CONFLUENCES_SHORT\n{active_short_text}\n\n"
+        f"## RECENT_BARS\n{recent_bars_text}\n\n"
+        f"## CONTEXT_CAPSULE\n{capsule_text}\n\n"
+        f"## STRATEGY_BRIEF\n{strategy_text}\n\n"
+        f"### TASK\n"
+        f"Base your reasoning strictly on the provided context. Do not invent new confluences. \n"
+        f"Respond with favored_position ('long'|'short'|'none'), confidence (0-100), narrative plan, invalidation, and trade parameters (entry, stop, targets, risk_reward) consistent with the context.\n"
+        f"Return STRICT JSON matching the schema exactly (no prose)."
+    )
+
+# ---------------------- LLM caller (safe) ----------------------
+def _write_raw_llm(paths: Dict[str, Path], kind: str, text: str) -> Path:
+    paths["llm_raw_dir"].mkdir(parents=True, exist_ok=True)
+    fname = paths["llm_raw_dir"] / f"{kind}-{datetime.now(timezone.utc).strftime('%H%M%S')}-{uuid.uuid4().hex[:6]}.txt"
+    with fname.open("w", encoding="utf-8") as f:
+        f.write(text)
+    return fname
+
+def _extract_json_loose(text: str) -> Optional[dict]:
+    # Try plain parse first
+    try:
+        return json.loads(text)
+    except Exception:
+        pass
+    # Loose brace extraction
+    try:
+        start = text.find("{")
+        end = text.rfind("}")
+        if start != -1 and end != -1 and end > start:
+            return json.loads(text[start:end+1])
+    except Exception:
+        pass
+    # Try to strip code fences if any
+    m = re.search(r"\{[\s\S]*\}", text)
+    if m:
+        try:
+            return json.loads(m.group(0))
+        except Exception:
+            return None
     return None
 
-def _basic_json_repair(text: str) -> str | None:
-    obj = _extract_json_object(text)
-    if not obj:
-        return None
-    # remove trailing commas before } or ]
-    obj = re.sub(r",\s*([}\]])", r"\1", obj)
-    return obj
-
-def call_gemini_json_safe(model_name: str, prompt: str, schema_dict: dict, pyd_model: Type[BaseModel], paths, kind: str):
+def call_gemini_json_safe(model_name: str,
+                          prompt: str,
+                          schema_dict: dict,
+                          parse_model: BaseModel.__class__,
+                          paths: Dict[str, Path],
+                          kind: str,
+                          timeout: Optional[float] = None) -> Any:
+    """Call Gemini with JSON schema; write raw dump; robust parse with one retry on JSON errors."""
     model = genai.GenerativeModel(model_name)
-    resp = model.generate_content(
-        prompt,
-        generation_config={
-            "response_mime_type": "application/json",
-            "response_schema": schema_dict,
-            "max_output_tokens": 2048,
-        },
-    )
-    raw = getattr(resp, "text", "") or ""
-    # first attempt
-    try:
-        data = json.loads(raw)
-        return pyd_model.model_validate(data)
-    except Exception:
-        _log_raw(paths, kind+"-raw", raw)
-        repaired = _basic_json_repair(raw)
-        if repaired:
-            try:
-                data = json.loads(repaired)
-                return pyd_model.model_validate(data)
-            except Exception:
-                _log_raw(paths, kind+"-repaired", repaired)
-        # last resort minimal skeleton to keep the loop alive
-        if pyd_model is FastResp:
-            return pyd_model.model_validate({
-                "generated_at_utc": datetime.utcnow().isoformat()+"Z",
-                "overall": {"market_direction": None, "regime": None, "key_drivers": [], "notes": None},
-                "symbols": []
-            })
-        else:  # SlowResp fallback requires overall
-            return pyd_model.model_validate({
-                "generated_at_utc": datetime.utcnow().isoformat()+"Z",
-                "overall": {"market_direction": None, "regime": None, "key_drivers": [], "notes": None},
-                "symbols": []
-            })
 
-# ---------------------- Signal normalization ----------------------
+    def _invoke(text_prompt: str):
+        return model.generate_content(
+            text_prompt,
+            generation_config={
+                "response_mime_type": "application/json",
+                "response_schema": schema_dict,
+            },
+        )
+
+    def _invoke_with_timeout(text_prompt: str):
+        if timeout is None:
+            return _invoke(text_prompt)
+        with ThreadPoolExecutor(max_workers=1) as pool:
+            future = pool.submit(_invoke, text_prompt)
+            try:
+                return future.result(timeout=timeout)
+            except FuturesTimeoutError:
+                future.cancel()
+                raise TimeoutError(f"Gemini call timed out after {timeout}s for {kind}")
+
+    resp = _invoke_with_timeout(prompt)
+    raw_text = getattr(resp, "text", "") or ""
+    _write_raw_llm(paths, kind, raw_text)
+
+    data = _extract_json_loose(raw_text)
+    if data is None:
+        # Retry once with a terse correction instruction appended
+        retry_prompt = prompt + "\n\nIMPORTANT: Your previous output was not valid JSON. Re-send ONLY valid JSON that matches the schema. No prose."
+        resp2 = _invoke_with_timeout(retry_prompt)
+        raw_text2 = getattr(resp2, "text", "") or ""
+        _write_raw_llm(paths, kind + "-retry", raw_text2)
+        data = _extract_json_loose(raw_text2)
+        if data is None:
+            raise ValueError("LLM returned non-JSON twice")
+
+    # Pydantic validation
+    try:
+        return parse_model.model_validate(data)
+    except ValidationError as ve:
+        # If generated_at_utc missing on per-symbol, patch with now and retry validation once
+        if parse_model is PerSymbolResp and isinstance(data, dict):
+            data.setdefault("generated_at_utc", datetime.now(timezone.utc).isoformat())
+            try:
+                return parse_model.model_validate(data)
+            except Exception:
+                raise ve
+        raise ve
+
+# ---------------------- Signal normalization & post-validation ----------------------
 def to_signal_packets(fr: FastResp, threshold: int) -> List[Dict[str, Any]]:
     sigs: List[Dict[str, Any]] = []
     for s in fr.symbols:
@@ -507,10 +675,48 @@ def to_signal_packets(fr: FastResp, threshold: int) -> List[Dict[str, Any]]:
                     "plan": (s.plan.model_dump() if s.plan else None),
                     "confidence": s.confidence,
                 },
-                "overall_context_snapshot": (fr.overall.model_dump() if fr.overall else {}),
+                "overall_context_snapshot": fr.overall.model_dump(),
                 "generated_at_utc": fr.generated_at_utc,
             })
     return sigs
+
+def post_validate_symbol_ctx(sym: str, ctx: PerSymbolResp, rr_min: float = 1.0) -> Tuple[SymbolCtx, List[str]]:
+    errs: List[str] = []
+    position = (ctx.favored_position or "").lower()
+    tps = (ctx.trade_params.take_profits if ctx.trade_params and ctx.trade_params.take_profits else [])
+    entry = ctx.trade_params.entry_price_target if ctx.trade_params else None
+    sl = ctx.trade_params.stop_loss if ctx.trade_params else None
+    rr = ctx.trade_params.risk_reward if ctx.trade_params else None
+
+    # If proposing a trade idea
+    if position in ("long", "short") and ctx.confidence >= 1:
+        if entry is None or sl is None or not tps:
+            errs.append("missing entry/SL/TPs for active idea")
+        if entry is not None and sl is not None:
+            if position == "long" and not (sl < entry):
+                errs.append("long idea but SL >= entry")
+            if position == "short" and not (sl > entry):
+                errs.append("short idea but SL <= entry")
+        if entry is not None and tps:
+            if position == "long" and not all(tp > entry for tp in tps):
+                errs.append("long idea but at least one TP <= entry")
+            if position == "short" and not all(tp < entry for tp in tps):
+                errs.append("short idea but at least one TP >= entry")
+        if rr is not None and rr < rr_min:
+            errs.append(f"risk_reward {rr} < {rr_min}")
+
+    sc = SymbolCtx(
+        symbol=sym,
+        active_confluences=ctx.active_confluences or [],
+        ltf_key_levels=ctx.ltf_key_levels or [],
+        price_bias=ctx.price_bias,
+        favored_position=ctx.favored_position,
+        confidence=int(ctx.confidence or 0),
+        plan=ctx.plan,
+        trade_params=ctx.trade_params,
+        option_leg=ctx.option_leg,
+    )
+    return sc, errs
 
 # ---------------------- Main (supports live + time-compressed test) ----------------------
 def main():
@@ -534,7 +740,7 @@ def main():
 
     # Paths/clients
     paths = day_paths(day_str)
-    init_gemini()  # configure google-generativeai with GOOGLE_API_KEY
+    init_gemini()
     alp = Clients()
 
     # Session bounds
@@ -544,90 +750,187 @@ def main():
     preopen_et = bounds["preopen_et"]      # 06:30
     preopen_utc = to_utc(preopen_et)
 
+    # Focus symbols
+    focus_symbols = load_focus_symbols(paths)
+    # Backstop: if focus list contains names not in WATCHLIST, it's fine; we fetch only focus.
+
     # Prepare test cache if in test mode (prefetch once 06:30→11:00 ET)
     cache = None
     if test_mode:
-        cache = TestBarCache(alp, WATCHLIST, preopen_utc, to_utc(run_end_et))
+        cache = TestBarCache(alp, focus_symbols, preopen_utc, to_utc(run_end_et))
 
     paths["current_context"].parent.mkdir(parents=True, exist_ok=True)
+    paths["llm_raw_dir"].mkdir(parents=True, exist_ok=True)
 
     # Sim clock (in test) vs real clock (live)
     sim_et = run_start_et  # starts at 07:30 for test
     last_slow_sim_et: Optional[datetime] = None
     last_slow_real_utc: Optional[datetime] = None
 
-    print(f"Watchlist: {WATCHLIST}")
+    print(f"Watchlist: {focus_symbols}")
     print(f"Feed={alp.feed.name} Adjustment={Adjustment.SPLIT.name} Window=150m Preopen={preopen_et.strftime('%H:%M')} ET")
-    print(f"Session {run_start_et.strftime('%H:%M')}→{run_end_et.strftime('%H:%M')} ET | fast={fast_secs}s slow={slow_secs}s")
+    print(f"Session {run_start_et.strftime('%H:%M')}->{run_end_et.strftime('%H:%M')} ET | fast={fast_secs}s slow={slow_secs}s")
     print(f"Models: fast={FAST_MODEL} slow={SLOW_MODEL} threshold={CONF_THRESHOLD}")
 
+    slow_call_timeout = float(os.getenv("SLOW_CALL_TIMEOUT", str(slow_secs)))
+
+    # ----------- helper: per-tick fast loop executor (concurrent) -----------
+    def run_fast_fanout(bars: dict, tick_label: str, log_extra: dict = None):
+        """Run per-symbol LLM calls concurrently; update current_context & signals."""
+        # Pre-compute deterministic features and update per-symbol state before LLM calls
+        base_ctx = load_json(paths["current_context"]) or {"symbols": []}
+        ex_by_symbol = {s.get("symbol"): s for s in base_ctx.get("symbols", []) if isinstance(s, dict)}
+
+        # Optional SMT reference mapping
+        ref_pairs = {"QQQ": "SPY", "IWM": "SPY"}
+
+        features_start = perf_counter()
+        for s in focus_symbols:
+            try:
+                sym_bars = _bars_for_symbol(bars, s)
+                feats = pack_features_for_symbol(s, sym_bars, ref_pairs=ref_pairs)
+                print(f"[ENGINE] {tick_label} {s}: features ready | tf5 keys={list((feats.get('tf_5m') or {}).keys())}")
+                # Persist feature capsule for traceability
+                save_json(paths["capsules_dir"] / f"{s}.json", feats)
+                prev_slice = ex_by_symbol.get(s, {"symbol": s})
+                updated_slice = update_symbol_state(prev_slice, feats)
+                dbg_state = updated_slice.get("state", {})
+                print(
+                    f"[ENGINE] {tick_label} {s}: stage htf={dbg_state.get('htf_stage')} "
+                    f"ltf={dbg_state.get('ltf_stage')} active={len(updated_slice.get('active_confluences', []))}"
+                )
+                ex_by_symbol[s] = updated_slice
+            except Exception as e:
+                print(f"[ENGINE] {s}: feature compute error: {e}")
+
+        feature_elapsed = perf_counter() - features_start
+        print(f"[ENGINE] {tick_label}: feature+state pass took {feature_elapsed:.2f}s")
+
+        # Write intermediate state so prompts can read stage/active confluences
+        base_ctx["symbols"] = list(ex_by_symbol.values())
+        save_json(paths["current_context"], base_ctx)
+
+        fast_call_timeout = float(os.getenv("FAST_CALL_TIMEOUT", "12"))
+
+        # Load capsules once (from the freshly written features)
+        symbol_capsules = {s: load_capsule(paths, s) for s in focus_symbols}
+
+        def worker(sym: str) -> Tuple[str, Optional[SymbolCtx], Optional[str]]:
+            try:
+                worker_start = perf_counter()
+                print(f"[LLM] {tick_label} {sym}: building prompt")
+                sprompt = build_symbol_prompt(
+                    paths=paths,
+                    symbol=sym,
+                    capsule=symbol_capsules.get(sym, {}),
+                    bars_for_sym=_bars_for_symbol(bars, sym),
+                )
+                prompt_time = perf_counter() - worker_start
+                print(f"[LLM] {tick_label} {sym}: prompt ready in {prompt_time:.2f}s; calling Gemini")
+                call_start = perf_counter()
+                sresp: PerSymbolResp = call_gemini_json_safe(
+                    FAST_MODEL,
+                    sprompt,
+                    symbol_schema_dict(),
+                    PerSymbolResp,
+                    paths,
+                    kind=f"fast-{sym}",
+                    timeout=fast_call_timeout,
+                )
+                call_time = perf_counter() - call_start
+                total_time = perf_counter() - worker_start
+                print(
+                    f"[LLM] {tick_label} {sym}: received response | favored={sresp.favored_position} "
+                    f"conf={sresp.confidence} | call={call_time:.2f}s total={total_time:.2f}s"
+                )
+                ctx_valid, errs = post_validate_symbol_ctx(sym, sresp, rr_min=1.0)
+                if errs:
+                    # annotate into plan.keep_above_take_profits for visibility
+                    if ctx_valid.plan is None:
+                        ctx_valid.plan = Plan()
+                    msg = "; ".join(errs)[:200]
+                    ctx_valid.plan.keep_above_take_profits = (ctx_valid.plan.keep_above_take_profits or "")
+                    if ctx_valid.plan.keep_above_take_profits:
+                        ctx_valid.plan.keep_above_take_profits += " | "
+                    ctx_valid.plan.keep_above_take_profits += f"POST-VALIDATOR: {msg}"
+                return sym, ctx_valid, sresp.generated_at_utc
+            except Exception as e:
+                print(f"[FAST] {sym}: ERROR {e}")
+                return sym, None, None
+
+        results: List[SymbolCtx] = []
+        gen_times: List[str] = []
+
+        max_workers = min(5, max(1, len(focus_symbols)))
+        with ThreadPoolExecutor(max_workers=max_workers) as ex:
+            futs = {ex.submit(worker, s): s for s in focus_symbols}
+            for fut in as_completed(futs):
+                _, ctx, gen_t = fut.result()
+                if ctx is not None:
+                    results.append(ctx)
+                if gen_t:
+                    gen_times.append(gen_t)
+
+        gen_utc = (gen_times[-1] if gen_times else datetime.now(timezone.utc).isoformat())
+        fr = FastResp(generated_at_utc=gen_utc, overall=None, symbols=results)
+
+        # overall backfill
+        if fr.overall is None:
+            prev = load_json(paths["current_context"]) or {}
+            prev_overall = prev.get("overall") or {"market_direction": None, "regime": None, "key_drivers": [], "notes": None}
+            fr.overall = OverallCtx.model_validate(prev_overall)
+
+        # Merge LLM outputs with deterministic state slices (preserve state/active_confluences)
+        merged_by_sym = {k: v for k, v in ex_by_symbol.items()}
+        for s in fr.symbols:
+            cur = merged_by_sym.get(s.symbol, {"symbol": s.symbol})
+            # Prefer deterministic active_confluences over LLM-provided
+            merged = {**s.model_dump(), **cur}
+            merged["active_confluences"] = cur.get("active_confluences", s.active_confluences or [])
+            merged_by_sym[s.symbol] = merged
+
+        current_context_doc = {
+            "generated_at_utc": fr.generated_at_utc,
+            "overall": fr.overall.model_dump(),
+            "symbols": list(merged_by_sym.values()),
+        }
+        save_json(paths["current_context"], current_context_doc)
+        line = {"type": "fast", **(log_extra or {}), **current_context_doc}
+        append_jsonl(paths["current_context_log"], line)
+
+        sigs = to_signal_packets(fr, CONF_THRESHOLD)
+        save_json(paths["signals"], {"generated_at_utc": fr.generated_at_utc, "signals": sigs})
+        print(f"[FAST] {tick_label} | symbols={len(fr.symbols)} | signals={len(sigs)}")
+
+    # ------------------ main loop ------------------
     while True:
         if test_mode:
+            # End when simulated clock passes 11:00 ET
             if sim_et > run_end_et:
                 print("[TEST] Session complete.")
                 break
             cur_utc = to_utc(sim_et)
-
-            # Rolling window: max(preopen, sim_et - 150m) → sim_et
             start_utc = max(preopen_utc, cur_utc - timedelta(minutes=150))
-            bars = cache.slice(start_utc, cur_utc)  # zero API calls during test
+            bars = cache.slice(start_utc, cur_utc)  # no API calls during test
 
             log_minute(paths, mode="test", et_time=sim_et, cur_utc=cur_utc,
-                       start_utc=start_utc, end_utc=cur_utc, watchlist=WATCHLIST, bars=bars)
+                       start_utc=start_utc, end_utc=cur_utc, watchlist=focus_symbols, bars=bars)
 
-            # FAST loop
+            # FAST (per-symbol concurrent)
             try:
-                prompt = build_fast_prompt(paths, WATCHLIST, bars)
-                fr: FastResp = call_gemini_json_safe(FAST_MODEL, prompt, fast_schema_dict(), FastResp, paths, "fast")
-                if fr.overall is None:
-                    prev = load_json(paths["current_context"]) or {}
-                    prev_overall = prev.get("overall") or {"market_direction": None, "regime": None, "key_drivers": [], "notes": None}
-                    fr.overall = OverallCtx.model_validate(prev_overall)
-                current_context_doc = {
-                    "generated_at_utc": fr.generated_at_utc,
-                    "overall": fr.overall.model_dump(),
-                    "symbols": [s.model_dump() for s in fr.symbols],
-                }
-                save_json(paths["current_context"], current_context_doc)
-                append_jsonl(paths["current_context_log"], {"type": "fast", "sim_time_et": sim_et.isoformat(), **current_context_doc})
-
-                sigs = to_signal_packets(fr, CONF_THRESHOLD)
-                save_json(paths["signals"], {"generated_at_utc": fr.generated_at_utc, "signals": sigs})
-                for ev in sigs:
-                    event_line = {
-                        "event": "signal_over_threshold",
-                        "sim_time_et": sim_et.isoformat(),
-                        "generated_at_utc": fr.generated_at_utc,
-                        "day": paths["day"],
-                        "symbol": ev["symbol"],
-                        "direction": ev["trade_signal"],
-                        "confidence": ev["context"]["confidence"],
-                        "entry": ev["trade_parameters"]["entry_price_target"],
-                        "stop_loss": ev["trade_parameters"]["stop_loss"],
-                        "take_profits": ev["trade_parameters"]["all_take_profits"],
-                        "risk_reward": ev["trade_parameters"]["risk_reward"],
-                        "active_confluences": ev["context"]["active_confluences"],
-                        "ltf_key_levels": ev["context"]["ltf_key_levels"],
-                        "price_bias": ev["context"]["price_bias"],
-                        "overall_market": ev["overall_context_snapshot"],
-                        "option_hint": ev.get("option_hint", {}),
-                        "eval_defaults": {
-                            "timeframe": "1m",
-                            "horizon_min": 60,
-                            "fill_policy": "next_open",
-                            "tiebreak": "sl_first"
-                        }
-                    }
-                    append_jsonl(paths["events_log"], event_line)
-                print(f"[FAST-TEST] {sim_et.strftime('%H:%M:%S ET')} | symbols={len(fr.symbols)} | signals={len(sigs)}")
+                run_fast_fanout(bars, tick_label=sim_et.strftime("%H:%M:%S ET"),
+                                log_extra={"sim_time_et": sim_et.isoformat()})
             except Exception as e:
                 print(f"[FAST-TEST] ERROR: {e}")
 
             # SLOW loop every 2.5 simulated minutes
             try:
                 if (last_slow_sim_et is None) or ((sim_et - last_slow_sim_et) >= timedelta(minutes=2, seconds=30)):
-                    sprompt = build_slow_prompt(paths, WATCHLIST, bars)
-                    sr: SlowResp = call_gemini_json_safe(SLOW_MODEL, sprompt, slow_schema_dict(), SlowResp, paths, "slow")
+                    sprompt = build_slow_prompt(paths, focus_symbols, bars)
+                    sr: SlowResp = call_gemini_json_safe(
+                        SLOW_MODEL, sprompt, slow_schema_dict(), SlowResp, paths, kind="slow",
+                        timeout=slow_call_timeout
+                    )
                     base = load_json(paths["current_context"]) or {"symbols": []}
                     base["generated_at_utc"] = sr.generated_at_utc
                     base["overall"] = sr.overall.model_dump()
@@ -661,36 +964,19 @@ def main():
             cur_utc = wall_et.astimezone(timezone.utc)
             start_utc = max(preopen_utc, cur_utc - timedelta(minutes=150))
 
-            # fetch once per tick
             try:
-                bars = fetch_window_bars(alp, WATCHLIST, start_utc, cur_utc)
+                bars = fetch_window_bars(alp, focus_symbols, start_utc, cur_utc)
             except Exception as e:
                 print(f"[BARS-LIVE] ERROR: {e}")
                 time.sleep(fast_secs)
                 continue
 
             log_minute(paths, mode="live", et_time=wall_et, cur_utc=cur_utc,
-                       start_utc=start_utc, end_utc=cur_utc, watchlist=WATCHLIST, bars=bars)
+                       start_utc=start_utc, end_utc=cur_utc, watchlist=focus_symbols, bars=bars)
 
-            # FAST loop
+            # FAST (per-symbol concurrent)
             try:
-                prompt = build_fast_prompt(paths, WATCHLIST, bars)
-                fr: FastResp = call_gemini_json_safe(FAST_MODEL, prompt, fast_schema_dict(), FastResp, paths, "fast")
-                if fr.overall is None:
-                    prev = load_json(paths["current_context"]) or {}
-                    prev_overall = prev.get("overall") or {"market_direction": None, "regime": None, "key_drivers": [], "notes": None}
-                    fr.overall = OverallCtx.model_validate(prev_overall)
-                current_context_doc = {
-                    "generated_at_utc": fr.generated_at_utc,
-                    "overall": fr.overall.model_dump(),
-                    "symbols": [s.model_dump() for s in fr.symbols],
-                }
-                save_json(paths["current_context"], current_context_doc)
-                append_jsonl(paths["current_context_log"], {"type": "fast", **current_context_doc})
-
-                sigs = to_signal_packets(fr, CONF_THRESHOLD)
-                save_json(paths["signals"], {"generated_at_utc": fr.generated_at_utc, "signals": sigs})
-                print(f"[FAST] {wall_et.strftime('%H:%M:%S ET')} | symbols={len(fr.symbols)} | signals={len(sigs)}")
+                run_fast_fanout(bars, tick_label=wall_et.strftime("%H:%M:%S ET"))
             except Exception as e:
                 print(f"[FAST] ERROR: {e}")
 
@@ -698,8 +984,11 @@ def main():
             try:
                 now_utc = datetime.now(timezone.utc)
                 if (last_slow_real_utc is None) or ((now_utc - last_slow_real_utc).total_seconds() >= slow_secs):
-                    sprompt = build_slow_prompt(paths, WATCHLIST, bars)
-                    sr: SlowResp = call_gemini_json_safe(SLOW_MODEL, sprompt, slow_schema_dict(), SlowResp, paths, "slow")
+                    sprompt = build_slow_prompt(paths, focus_symbols, bars)
+                    sr: SlowResp = call_gemini_json_safe(
+                        SLOW_MODEL, sprompt, slow_schema_dict(), SlowResp, paths, kind="slow",
+                        timeout=slow_call_timeout
+                    )
                     base = load_json(paths["current_context"]) or {"symbols": []}
                     base["generated_at_utc"] = sr.generated_at_utc
                     base["overall"] = sr.overall.model_dump()
