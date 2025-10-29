@@ -39,7 +39,8 @@ from pydantic import BaseModel, Field, ValidationError
 
 # ---- Google Generative AI SDK (Gemini) ----
 # pip install google-generativeai
-import google.generativeai as genai
+# import google.generativeai as genai  # keeping for potential fallback
+import requests
 
 # ---- Alpaca Data (alpaca-py) ----
 from alpaca.data.historical import StockHistoricalDataClient
@@ -442,13 +443,37 @@ class TestBarCache:
         return out
 
 # ---------------------- Gemini init ----------------------
-def init_gemini():
-    # Configure API key for google-generativeai
-    load_dotenv()
-    api_key = os.getenv("GOOGLE_API_KEY")
+# def init_gemini():
+#     # Configure API key for google-generativeai
+#     load_dotenv()
+#     api_key = os.getenv("GOOGLE_API_KEY")
+#     if not api_key:
+#         raise RuntimeError("Missing GOOGLE_API_KEY")
+#     # genai.configure(api_key=api_key) # Commented out for now
+
+# GROK client setup
+# GROK_CLIENT: Optional[requests.Session] = None # This line is removed
+
+def init_grok_session() -> requests.Session:
+    api_key = os.getenv("XAI_API_KEY")
     if not api_key:
-        raise RuntimeError("Missing GOOGLE_API_KEY")
-    genai.configure(api_key=api_key)
+        raise RuntimeError("Missing XAI_API_KEY")
+    sess = requests.Session()
+    sess.headers.update({
+        "Authorization": f"Bearer {api_key}",
+        "Content-Type": "application/json"
+    })
+    return sess
+
+
+GROK_SESSION: Optional[requests.Session] = None
+
+
+def ensure_grok_session() -> requests.Session:
+    global GROK_SESSION
+    if GROK_SESSION is None:
+        GROK_SESSION = init_grok_session()
+    return GROK_SESSION
 
 # ---------------------- Prompt builders ----------------------
 def build_slow_prompt(paths: Dict[str, Path], watchlist: List[str], bars: dict) -> str:
@@ -594,62 +619,124 @@ def _extract_json_loose(text: str) -> Optional[dict]:
             return None
     return None
 
-def call_gemini_json_safe(model_name: str,
-                          prompt: str,
-                          schema_dict: dict,
-                          parse_model: BaseModel.__class__,
-                          paths: Dict[str, Path],
-                          kind: str,
-                          timeout: Optional[float] = None) -> Any:
-    """Call Gemini with JSON schema; write raw dump; robust parse with one retry on JSON errors."""
-    model = genai.GenerativeModel(model_name)
+# def call_gemini_json_safe(model_name: str,
+#                           prompt: str,
+#                           schema_dict: dict,
+#                           parse_model: BaseModel.__class__,
+#                           paths: Dict[str, Path],
+#                           kind: str,
+#                           timeout: Optional[float] = None) -> Any:
+#     """Call Gemini with JSON schema; write raw dump; robust parse with one retry on JSON errors."""
+#     # model = genai.GenerativeModel(model_name) # Commented out for now
 
-    def _invoke(text_prompt: str):
-        return model.generate_content(
-            text_prompt,
-            generation_config={
-                "response_mime_type": "application/json",
-                "response_schema": schema_dict,
-            },
-        )
+#     def _invoke(text_prompt: str):
+#         # return model.generate_content( # Commented out for now
+#         #     text_prompt, # Commented out for now
+#         #     generation_config={ # Commented out for now
+#         #         "response_mime_type": "application/json", # Commented out for now
+#         #         "response_schema": schema_dict, # Commented out for now
+#         #     }, # Commented out for now
+#         # ) # Commented out for now
+#         pass # Placeholder for xai.invoke
 
-    def _invoke_with_timeout(text_prompt: str):
-        if timeout is None:
-            return _invoke(text_prompt)
-        with ThreadPoolExecutor(max_workers=1) as pool:
-            future = pool.submit(_invoke, text_prompt)
-            try:
-                return future.result(timeout=timeout)
-            except FuturesTimeoutError:
-                future.cancel()
-                raise TimeoutError(f"Gemini call timed out after {timeout}s for {kind}")
+#     def _invoke_with_timeout(text_prompt: str):
+#         if timeout is None:
+#             return _invoke(text_prompt)
+#         with ThreadPoolExecutor(max_workers=1) as pool:
+#             future = pool.submit(_invoke, text_prompt)
+#             try:
+#                 return future.result(timeout=timeout)
+#             except FuturesTimeoutError:
+#                 future.cancel()
+#                 raise TimeoutError(f"Gemini call timed out after {timeout}s for {kind}")
 
-    resp = _invoke_with_timeout(prompt)
-    raw_text = getattr(resp, "text", "") or ""
+#     resp = _invoke_with_timeout(prompt)
+#     raw_text = getattr(resp, "text", "") or ""
+#     _write_raw_llm(paths, kind, raw_text)
+
+#     data = _extract_json_loose(raw_text)
+#     if data is None:
+#         # Retry once with a terse correction instruction appended
+#         retry_prompt = prompt + "\n\nIMPORTANT: Your previous output was not valid JSON. Re-send ONLY valid JSON that matches the schema. No prose."
+#         resp2 = _invoke_with_timeout(retry_prompt)
+#         raw_text2 = getattr(resp2, "text", "") or ""
+#         _write_raw_llm(paths, kind + "-retry", raw_text2)
+#         data = _extract_json_loose(raw_text2)
+#         if data is None:
+#             raise ValueError("LLM returned non-JSON twice")
+
+#     # Pydantic validation
+#     try:
+#         return parse_model.model_validate(data)
+#     except ValidationError as ve:
+#         # If generated_at_utc missing on per-symbol, patch with now and retry validation once
+#         if parse_model is PerSymbolResp and isinstance(data, dict):
+#             data.setdefault("generated_at_utc", datetime.now(timezone.utc).isoformat())
+#             try:
+#                 return parse_model.model_validate(data)
+#             except Exception:
+#                 raise ve
+#         raise ve
+
+GROK_API_URL = os.getenv("XAI_API_URL", "https://api.x.ai/v1/responses")
+
+
+def call_grok_json_safe(model_name: str,
+                        prompt: str,
+                        schema_dict: dict,
+                        parse_model: BaseModel.__class__,
+                        paths: Dict[str, Path],
+                        kind: str,
+                        timeout: Optional[float] = None) -> Any:
+    session = ensure_grok_session()
+
+    def _invoke(text_prompt: str) -> requests.Response:
+        payload = {
+            "model": model_name,
+            "input": [{"role": "user", "content": text_prompt}],
+            "response_format": {"type": "json_object", "json_schema": schema_dict},
+        }
+        return session.post(GROK_API_URL, json=payload, timeout=timeout)
+
+    resp = _invoke(prompt)
+    if resp.status_code != 200:
+        raise RuntimeError(f"{kind} Grok call failed: HTTP {resp.status_code} {resp.text[:200]}")
+
+    data_obj = resp.json()
+    raw_text = data_obj.get("output_text")
+    if not raw_text and isinstance(data_obj.get("output"), list):
+        blocks = data_obj.get("output", [])
+        if blocks:
+            raw_text = blocks[0].get("content", "")
+    raw_text = raw_text or ""
     _write_raw_llm(paths, kind, raw_text)
 
     data = _extract_json_loose(raw_text)
     if data is None:
-        # Retry once with a terse correction instruction appended
-        retry_prompt = prompt + "\n\nIMPORTANT: Your previous output was not valid JSON. Re-send ONLY valid JSON that matches the schema. No prose."
-        resp2 = _invoke_with_timeout(retry_prompt)
-        raw_text2 = getattr(resp2, "text", "") or ""
+        retry_prompt = prompt + (
+            "\n\nIMPORTANT: Your previous output was not valid JSON. Re-send ONLY valid JSON that matches the schema. No prose."
+        )
+        resp2 = _invoke(retry_prompt)
+        if resp2.status_code != 200:
+            raise RuntimeError(f"{kind} Grok retry failed: HTTP {resp2.status_code} {resp2.text[:200]}")
+        data_obj2 = resp2.json()
+        raw_text2 = data_obj2.get("output_text")
+        if not raw_text2 and isinstance(data_obj2.get("output"), list):
+            blocks2 = data_obj2.get("output", [])
+            if blocks2:
+                raw_text2 = blocks2[0].get("content", "")
+        raw_text2 = raw_text2 or ""
         _write_raw_llm(paths, kind + "-retry", raw_text2)
         data = _extract_json_loose(raw_text2)
         if data is None:
-            raise ValueError("LLM returned non-JSON twice")
+            raise ValueError("Grok returned non-JSON twice")
 
-    # Pydantic validation
     try:
         return parse_model.model_validate(data)
     except ValidationError as ve:
-        # If generated_at_utc missing on per-symbol, patch with now and retry validation once
         if parse_model is PerSymbolResp and isinstance(data, dict):
             data.setdefault("generated_at_utc", datetime.now(timezone.utc).isoformat())
-            try:
-                return parse_model.model_validate(data)
-            except Exception:
-                raise ve
+            return parse_model.model_validate(data)
         raise ve
 
 # ---------------------- Signal normalization & post-validation ----------------------
@@ -734,13 +821,14 @@ def main():
     slow_secs = int(os.getenv("SLOW_SECS") or (25 if test_mode else 250))
 
     # Models
-    FAST_MODEL = os.getenv("FAST_MODEL", "gemini-2.5-flash-lite")
-    SLOW_MODEL = os.getenv("SLOW_MODEL", "gemini-2.5-flash-lite")
+    FAST_MODEL = os.getenv("FAST_MODEL", "grok-4-fast")
+    SLOW_MODEL = os.getenv("SLOW_MODEL", "grok-4")
     CONF_THRESHOLD = int(os.getenv("CONF_THRESHOLD", "70"))
 
     # Paths/clients
     paths = day_paths(day_str)
-    init_gemini()
+    # init_gemini()  # fallback
+    ensure_grok_session()
     alp = Clients()
 
     # Session bounds
@@ -826,9 +914,18 @@ def main():
                     bars_for_sym=_bars_for_symbol(bars, sym),
                 )
                 prompt_time = perf_counter() - worker_start
-                print(f"[LLM] {tick_label} {sym}: prompt ready in {prompt_time:.2f}s; calling Gemini")
+                print(f"[LLM] {tick_label} {sym}: prompt ready in {prompt_time:.2f}s; calling Grok")
                 call_start = perf_counter()
-                sresp: PerSymbolResp = call_gemini_json_safe(
+                # sresp: PerSymbolResp = call_gemini_json_safe(
+                #     FAST_MODEL,
+                #     sprompt,
+                #     symbol_schema_dict(),
+                #     PerSymbolResp,
+                #     paths,
+                #     kind=f"fast-{sym}",
+                #     timeout=fast_call_timeout,
+                # )
+                sresp: PerSymbolResp = call_grok_json_safe(
                     FAST_MODEL,
                     sprompt,
                     symbol_schema_dict(),
@@ -927,7 +1024,11 @@ def main():
             try:
                 if (last_slow_sim_et is None) or ((sim_et - last_slow_sim_et) >= timedelta(minutes=2, seconds=30)):
                     sprompt = build_slow_prompt(paths, focus_symbols, bars)
-                    sr: SlowResp = call_gemini_json_safe(
+                    # sr: SlowResp = call_gemini_json_safe(
+                    #     SLOW_MODEL, sprompt, slow_schema_dict(), SlowResp, paths, kind="slow",
+                    #     timeout=slow_call_timeout
+                    # )
+                    sr: SlowResp = call_grok_json_safe(
                         SLOW_MODEL, sprompt, slow_schema_dict(), SlowResp, paths, kind="slow",
                         timeout=slow_call_timeout
                     )
@@ -985,7 +1086,11 @@ def main():
                 now_utc = datetime.now(timezone.utc)
                 if (last_slow_real_utc is None) or ((now_utc - last_slow_real_utc).total_seconds() >= slow_secs):
                     sprompt = build_slow_prompt(paths, focus_symbols, bars)
-                    sr: SlowResp = call_gemini_json_safe(
+                    # sr: SlowResp = call_gemini_json_safe(
+                    #     SLOW_MODEL, sprompt, slow_schema_dict(), SlowResp, paths, kind="slow",
+                    #     timeout=slow_call_timeout
+                    # )
+                    sr: SlowResp = call_grok_json_safe(
                         SLOW_MODEL, sprompt, slow_schema_dict(), SlowResp, paths, kind="slow",
                         timeout=slow_call_timeout
                     )
