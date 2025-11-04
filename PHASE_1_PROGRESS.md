@@ -146,7 +146,7 @@ scripts/
 - `src/data_processing/premarket_stdev.py` - Original (will be replaced)
 - `src/data_processing/news_scraper.py` - Still used by bias_gatherer
 - `src/data_processing/daily_bias_computing.py` - Still used by bias_gatherer
-- `src/strategy/live_loop_stdev.py` - Will be refactored into src/live/loop.py
+- `src/strategy/live_loop_stdev.py` - ✅ Refactored into src/live/loop.py (file removed)
 
 ## Usage Examples
 

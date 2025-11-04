@@ -34,8 +34,22 @@ This project leverages a hybrid approach:
     ```
 
 5.  **Run the bot:**
+
+    **STDEV Trading System (New):**
     ```bash
-    python main.py
+    # Run premarket pipeline
+    python scripts/run_premarket.py --date YYYY-MM-DD --symbols SPY QQQ
+    
+    # Run live trading loop
+    python scripts/run_live_loop.py --date YYYY-MM-DD --symbols SPY QQQ
+    
+    # Or backtest on historical data
+    python scripts/run_backtest.py --date YYYY-MM-DD --symbols SPY QQQ
+    ```
+    
+    **Legacy ICT Strategy:**
+    ```bash
+    python main.py  # Old orchestrator (deprecated)
     ```
 
 ---

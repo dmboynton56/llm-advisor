@@ -1,3 +1,11 @@
+"""
+DEPRECATED: This is the old premarket pipeline orchestrator.
+
+For the new STDEV trading system, use:
+    python scripts/run_premarket.py --date YYYY-MM-DD --symbols SPY QQQ
+
+This file is kept for backward compatibility with the legacy ICT strategy workflow.
+"""
 import sys
 import os
 import subprocess

@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass, asdict
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timezone, timedelta, date
 from typing import Dict, Iterable, List, Optional
 
 import pandas as pd
@@ -184,15 +184,32 @@ def assemble_snapshot(symbol_snapshots: Iterable[SymbolSnapshot]) -> Dict:
 def build_premarket_snapshots(symbols: List[str],
                               client: Optional[StockHistoricalDataClient] = None,
                               feed: Optional[str] = None,
-                              config: Optional[Dict] = None) -> Dict:
+                              config: Optional[Dict] = None,
+                              trading_date: Optional[date] = None) -> Dict:
     """
     Build premarket snapshots for multiple symbols.
     
-    Returns dict compatible with live_loop_stdev.py seed_state function.
+    Args:
+        symbols: List of symbols to process
+        client: Optional Alpaca client (if None, creates one with credentials)
+        feed: Optional data feed ("iex" or "sip")
+        config: Optional configuration dict
+        trading_date: Optional trading date (defaults to today)
+    
+    Returns:
+        dict compatible with src/live/loop.py seed_states_from_snapshots function.
     """
     cfg = config or {}
     feed_enum = DataFeed(feed.upper()) if feed else DataFeed.IEX
-    cli = client or StockHistoricalDataClient()
+    
+    # Use provided client or create one with proper credentials
+    if client is None:
+        # Use AlpacaDataClient which handles credentials properly
+        from src.data.alpaca_client import AlpacaDataClient
+        alpaca_client = AlpacaDataClient(feed=feed)
+        cli = alpaca_client.client
+    else:
+        cli = client
 
     end_utc = datetime.now(timezone.utc)
     start_daily = end_utc - timedelta(days=cfg.get("daily_days", 180))

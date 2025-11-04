@@ -36,12 +36,12 @@ Refactor the trading system to focus on STDEV trading tactics with a clean archi
 **Existing Components:**
 
 - `src/features/stdev_features.py` - RollingStats and z-score computation
-- `src/strategy/live_loop_stdev.py` - STDEV live loop with state machine (120-window RollingStats)
+- `src/live/loop.py` - STDEV live loop with state machine (120-window RollingStats) [Refactored]
 - `src/data_processing/premarket_stdev.py` - Premarket snapshot computation (HTF stats, 5m bands)
 - `src/data_processing/news_scraper.py` - News gathering
 - `src/data_processing/daily_bias_computing.py` - ML model inference for daily bias
 - `src/execution/order_manager.py` - Trade execution (currently options-focused)
-- `main.py` - Premarket pipeline orchestrator
+- `main.py` - Old premarket pipeline orchestrator (deprecated, use `scripts/run_premarket.py`)
 
 **Gaps to Address:**
 
@@ -163,7 +163,7 @@ llm-advisor/
 - Move `premarket_stdev.py` logic into this module
 - Keep existing HTF stats computation (EMA slopes, HH/LL tags, ATR percentile)
 - Keep existing 5m bands computation (mu, sigma, ATR)
-- Output compatible with `live_loop_stdev.py` seed_state function
+- Output compatible with `src/live/loop.py` seed_states_from_snapshots function
 - Return `SymbolSnapshot` dataclass instances
 
 **File:** `scripts/run_premarket.py`
@@ -192,7 +192,7 @@ llm-advisor/
 
 **Implementation:**
 
-- Move RollingStats updates from `live_loop_stdev.py`
+- Move RollingStats updates from old live loop [COMPLETED]
 - Compute z-scores, mu, sigma for each symbol
 - Optionally compute additional indicators (RSI, MACD, etc.)
 - Return structured feature dict:
@@ -216,7 +216,7 @@ llm-advisor/
 
 **Implementation:**
 
-- Move threshold logic from `live_loop_stdev.py` evaluate_signals function
+- Move threshold logic from old live loop [COMPLETED]
 - Accept `ThresholdMultiplier` from market analyzer:
   ```python
   @dataclass
@@ -250,7 +250,7 @@ llm-advisor/
 
 **Implementation:**
 
-- Refactor `SymbolState` dataclass from `live_loop_stdev.py`
+- Refactor `SymbolState` dataclass from old live loop [COMPLETED]
 - Add `threshold_multiplier` field to SymbolState
 - Track status transitions: idle → mr_armed → mr_triggered → trade_executed
 - Store trade plans when signals trigger

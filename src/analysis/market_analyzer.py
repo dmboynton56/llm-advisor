@@ -89,20 +89,52 @@ class MarketAnalyzer:
                 f"HTF bias={state.htf_bias}, status={state.status}"
             )
         
-        # Build premarket context summary
+        # Build premarket context summary with ML and LLM opinions
         bias_summary = []
         for sym, bias in premarket_context.symbols.items():
-            bias_summary.append(f"- {sym}: {bias.daily_bias} ({bias.confidence}% confidence)")
+            ml_bias = bias.daily_bias
+            ml_conf = bias.confidence
+            
+            # Check if LLM validation exists
+            llm_validation = bias.model_output.get("llm_validation")
+            if llm_validation:
+                llm_bias = llm_validation.get("llm_bias", ml_bias)
+                llm_conf = llm_validation.get("llm_confidence", ml_conf)
+                agreement = llm_validation.get("agreement", "agree")
+                
+                if agreement == "disagree":
+                    bias_summary.append(
+                        f"- {sym}: ML={ml_bias} ({ml_conf}%) | LLM DISAGREES={llm_bias} ({llm_conf}%) | {llm_validation.get('reasoning', '')[:60]}"
+                    )
+                elif agreement == "partial":
+                    bias_summary.append(
+                        f"- {sym}: ML={ml_bias} ({ml_conf}%) | LLM PARTIAL={llm_bias} ({llm_conf}%)"
+                    )
+                else:
+                    bias_summary.append(
+                        f"- {sym}: {ml_bias} ({ml_conf}%) | LLM agrees ({llm_conf}%)"
+                    )
+            else:
+                bias_summary.append(f"- {sym}: {ml_bias} ({ml_conf}% confidence)")
+        
+        # Build news summary
+        macro_news = premarket_context.market_context.get('macro_news', [])[:3]
+        news_summary = []
+        for article in macro_news:
+            if isinstance(article, dict):
+                news_summary.append(article.get("headline", ""))
+            elif isinstance(article, str):
+                news_summary.append(article)
         
         prompt = f"""You are analyzing the current market state for a STDEV trading system.
 
 Current Technical State:
 {chr(10).join(tech_summary)}
 
-Premarket Context:
-Daily biases:
+Premarket Context (from this morning):
+Daily biases (ML model predictions + LLM validation):
 {chr(10).join(bias_summary)}
-News: {premarket_context.market_context.get('macro_news', [])[:3]}
+News: {news_summary if news_summary else 'None'}
 
 Recent Price Action (last 15 minutes):
 {recent_price_action}

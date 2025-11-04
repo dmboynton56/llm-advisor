@@ -66,12 +66,15 @@ def main():
             symbols=symbols,
             output_dir=output_dir
         )
-        print(f"✓ Gathered bias for {len(premarket_context.symbols)} symbols")
+        print(f"[OK] Gathered bias for {len(premarket_context.symbols)} symbols")
         
         # Step 2: Build STDEV snapshots
         print("\n[2/2] Building STDEV snapshots...")
-        snapshots = build_premarket_snapshots(symbols)
-        print(f"✓ Built snapshots for {len(snapshots.get('symbols', []))} symbols")
+        snapshots = build_premarket_snapshots(
+            symbols=symbols,
+            trading_date=trading_date
+        )
+        print(f"[OK] Built snapshots for {len(snapshots.get('symbols', []))} symbols")
         
         # Step 3: Combine and save
         print("\n[3/3] Combining outputs...")
@@ -107,13 +110,13 @@ def main():
         with open(output_path, 'w') as f:
             json.dump(output_dict, f, indent=2, default=str)
         
-        print(f"✓ Saved combined output to {output_path}")
+        print(f"[OK] Saved combined output to {output_path}")
         print("\n" + "=" * 60)
         print("Premarket pipeline completed successfully!")
         print("=" * 60)
         
     except Exception as e:
-        print(f"\n✗ Error: {e}")
+        print(f"\nError: {e}")
         import traceback
         traceback.print_exc()
         sys.exit(1)

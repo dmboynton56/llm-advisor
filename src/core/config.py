@@ -21,7 +21,7 @@ class RiskSettings(BaseModel):
 
 
 class LLMSettings(BaseModel):
-    provider: str = "openai"  # "openai", "anthropic", "bedrock"
+    provider: str = "openai"  # "openai", "anthropic", "grok", "bedrock"
     model: str = "gpt-4o-mini"
     market_analysis_interval_minutes: int = Field(default=15, ge=5, le=60)
     enable_trade_validation: bool = True

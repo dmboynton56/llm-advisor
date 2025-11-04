@@ -43,6 +43,32 @@ def validate_trade_with_llm(
             risk_assessment="Unknown",
         )
     
+    # Get symbol's premarket bias
+    symbol_bias = premarket_context.symbols.get(signal.symbol)
+    
+    # Build premarket context string with ML and LLM opinions
+    premarket_text = "No premarket data available"
+    if symbol_bias:
+        ml_bias = symbol_bias.daily_bias
+        ml_conf = symbol_bias.confidence
+        
+        # Check if LLM validation exists
+        llm_validation = symbol_bias.model_output.get("llm_validation")
+        if llm_validation:
+            llm_bias = llm_validation.get("llm_bias", ml_bias)
+            llm_conf = llm_validation.get("llm_confidence", ml_conf)
+            agreement = llm_validation.get("agreement", "agree")
+            reasoning = llm_validation.get("reasoning", "")
+            
+            premarket_text = f"""ML Model Prediction: {ml_bias} ({ml_conf}% confidence)
+LLM Validation: {llm_bias} ({llm_conf}% confidence) - {agreement.upper()}
+LLM Reasoning: {reasoning}
+
+News Summary: {symbol_bias.news_summary or 'None'}"""
+        else:
+            premarket_text = f"""ML Model Prediction: {ml_bias} ({ml_conf}% confidence)
+News Summary: {symbol_bias.news_summary or 'None'}"""
+    
     prompt = f"""A trade signal has been triggered:
 
 Symbol: {signal.symbol}
@@ -58,7 +84,7 @@ Technical Context:
 - Status: {state.status}
 
 Premarket Context:
-{premarket_context.symbols.get(signal.symbol, {}).get('news_summary', 'No news')}
+{premarket_text}
 
 Should we execute this trade? Analyze risk/reward and return JSON with:
 - should_execute: boolean
