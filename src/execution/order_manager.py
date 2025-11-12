@@ -15,7 +15,7 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.append(str(PROJECT_ROOT))
 
 from alpaca.trading.client import TradingClient
-from alpaca.trading.requests import BracketOrderRequest, TakeProfitRequest, StopLossRequest
+from alpaca.trading.requests import MarketOrderRequest, TakeProfitRequest, StopLossRequest
 from alpaca.trading.enums import OrderSide, TimeInForce, OrderClass
 from src.execution.risk_calculator import calculate_position_size, validate_risk_reward
 from src.core.config import Settings
@@ -106,8 +106,8 @@ class StockOrderManager:
         # Determine order side
         order_side = OrderSide.BUY if side.lower() == "buy" else OrderSide.SELL
         
-        # Construct bracket order
-        bracket_order = BracketOrderRequest(
+        # Construct bracket order using MarketOrderRequest
+        bracket_order = MarketOrderRequest(
             symbol=symbol,
             qty=qty,
             side=order_side,

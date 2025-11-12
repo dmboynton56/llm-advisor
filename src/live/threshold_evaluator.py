@@ -76,6 +76,30 @@ def evaluate_thresholds(
         if abs(z) < thresholds.mr_arm_z / 2:
             state.reset_to_idle()
     
+    # Handle already triggered status - if trade plan exists, return signal to execute
+    if state.status == "mr_triggered" or state.status == "tc_triggered":
+        # If trade plan exists but hasn't been executed yet, return signal
+        # Execution will clear the trade plan, so if it still exists, it needs execution
+        if state.trade and state.trade.setup:
+            setup_type = state.trade.setup.upper()
+            return SignalEvent(
+                symbol=state.symbol,
+                setup_type=setup_type,
+                side=state.side or "long",
+                entry_price=state.trade.entry_price,
+                z_score=state.last_z,
+                thresholds_used={
+                    "mr_arm_z": thresholds.mr_arm_z,
+                    "mr_trigger_z": thresholds.mr_trigger_z,
+                    "tc_arm_z": thresholds.tc_arm_z,
+                    "tc_trigger_z": thresholds.tc_trigger_z,
+                },
+                timestamp=datetime.now(),
+            )
+        # If no trade plan but status is triggered, reset (trade was executed)
+        state.reset_to_idle()
+        return None
+    
     # TC trigger
     if state.status == "tc_armed":
         if state.side == "long" and z >= thresholds.tc_trigger_z:
@@ -111,6 +135,8 @@ def _create_signal(
         sl_price=sl,
         tp_price=tp,
         triggered_at=datetime.now(),
+        execution_attempts=0,
+        first_execution_attempt=None,
     )
     state.status = f"{setup_type.lower()}_triggered"
     

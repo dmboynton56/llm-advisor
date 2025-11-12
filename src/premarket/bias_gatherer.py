@@ -289,11 +289,34 @@ def _extract_news_summary(symbol: str, news_data: Dict[str, Any]) -> str:
     return " | ".join(headlines)
 
 
-def save_premarket_context(context: PremarketContext, output_path: Path) -> None:
-    """Save premarket context to JSON file."""
+def save_premarket_context(context: PremarketContext, output_path: Path, 
+                           storage=None) -> None:
+    """Save premarket context to JSON file and optionally to database.
+    
+    Args:
+        context: PremarketContext to save
+        output_path: Path to save JSON file
+        storage: Optional StorageAdapter instance for database storage
+    """
+    # Save to JSON file (backward compatibility)
     output_path.parent.mkdir(parents=True, exist_ok=True)
     with open(output_path, 'w') as f:
         json.dump(asdict(context), f, indent=2, default=str)
+    
+    # Optionally save to database
+    if storage:
+        from datetime import datetime
+        trading_date = datetime.strptime(context.date, "%Y-%m-%d").date()
+        
+        for symbol, bias in context.symbols.items():
+            bias_data = {
+                "bias": bias.daily_bias,
+                "confidence": bias.confidence,
+                "model_output": bias.model_output,
+                "news_summary": bias.news_summary,
+                "premarket_price": bias.premarket_price
+            }
+            storage.save_daily_bias(trading_date, symbol, bias_data)
 
 
 def load_premarket_context(date_str: str, base_dir: Optional[Path] = None) -> PremarketContext:
@@ -301,8 +324,12 @@ def load_premarket_context(date_str: str, base_dir: Optional[Path] = None) -> Pr
     if base_dir is None:
         project_root = Path(__file__).resolve().parents[2]
         base_dir = project_root / "data" / "daily_news" / date_str / "processed"
-    
-    context_path = base_dir / "premarket_context.json"
+        context_path = base_dir / "premarket_context.json"
+    else:
+        # If base_dir is provided, check both processed/ subdirectory and direct
+        context_path = base_dir / "processed" / "premarket_context.json"
+        if not context_path.exists():
+            context_path = base_dir / "premarket_context.json"
     
     if not context_path.exists():
         raise FileNotFoundError(f"Premarket context not found at {context_path}")
@@ -310,15 +337,23 @@ def load_premarket_context(date_str: str, base_dir: Optional[Path] = None) -> Pr
     with open(context_path, 'r') as f:
         data = json.load(f)
     
+    # Handle both direct PremarketContext format and nested format (from combined output)
+    if "premarket_context" in data:
+        # Nested format from combined output
+        premarket_data = data["premarket_context"]
+    else:
+        # Direct format
+        premarket_data = data
+    
     # Reconstruct from dict
     symbols = {
         sym: PremarketBias(**bias_data)
-        for sym, bias_data in data.get("symbols", {}).items()
+        for sym, bias_data in premarket_data.get("symbols", {}).items()
     }
     
     return PremarketContext(
-        date=data["date"],
+        date=premarket_data.get("date", data.get("date", date_str)),
         symbols=symbols,
-        market_context=data.get("market_context", {}),
+        market_context=premarket_data.get("market_context", {}),
     )
 

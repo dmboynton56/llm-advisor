@@ -27,6 +27,7 @@ if str(PROJECT_ROOT) not in sys.path:
 from src.core.config import Settings
 from src.core.logging import setup_logging
 from src.data.alpaca_client import AlpacaDataClient
+from src.data.storage import Storage
 from src.premarket.bias_gatherer import load_premarket_context, PremarketContext
 from src.premarket.snapshot_builder import SymbolSnapshot
 from src.features.stdev_features import RollingStats
@@ -177,12 +178,24 @@ def seed_states_from_snapshots(
         # Extract closes for rolling stats
         closes = [bar["c"] for bar in bars[-window:]]
         
-        # Require minimum bars for seed (relaxed for backtests)
-        min_bars_required = min(window, max(30, len(bars)))  # At least 30 bars, or whatever we have
+        # Require minimum bars for seed (relaxed if we have premarket snapshots)
+        min_bars_required = 30  # Default requirement
+        
+        # If we have premarket snapshots, we can work with less data
+        # The snapshots already have mu/sigma from 5-minute bars
+        has_snapshot = symbol in snapshot_by_symbol
+        if has_snapshot:
+            # With snapshots, we can work with as few as 10 bars
+            min_bars_required = max(10, len(bars)) if len(bars) < 30 else 30
+            logger.debug(f"Relaxed bar requirement for {symbol} due to premarket snapshot (need {min_bars_required} bars)")
         
         if len(closes) < min_bars_required:
-            logger.warning(f"Insufficient seed data for {symbol} ({len(closes)}/{min_bars_required} bars, need at least 30)")
-            continue
+            if has_snapshot and len(closes) >= 10:
+                # We have a snapshot and at least 10 bars - proceed with warning
+                logger.warning(f"Low seed data for {symbol} ({len(closes)} bars), but using premarket snapshot - LLM will assess data quality")
+            else:
+                logger.warning(f"Insufficient seed data for {symbol} ({len(closes)}/{min_bars_required} bars, need at least {min_bars_required})")
+                continue
         
         if len(closes) < window:
             logger.info(f"Using {len(closes)} bars for {symbol} seed (target: {window}), RollingStats will adjust")
@@ -326,6 +339,8 @@ def main():
     parser.add_argument("--test", action="store_true", help="Test mode (use historical data)")
     parser.add_argument("--fast", type=int, default=60, help="Loop interval in seconds")
     parser.add_argument("--output", default=None, help="Output directory for logs")
+    parser.add_argument("--use-db", action="store_true", help="Save to database in addition to JSON files")
+    parser.add_argument("--db-path", default=None, help="Database path for SQLite (default: data/trading.db)")
     args = parser.parse_args()
     
     # Load settings
@@ -352,6 +367,12 @@ def main():
     logger.info(f"Starting live loop for {date_str}")
     logger.info(f"Symbols: {', '.join(symbols)}")
     
+    # Initialize storage if requested
+    storage = None
+    if args.use_db:
+        storage = Storage.create(env="dev", db_path=args.db_path or "data/trading.db")
+        logger.info(f"[DB] Using database storage: {storage.db_path if hasattr(storage, 'db_path') else 'PostgreSQL'}")
+    
     # Detect backtest mode
     is_backtest = args.test or (args.date and trading_date < datetime.now(ET).date())
     
@@ -373,7 +394,12 @@ def main():
     if snapshot_path.exists():
         with open(snapshot_path, 'r') as f:
             premarket_data = json.load(f)
-        snapshots = premarket_data.get("snapshots", {})
+        # Handle nested format
+        if "snapshots" in premarket_data:
+            snapshots = premarket_data.get("snapshots", {})
+        elif "snapshots" in premarket_data.get("premarket_context", {}):
+            snapshots = premarket_data["premarket_context"].get("snapshots", {})
+        
         if snapshots:
             logger.info(f"Loaded premarket snapshots for {len(snapshots.get('symbols', []))} symbols")
     elif not is_backtest:
@@ -452,14 +478,75 @@ def main():
     if not is_backtest:
         run_start_et = et_dt(trading_date, settings.trading.trading_window_start)
         run_start_utc = to_utc(run_start_et)
-        seed_start_utc = run_start_utc - timedelta(minutes=240)  # 4 hours before
-    
-    logger.info(f"Fetching seed bars from {seed_start_utc} to {run_start_utc}")
-    seed_bars_1m = alpaca_client.fetch_window_bars(symbols, seed_start_utc, run_start_utc)
-    # Extract 1m bars
-    bars_1m_dict = {sym: seed_bars_1m.get(sym, {}).get("bars_1m", []) for sym in symbols}
-    # Extract 5m bars (for minimal snapshot creation if needed)
-    bars_5m_dict = {sym: seed_bars_1m.get(sym, {}).get("bars_5m", []) for sym in symbols}
+        
+        # Strategy: Combine previous day's 1m bars + today's premarket 5m bars
+        # Alpaca doesn't reliably provide 1-minute bars for premarket hours
+        prev_trading_day = trading_date
+        days_back = 1
+        while days_back < 5:
+            candidate = trading_date - timedelta(days=days_back)
+            if candidate.weekday() < 5:  # Monday=0, Friday=4
+                prev_trading_day = candidate
+                break
+            days_back += 1
+        
+        # Get last 2 hours of previous day (14:00-16:00 ET) - 1-minute bars (reliable)
+        prev_day_close_et = et_dt(prev_trading_day, "16:00")
+        prev_day_close_utc = to_utc(prev_day_close_et)
+        prev_day_start_utc = prev_day_close_utc - timedelta(hours=2)
+        
+        # Get today's premarket (04:00-09:30 ET) - 5-minute bars (more available)
+        today_premarket_start_utc = to_utc(et_dt(trading_date, "04:00"))
+        
+        # Fetch previous day's 1-minute bars
+        logger.info(f"Fetching previous day's 1m bars from {prev_day_start_utc} to {prev_day_close_utc}")
+        prev_day_bars = alpaca_client.fetch_window_bars(symbols, prev_day_start_utc, prev_day_close_utc)
+        
+        # Fetch today's premarket 5-minute bars
+        logger.info(f"Fetching today's premarket 5m bars from {today_premarket_start_utc} to {run_start_utc}")
+        premarket_bars = alpaca_client.fetch_window_bars(symbols, today_premarket_start_utc, run_start_utc)
+        
+        # Combine: use 1m bars from previous day, convert 5m bars from premarket to 1m-equivalent
+        bars_1m_dict = {}
+        bars_5m_dict = {}
+        
+        for sym in symbols:
+            # Previous day's 1-minute bars
+            prev_1m = prev_day_bars.get(sym, {}).get("bars_1m", [])
+            
+            # Today's premarket 5-minute bars (convert to 1-minute equivalent)
+            premarket_5m = premarket_bars.get(sym, {}).get("bars_5m", [])
+            
+            # Convert 5m bars to 1m-equivalent by using each close 5 times
+            # This maintains the rolling window structure for RollingStats
+            premarket_1m_equivalent = []
+            for bar_5m in premarket_5m:
+                # Create 5 "1-minute" bars with the same close price
+                for i in range(5):
+                    premarket_1m_equivalent.append({
+                        "t": bar_5m["t"],  # Use same timestamp
+                        "c": bar_5m["c"],  # Use close price
+                        "o": bar_5m["o"] if i == 0 else bar_5m["c"],  # Open only on first
+                        "h": bar_5m["h"],
+                        "l": bar_5m["l"],
+                        "v": bar_5m["v"] / 5,  # Distribute volume evenly
+                    })
+            
+            # Combine: previous day 1m + premarket 5m (as 1m equivalent)
+            bars_1m_dict[sym] = prev_1m + premarket_1m_equivalent
+            
+            # For 5m bars, combine previous day + premarket
+            prev_5m = prev_day_bars.get(sym, {}).get("bars_5m", [])
+            bars_5m_dict[sym] = prev_5m + premarket_5m
+            
+            total_bars = len(bars_1m_dict[sym])
+            logger.info(f"{sym}: {len(prev_1m)} prev-day 1m bars + {len(premarket_5m)} premarket 5m bars = {total_bars} total seed bars")
+    else:
+        # Backtest mode: use existing logic
+        logger.info(f"Fetching seed bars from {seed_start_utc} to {run_start_utc}")
+        seed_bars_1m = alpaca_client.fetch_window_bars(symbols, seed_start_utc, run_start_utc)
+        bars_1m_dict = {sym: seed_bars_1m.get(sym, {}).get("bars_1m", []) for sym in symbols}
+        bars_5m_dict = {sym: seed_bars_1m.get(sym, {}).get("bars_5m", []) for sym in symbols}
     
     # Set simulated time for mock client
     if is_backtest and hasattr(alpaca_client, 'set_current_time'):
@@ -595,6 +682,11 @@ def main():
             bars = alpaca_client.fetch_window_bars(symbols, fetch_start_utc, current_utc)
             
             # Update features for each symbol
+            if not states:
+                logger.warning(f"No symbol states initialized - waiting for market data. Current time: {current_et.strftime('%H:%M:%S')} ET")
+                time.sleep(args.fast)
+                continue
+            
             for symbol in symbols:
                 if symbol not in states:
                     continue
@@ -613,37 +705,116 @@ def main():
                 
                 # Update state with features
                 state.update_features(features.mu, features.sigma, features.z_score, current_utc)
+                
+                # Log symbol check with technical values
+                time_str = current_et.strftime("%H:%M:%S ET")
+                logger.info(f"Checking {symbol} at {time_str}. Technical values: z={features.z_score:.3f}, μ={features.mu:.2f}, σ={features.sigma:.3f}, "
+                          f"price=${latest_price:.2f}, status={state.status}, ATR%={state.atr_percentile:.1f}%")
             
             # Check if market analysis should run (skip if no premarket context for backtests)
             if premarket_context and should_run_market_analysis(market_analyzer, last_market_analysis, current_utc):
-                logger.info("Running periodic market analysis...")
-                try:
-                    # Build recent price action summary
-                    recent_price_action = {
-                        sym: {
-                            "price_change_pct": ((bars.get(sym, {}).get("bars_1m", [{}])[-1].get("c", 0) / 
-                                                  bars.get(sym, {}).get("bars_1m", [{}])[0].get("c", 1)) - 1) * 100
-                            if len(bars.get(sym, {}).get("bars_1m", [])) > 1 else 0.0
-                        }
-                        for sym in symbols
-                    }
-                    
-                    multiplier = market_analyzer.analyze_market(
-                        states=states,
-                        premarket_context=premarket_context,
-                        recent_price_action=recent_price_action
+                if is_backtest:
+                    # Test mode: log that we would check with LLM but don't actually call it
+                    logger.info("Would check with LLM for periodic market analysis (test mode - skipping API call)")
+                    # Use neutral multipliers in test mode
+                    from config.thresholds import ThresholdMultiplier
+                    multiplier = ThresholdMultiplier(
+                        mr_arm_multiplier=1.0,
+                        mr_trigger_multiplier=1.0,
+                        tc_arm_multiplier=1.0,
+                        tc_trigger_multiplier=1.0,
+                        confidence=0.0,
+                        reasoning="Test mode - neutral multipliers"
                     )
-                    
                     # Apply multiplier to all symbol states
                     for symbol in symbols:
                         if symbol in states:
                             states[symbol].threshold_multiplier = multiplier
-                    
                     logger.info(f"Applied threshold multipliers: MR={multiplier.mr_arm_multiplier:.2f}, "
                               f"TC={multiplier.tc_arm_multiplier:.2f}, confidence={multiplier.confidence}")
                     last_market_analysis = current_utc
-                except Exception as e:
-                    logger.error(f"Market analysis failed: {e}")
+                else:
+                    # Live mode: actually call LLM
+                    logger.info("Running periodic market analysis...")
+                    try:
+                        # Build recent price action summary
+                        recent_price_action = {
+                            sym: {
+                                "price_change_pct": ((bars.get(sym, {}).get("bars_1m", [{}])[-1].get("c", 0) / 
+                                                      bars.get(sym, {}).get("bars_1m", [{}])[0].get("c", 1)) - 1) * 100
+                                if len(bars.get(sym, {}).get("bars_1m", [])) > 1 else 0.0
+                            }
+                            for sym in symbols
+                        }
+                        
+                        multiplier = market_analyzer.analyze_market(
+                            states=states,
+                            premarket_context=premarket_context,
+                            recent_price_action=recent_price_action
+                        )
+                        
+                        # Log LLM opinion about each symbol
+                        for sym in symbols:
+                            if sym in states and sym in premarket_context.symbols:
+                                bias = premarket_context.symbols[sym]
+                                ml_bias = bias.daily_bias
+                                ml_conf = bias.confidence
+                                llm_validation = bias.model_output.get("llm_validation", {})
+                                
+                                if llm_validation:
+                                    llm_bias = llm_validation.get("llm_bias", ml_bias)
+                                    llm_conf = llm_validation.get("llm_confidence", ml_conf)
+                                    agreement = llm_validation.get("agreement", "agree")
+                                    reasoning = llm_validation.get("reasoning", "")
+                                    
+                                    if agreement == "disagree":
+                                        logger.info(f"LLM DISAGREES about {sym}: ML says {ml_bias} ({ml_conf}%), LLM says {llm_bias} ({llm_conf}%). {reasoning[:100]}...")
+                                    elif agreement == "partial":
+                                        logger.info(f"LLM PARTIAL agreement on {sym}: ML={ml_bias} ({ml_conf}%), LLM={llm_bias} ({llm_conf}%). {reasoning[:100]}...")
+                                    else:
+                                        logger.info(f"LLM AGREES about {sym}: {ml_bias} ({ml_conf}% confidence). {reasoning[:100]}...")
+                                else:
+                                    logger.info(f"LLM opinion on {sym}: {ml_bias} ({ml_conf}% confidence from ML model)")
+                        
+                        # Apply multiplier to all symbol states
+                        for symbol in symbols:
+                            if symbol in states:
+                                states[symbol].threshold_multiplier = multiplier
+                        
+                        logger.info(f"Applied threshold multipliers: MR={multiplier.mr_arm_multiplier:.2f}, "
+                                  f"TC={multiplier.tc_arm_multiplier:.2f}, confidence={multiplier.confidence}")
+                        reasoning_str = str(multiplier.reasoning) if multiplier.reasoning else "No reasoning provided"
+                        logger.info(f"LLM Market Analysis: {reasoning_str[:200]}...")
+                        
+                        # Save market analysis to database
+                        if storage:
+                            try:
+                                storage.save_market_analysis({
+                                    "timestamp": current_utc.isoformat(),
+                                    "analysis_text": reasoning_str,
+                                    "threshold_multipliers": {
+                                        "mr_arm_multiplier": multiplier.mr_arm_multiplier,
+                                        "mr_trigger_multiplier": multiplier.mr_trigger_multiplier,
+                                        "tc_arm_multiplier": multiplier.tc_arm_multiplier,
+                                        "tc_trigger_multiplier": multiplier.tc_trigger_multiplier,
+                                    },
+                                    "confidence": multiplier.confidence,
+                                    "llm_model": settings.llm.model,
+                                })
+                            except Exception as e:
+                                logger.error(f"Failed to save market analysis to database: {e}")
+                        
+                        last_market_analysis = current_utc
+                    except Exception as e:
+                        logger.error(f"Market analysis failed: {e}", exc_info=True)
+                        # Set last_market_analysis to prevent retrying immediately, but use shorter interval
+                        # This allows retry after 1 minute instead of every iteration
+                        if last_market_analysis is None:
+                            last_market_analysis = current_utc - timedelta(minutes=market_analyzer.interval_minutes - 1)
+                        else:
+                            # If we already have a last_analysis, only update if it's been at least 1 minute
+                            if (current_utc - last_market_analysis) >= timedelta(minutes=1):
+                                last_market_analysis = current_utc - timedelta(minutes=market_analyzer.interval_minutes - 1)
             elif not premarket_context and is_backtest:
                 # In backtest mode without premarket, use neutral multipliers
                 logger.debug("Skipping market analysis (no premarket context in backtest mode)")
@@ -671,32 +842,121 @@ def main():
                 )
                 
                 if signal:
-                    # Optional LLM trade validation (skip if no premarket context in backtest)
+                    logger.info(f"TRADE SIGNAL DETECTED for {symbol}: {signal.setup_type} {signal.side.upper()} @ ${signal.entry_price:.2f}")
+                    
+                    # Optional LLM trade validation
+                    # In test/backtest mode: log but don't actually call LLM (saves API costs)
                     if settings.llm.enable_trade_validation and premarket_context:
-                        try:
-                            validation = validate_trade_with_llm(
-                                signal=signal,
-                                state=state,
-                                premarket_context=premarket_context,
-                                llm_client=llm_client
-                            )
-                            
-                            if not validation.should_execute:
-                                logger.info(f"LLM validation rejected trade for {symbol}: {validation.reasoning}")
-                                continue
-                        except Exception as e:
-                            logger.error(f"Trade validation failed: {e}, proceeding with trade")
+                        if is_backtest:
+                            # Test mode: just log that we would check with LLM
+                            logger.info(f"Would check with LLM for {symbol} trade validation (test mode - skipping API call)")
+                        else:
+                            # Live mode: actually call LLM
+                            try:
+                                validation = validate_trade_with_llm(
+                                    signal=signal,
+                                    state=state,
+                                    premarket_context=premarket_context,
+                                    llm_client=llm_client
+                                )
+                                
+                                if validation.should_execute:
+                                    reasoning_str = str(validation.reasoning) if validation.reasoning else "Approved"
+                                    logger.info(f"LLM VALIDATION APPROVED {symbol} trade (confidence: {validation.confidence}%): {reasoning_str[:150]}...")
+                                else:
+                                    reasoning_str = str(validation.reasoning) if validation.reasoning else "Rejected"
+                                    logger.info(f"LLM validation rejected trade for {symbol}: {reasoning_str}")
+                                    continue
+                            except Exception as e:
+                                logger.error(f"Trade validation failed: {e}, proceeding with trade")
                     elif settings.llm.enable_trade_validation and not premarket_context:
-                        logger.debug(f"LLM trade validation skipped (no premarket context for {symbol})")
+                        if is_backtest:
+                            logger.debug(f"LLM trade validation skipped (no premarket context for {symbol} in test mode)")
+                        else:
+                            logger.debug(f"LLM trade validation skipped (no premarket context for {symbol})")
                     
                     signals.append(signal)
+                    
+                    # Save trade signal to database
+                    if storage:
+                        try:
+                            signal_id = storage.save_trade_signal({
+                                "timestamp": signal.timestamp.isoformat(),
+                                "symbol": signal.symbol,
+                                "setup_type": signal.setup_type,
+                                "side": signal.side,
+                                "entry_price": signal.entry_price,
+                                "z_score": signal.z_score,
+                                "threshold_multipliers": signal.thresholds_used,
+                            })
+                            logger.debug(f"[DB] Saved trade signal for {symbol} (ID: {signal_id})")
+                        except Exception as e:
+                            logger.error(f"Failed to save trade signal to database: {e}")
+                    
+                    # Track execution attempts
+                    if state.trade:
+                        if state.trade.first_execution_attempt is None:
+                            state.trade.first_execution_attempt = current_utc
+                        state.trade.execution_attempts += 1
+                        attempt_num = state.trade.execution_attempts
+                        
+                        # Check timeout: if we've been trying for more than 5 minutes, give up
+                        if state.trade.first_execution_attempt:
+                            time_since_first_attempt = current_utc - state.trade.first_execution_attempt
+                            if time_since_first_attempt > timedelta(minutes=5):
+                                logger.warning(f"TRADE EXECUTION TIMEOUT for {symbol}: Attempted {attempt_num} times over {time_since_first_attempt}, resetting")
+                                state.trade = None
+                                state.status = "idle"
+                                continue
+                    else:
+                        attempt_num = 1
+                    
                     # Use appropriate execute function based on mode
                     if is_backtest and hasattr(order_manager, 'execute_stock_trade'):
                         # Use mock manager's execute function directly
                         from src.execution.mock_order_manager import execute_trade_from_signal
-                        execute_trade_from_signal(signal, state, order_manager)
+                        logger.info(f"ENTERING {symbol} TRADE (BACKTEST): {signal.side.upper()} {signal.setup_type} @ ${signal.entry_price:.2f} (attempt #{attempt_num})")
+                        result = execute_trade_from_signal(signal, state, order_manager)
+                        
+                        # Check execution result
+                        if result:
+                            logger.info(f"TRADE EXECUTED SUCCESSFULLY for {symbol}: Order ID {result.get('order_id', 'N/A')}")
+                            state.trade = None
+                            state.status = "idle"
+                        elif hasattr(order_manager, 'open_positions') and symbol in order_manager.open_positions:
+                            logger.info(f"TRADE ALREADY EXISTS for {symbol}: Position already open, clearing trade plan")
+                            state.trade = None
+                            state.status = "idle"
+                        else:
+                            logger.warning(f"TRADE EXECUTION FAILED for {symbol}: Attempt #{attempt_num} failed (risk/reward check, position sizing, or other reason)")
+                            # Don't clear trade plan yet - will retry up to timeout
                     else:
-                        execute_trade(signal, state, order_manager)
+                        logger.info(f"ENTERING {symbol} TRADE: {signal.side.upper()} {signal.setup_type} @ ${signal.entry_price:.2f} (attempt #{attempt_num})")
+                        result = execute_trade(signal, state, order_manager)
+                        
+                        # Check execution result
+                        if result:
+                            logger.info(f"TRADE EXECUTED SUCCESSFULLY for {symbol}: Order ID {result.get('order_id', 'N/A')}")
+                            state.trade = None
+                            state.status = "idle"
+                        else:
+                            # Check if position already exists (live trading)
+                            if order_manager and hasattr(order_manager, 'get_open_positions'):
+                                try:
+                                    open_positions = order_manager.get_open_positions()
+                                    existing_pos = next((p for p in open_positions if p.get('symbol') == symbol), None)
+                                    if existing_pos:
+                                        logger.info(f"TRADE ALREADY EXISTS for {symbol}: Position already open (order ID: {existing_pos.get('order_id', 'N/A')}), clearing trade plan")
+                                        state.trade = None
+                                        state.status = "idle"
+                                    else:
+                                        logger.warning(f"TRADE EXECUTION FAILED for {symbol}: Attempt #{attempt_num} failed")
+                                except Exception as e:
+                                    logger.error(f"Error checking open positions for {symbol}: {e}")
+                                    logger.warning(f"TRADE EXECUTION FAILED for {symbol}: Attempt #{attempt_num} failed")
+                            else:
+                                logger.warning(f"TRADE EXECUTION FAILED for {symbol}: Attempt #{attempt_num} failed")
+                            # Don't clear trade plan yet - will retry up to timeout
             
             # Check for position exits (stop loss/take profit) - for mock manager
             if is_backtest and order_manager and hasattr(order_manager, 'check_exits'):
@@ -719,6 +979,28 @@ def main():
                 signals=signals,
                 extra={"label": label_time.strftime("%H:%M:%S ET"), "loop_count": loop_count, "backtest": is_backtest}
             )
+            
+            # Save live loop log to database
+            if storage:
+                try:
+                    for symbol in symbols:
+                        if symbol in states:
+                            state = states[symbol]
+                            current_price = 0
+                            if bars.get(symbol, {}).get("bars_1m"):
+                                current_price = bars[symbol]["bars_1m"][-1].get("c", 0)
+                            storage.save_live_loop_log({
+                                "timestamp": current_utc.isoformat(),
+                                "symbol": symbol,
+                                "z_score": state.last_z,
+                                "mu": state.last_mu,
+                                "sigma": state.last_sigma,
+                                "status": state.status,
+                                "side": state.side,
+                                "current_price": current_price,
+                            })
+                except Exception as e:
+                    logger.error(f"Failed to save live loop log to database: {e}")
             
         except Exception as e:
             logger.error(f"Error in main loop: {e}", exc_info=True)

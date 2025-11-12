@@ -166,9 +166,19 @@ def build_premarket_snapshot(symbol: str,
     return SymbolSnapshot(symbol=symbol, htf=htf, bands_5m=bands)
 
 
-def assemble_snapshot(symbol_snapshots: Iterable[SymbolSnapshot]) -> Dict:
-    """Assemble multiple symbol snapshots into a single dict."""
-    return {
+def assemble_snapshot(symbol_snapshots: Iterable[SymbolSnapshot], 
+                     storage=None, trading_date: Optional[date] = None) -> Dict:
+    """Assemble multiple symbol snapshots into a single dict and optionally save to database.
+    
+    Args:
+        symbol_snapshots: Iterable of SymbolSnapshot objects
+        storage: Optional StorageAdapter instance for database storage
+        trading_date: Optional trading date for database storage
+    
+    Returns:
+        Dict with snapshots data
+    """
+    snapshots_dict = {
         "generated_at_utc": datetime.now(timezone.utc).isoformat(),
         "symbols": [
             {
@@ -179,6 +189,17 @@ def assemble_snapshot(symbol_snapshots: Iterable[SymbolSnapshot]) -> Dict:
             for snap in symbol_snapshots
         ],
     }
+    
+    # Optionally save to database
+    if storage and trading_date:
+        for snap in symbol_snapshots:
+            snapshot_data = {
+                "htf": asdict(snap.htf),
+                "bands_5m": asdict(snap.bands_5m)
+            }
+            storage.save_premarket_snapshot(trading_date, snap.symbol, snapshot_data)
+    
+    return snapshots_dict
 
 
 def build_premarket_snapshots(symbols: List[str],
@@ -231,5 +252,7 @@ def build_premarket_snapshots(symbols: List[str],
                                                   m5=m5_bars[sym],
                                                   config=cfg))
 
-    return assemble_snapshot(snapshots)
+    # Note: assemble_snapshot can optionally save to database if storage is provided
+    # For now, just return the dict (caller can save to DB separately)
+    return assemble_snapshot(snapshots, storage=None, trading_date=None)
 

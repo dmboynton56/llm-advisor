@@ -22,6 +22,7 @@ if str(PROJECT_ROOT) not in sys.path:
 from src.premarket.bias_gatherer import gather_premarket_bias, save_premarket_context
 from src.premarket.snapshot_builder import build_premarket_snapshots
 from src.core.config import Settings
+from src.data.storage import Storage
 
 
 def main():
@@ -30,6 +31,8 @@ def main():
     parser.add_argument("--date", default=None, help="Trading date (YYYY-MM-DD), defaults to today")
     parser.add_argument("--symbols", nargs="*", default=None, help="Symbols to process")
     parser.add_argument("--output", default=None, help="Output directory")
+    parser.add_argument("--use-db", action="store_true", help="Save to database in addition to JSON files")
+    parser.add_argument("--db-path", default=None, help="Database path for SQLite (default: data/trading.db)")
     args = parser.parse_args()
     
     # Determine trading date
@@ -57,6 +60,12 @@ def main():
         output_dir = PROJECT_ROOT / "data" / "daily_news" / date_str / "processed"
     
     output_dir.mkdir(parents=True, exist_ok=True)
+    
+    # Initialize storage if requested
+    storage = None
+    if args.use_db:
+        storage = Storage.create(env="dev", db_path=args.db_path or "data/trading.db")
+        print(f"[DB] Using database storage: {storage.db_path if hasattr(storage, 'db_path') else 'PostgreSQL'}")
     
     try:
         # Step 1: Gather premarket bias and news
@@ -107,8 +116,32 @@ def main():
         }
         
         output_path = output_dir / "premarket_context.json"
+        
+        # Save combined output (with snapshots) to JSON file
         with open(output_path, 'w') as f:
             json.dump(output_dict, f, indent=2, default=str)
+        
+        # Also save to database if storage is enabled
+        if storage:
+            save_premarket_context(premarket_context, output_path, storage=storage)
+            
+            # Save snapshots to database
+            from src.premarket.snapshot_builder import assemble_snapshot, SymbolSnapshot
+            
+            # Convert snapshots dict back to SymbolSnapshot objects for database storage
+            symbol_snapshots = []
+            for snap_data in snapshots.get("symbols", []):
+                from src.premarket.snapshot_builder import HTFStats, Bands5m
+                htf = HTFStats(**snap_data["htf"])
+                bands = Bands5m(**snap_data["bands_5m"])
+                symbol_snapshots.append(SymbolSnapshot(
+                    symbol=snap_data["symbol"],
+                    htf=htf,
+                    bands_5m=bands
+                ))
+            
+            assemble_snapshot(symbol_snapshots, storage=storage, trading_date=trading_date)
+            print(f"[DB] Saved premarket data to database")
         
         print(f"[OK] Saved combined output to {output_path}")
         print("\n" + "=" * 60)

@@ -154,13 +154,39 @@ Return JSON with market_assessment, opportunities, confidence, threshold_multipl
     
     def _parse_multiplier_response(self, content: Dict) -> ThresholdMultiplier:
         """Parse LLM response into ThresholdMultiplier."""
-        multipliers = content.get("threshold_multipliers", {})
+        # Handle case where threshold_multipliers might not be a dict
+        multipliers_raw = content.get("threshold_multipliers", {})
+        if not isinstance(multipliers_raw, dict):
+            multipliers_raw = {}
+        
+        multipliers = multipliers_raw if isinstance(multipliers_raw, dict) else {}
+        
+        # Safely extract multipliers with type checking
+        def safe_float(value, default=1.0):
+            """Safely convert to float."""
+            if isinstance(value, (int, float)):
+                return float(value)
+            elif isinstance(value, str):
+                try:
+                    return float(value)
+                except (ValueError, TypeError):
+                    return default
+            return default
+        
+        # Safely extract confidence
+        confidence_raw = content.get("confidence", 0.0)
+        confidence = safe_float(confidence_raw, 0.0)
+        
+        # Safely extract reasoning
+        reasoning_raw = content.get("reasoning", "")
+        reasoning = str(reasoning_raw) if reasoning_raw else ""
+        
         return ThresholdMultiplier(
-            mr_arm_multiplier=float(multipliers.get("mr_arm_multiplier", 1.0)),
-            mr_trigger_multiplier=float(multipliers.get("mr_trigger_multiplier", 1.0)),
-            tc_arm_multiplier=float(multipliers.get("tc_arm_multiplier", 1.0)),
-            tc_trigger_multiplier=float(multipliers.get("tc_trigger_multiplier", 1.0)),
-            confidence=float(content.get("confidence", 0.0)),
-            reasoning=content.get("reasoning", ""),
+            mr_arm_multiplier=safe_float(multipliers.get("mr_arm_multiplier"), 1.0),
+            mr_trigger_multiplier=safe_float(multipliers.get("mr_trigger_multiplier"), 1.0),
+            tc_arm_multiplier=safe_float(multipliers.get("tc_arm_multiplier"), 1.0),
+            tc_trigger_multiplier=safe_float(multipliers.get("tc_trigger_multiplier"), 1.0),
+            confidence=confidence,
+            reasoning=reasoning,
         )
 
