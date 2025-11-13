@@ -53,6 +53,17 @@ class StockOrderManager:
         account = self.trading_client.get_account()
         return float(account.equity)
     
+    def _normalize_side(self, side: str) -> str:
+        """Normalize trade side values (e.g., 'long' -> 'buy')."""
+        if not side:
+            raise ValueError("Trade side is required")
+        side_lower = side.lower()
+        if side_lower in ("buy", "long"):
+            return "buy"
+        if side_lower in ("sell", "short"):
+            return "sell"
+        raise ValueError(f"Unsupported trade side: {side}")
+    
     def execute_stock_trade(
         self,
         symbol: str,
@@ -103,8 +114,9 @@ class StockOrderManager:
             print(f"  ! Trade rejected: Invalid position size ({qty})")
             return None
         
-        # Determine order side
-        order_side = OrderSide.BUY if side.lower() == "buy" else OrderSide.SELL
+        # Normalize and determine order side
+        normalized_side = self._normalize_side(side)
+        order_side = OrderSide.BUY if normalized_side == "buy" else OrderSide.SELL
         
         # Construct bracket order using MarketOrderRequest
         bracket_order = MarketOrderRequest(
@@ -119,7 +131,7 @@ class StockOrderManager:
         
         # Submit order
         try:
-            print(f"  > Submitting {side.upper()} bracket order for {qty} shares of {symbol}...")
+            print(f"  > Submitting {normalized_side.upper()} bracket order for {qty} shares of {symbol}...")
             print(f"    Entry: Market (target: ${entry_price:.2f})")
             print(f"    Stop Loss: ${stop_loss:.2f}")
             print(f"    Take Profit: ${take_profit:.2f}")
@@ -136,7 +148,7 @@ class StockOrderManager:
                 "order_id": order.id,
                 "symbol": order.symbol,
                 "qty": order.qty,
-                "side": side,
+                "side": normalized_side,
                 "entry_price": entry_price,
                 "stop_loss": stop_loss,
                 "take_profit": take_profit,
