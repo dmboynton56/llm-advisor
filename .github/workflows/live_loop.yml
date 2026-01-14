@@ -1,0 +1,68 @@
+name: Live Trading Loop
+
+on:
+  schedule:
+    # 9:30 AM ET (14:30 UTC) Monday-Friday
+    - cron: '30 14 * * 1-5'
+  workflow_dispatch:
+    inputs:
+      symbols:
+        description: 'Symbols to trade (comma separated)'
+        required: false
+        default: 'SPY,QQQ,IWM'
+
+jobs:
+  live-loop:
+    runs-on: ubuntu-latest
+    timeout-minutes: 420 # 7 hours (market session + buffer)
+    
+    env:
+      ALPACA_API_KEY: ${{ secrets.ALPACA_API_KEY }}
+      ALPACA_SECRET_KEY: ${{ secrets.ALPACA_SECRET_KEY }}
+      ALPACA_PAPER_TRADING: true
+      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+      ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+      GOOGLE_API_KEY: ${{ secrets.GOOGLE_API_KEY }}
+      GCP_PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
+      GCP_SA_KEY: ${{ secrets.GCP_SA_KEY }}
+      DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+      STORAGE_ENV: bq
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+          cache: 'pip'
+
+      - name: Install Dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Setup GCP Credentials
+        run: |
+          echo "${{ secrets.GCP_SA_KEY }}" > gcp-key.json
+          echo "GOOGLE_APPLICATION_CREDENTIALS=$GITHUB_WORKSPACE/gcp-key.json" >> $GITHUB_ENV
+
+      - name: Check Market Open
+        id: market_check
+        run: python scripts/check_market_open.py
+        continue-on-error: false
+
+      - name: Download Premarket Context
+        uses: actions/download-artifact@v4
+        with:
+          name: premarket-context
+          path: data/premarket
+        continue-on-error: true
+
+      - name: Run Live Loop
+        run: |
+          SYMBOLS="${{ github.event.inputs.symbols || 'SPY,QQQ,IWM' }}"
+          SYMBOLS_SPACE=$(echo $SYMBOLS | tr ',' ' ')
+          # Run the loop. --fast 60 means 1 minute iterations.
+          python scripts/run_live_loop.py --symbols $SYMBOLS_SPACE --use-db --fast 60

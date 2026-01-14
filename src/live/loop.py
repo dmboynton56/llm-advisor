@@ -27,7 +27,7 @@ if str(PROJECT_ROOT) not in sys.path:
 from src.core.config import Settings
 from src.core.logging import setup_logging
 from src.data.alpaca_client import AlpacaDataClient
-from src.data.storage import Storage
+from src.data.storage import Storage, StorageAdapter
 from src.premarket.bias_gatherer import load_premarket_context, PremarketContext
 from src.premarket.snapshot_builder import SymbolSnapshot
 from src.features.stdev_features import RollingStats
@@ -38,6 +38,7 @@ from src.analysis.llm_client import create_llm_client
 from src.analysis.market_analyzer import MarketAnalyzer
 from src.analysis.trade_validator import validate_trade_with_llm
 from config.thresholds import STDEVThresholds
+from src.utils.notifications import send_discord_alert, send_trade_alert
 
 ET = pytz.timezone("US/Eastern")
 logger = setup_logging()
@@ -331,6 +332,40 @@ def update_positions(trade_tracker: Optional[Any] = None) -> None:
             logger.error(f"Position update error: {e}")
 
 
+def sync_state_with_positions(states: Dict[str, SymbolState], storage: Optional[StorageAdapter]):
+    """Sync symbol states with open positions from database on startup."""
+    if not storage:
+        return
+    
+    try:
+        open_positions = storage.get_open_positions()
+        if not open_positions:
+            return
+        
+        for pos in open_positions:
+            symbol = pos.get("symbol")
+            if symbol in states:
+                state = states[symbol]
+                # If we have an open position, mark as triggered to prevent re-entry.
+                # Use mr_triggered as a generic "active" state.
+                state.status = "mr_triggered" 
+                state.side = pos.get("side")
+                
+                # Create a minimal trade plan so the evaluator knows we're in a trade
+                from src.live.state_manager import TradePlan
+                state.trade = TradePlan(
+                    setup="RECOVERY",
+                    side=state.side,
+                    entry_price=pos.get("entry_price", 0.0),
+                    sl_price=pos.get("stop_loss", 0.0),
+                    tp_price=pos.get("take_profit", 0.0),
+                    triggered_at=datetime.now()
+                )
+                logger.info(f"[RECOVERY] Synced {symbol} state with open position: {state.side} @ {state.trade.entry_price}")
+    except Exception as e:
+        logger.error(f"Failed to sync state with positions: {e}")
+
+
 def main():
     """Main live loop."""
     parser = argparse.ArgumentParser(description="STDEV Live Trading Loop")
@@ -367,11 +402,15 @@ def main():
     logger.info(f"Starting live loop for {date_str}")
     logger.info(f"Symbols: {', '.join(symbols)}")
     
+    # Heartbeat
+    send_discord_alert(f"🚀 Started live trading loop for {date_str}. Watchlist: {', '.join(symbols)}")
+    
     # Initialize storage if requested
     storage = None
     if args.use_db:
-        storage = Storage.create(env="dev", db_path=args.db_path or "data/trading.db")
-        logger.info(f"[DB] Using database storage: {storage.db_path if hasattr(storage, 'db_path') else 'PostgreSQL'}")
+        storage_env = os.getenv("STORAGE_ENV", "dev")
+        storage = Storage.create(env=storage_env, db_path=args.db_path or "data/trading.db")
+        logger.info(f"[DB] Using database storage: {storage_env} ({storage.db_path if hasattr(storage, 'db_path') else 'BigQuery/Postgres'})")
     
     # Detect backtest mode
     is_backtest = args.test or (args.date and trading_date < datetime.now(ET).date())
@@ -561,6 +600,10 @@ def main():
         create_minimal_snapshots=is_backtest  # Create minimal snapshots if backtesting and no premarket data
     )
     logger.info(f"Initialized {len(states)} symbol states")
+    
+    # Sync with existing positions from DB if in live mode
+    if not is_backtest and storage:
+        sync_state_with_positions(states, storage)
     
     # Initialize market analyzer
     llm_client = create_llm_client(settings.llm.provider, settings.llm.model)
@@ -937,6 +980,12 @@ def main():
                         # Check execution result
                         if result:
                             logger.info(f"TRADE EXECUTED SUCCESSFULLY for {symbol}: Order ID {result.get('order_id', 'N/A')}")
+                            send_trade_alert(
+                                symbol=symbol,
+                                side=signal.side,
+                                price=signal.entry_price,
+                                setup=signal.setup_type
+                            )
                             state.trade = None
                             state.status = "idle"
                         else:
@@ -1004,6 +1053,7 @@ def main():
             
         except Exception as e:
             logger.error(f"Error in main loop: {e}", exc_info=True)
+            send_discord_alert(f"⚠️ Error in main loop: {str(e)[:200]}")
         
         # Advance simulated time or sleep
         if is_backtest:

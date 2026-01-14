@@ -23,6 +23,7 @@ from src.premarket.bias_gatherer import gather_premarket_bias, save_premarket_co
 from src.premarket.snapshot_builder import build_premarket_snapshots
 from src.core.config import Settings
 from src.data.storage import Storage
+from src.utils.notifications import send_discord_alert
 
 
 def main():
@@ -53,6 +54,8 @@ def main():
     print(f"Symbols: {', '.join(symbols)}")
     print(f"=" * 60)
     
+    send_discord_alert(f"🌅 Starting premarket pipeline for {date_str}. Symbols: {', '.join(symbols)}")
+    
     # Determine output directory
     if args.output:
         output_dir = Path(args.output)
@@ -64,8 +67,9 @@ def main():
     # Initialize storage if requested
     storage = None
     if args.use_db:
-        storage = Storage.create(env="dev", db_path=args.db_path or "data/trading.db")
-        print(f"[DB] Using database storage: {storage.db_path if hasattr(storage, 'db_path') else 'PostgreSQL'}")
+        storage_env = os.getenv("STORAGE_ENV", "dev")
+        storage = Storage.create(env=storage_env, db_path=args.db_path or "data/trading.db")
+        print(f"[DB] Using database storage: {storage_env} ({storage.db_path if hasattr(storage, 'db_path') else 'BigQuery/Postgres'})")
     
     try:
         # Step 1: Gather premarket bias and news
@@ -150,6 +154,7 @@ def main():
         
     except Exception as e:
         print(f"\nError: {e}")
+        send_discord_alert(f"⚠️ Premarket Pipeline Error: {str(e)[:200]}")
         import traceback
         traceback.print_exc()
         sys.exit(1)

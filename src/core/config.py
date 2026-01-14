@@ -21,8 +21,8 @@ class RiskSettings(BaseModel):
 
 
 class LLMSettings(BaseModel):
-    provider: str = "openai"  # "openai", "anthropic", "grok", "bedrock"
-    model: str = "gpt-4o-mini"
+    provider: str = "google"  # "google", "openai", "anthropic", "grok"
+    model: str = "gemini-3-flash-preview"
     market_analysis_interval_minutes: int = Field(default=15, ge=5, le=60)
     enable_trade_validation: bool = True
 
@@ -48,8 +48,8 @@ class Settings(BaseModel):
                 min_risk_reward_ratio=float(os.getenv("MIN_RISK_REWARD_RATIO", "1.5")),
             ),
             llm=LLMSettings(
-                provider=os.getenv("LLM_PROVIDER", "openai"),
-                model=os.getenv("LLM_MODEL", "gpt-4o-mini"),
+                provider=os.getenv("LLM_PROVIDER", "google"),
+                model=os.getenv("LLM_MODEL", "gemini-3-flash-preview"),
                 market_analysis_interval_minutes=int(os.getenv("MARKET_ANALYSIS_INTERVAL_MINUTES", "15")),
                 enable_trade_validation=os.getenv("ENABLE_TRADE_VALIDATION", "true").lower() == "true",
             ),

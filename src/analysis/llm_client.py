@@ -116,6 +116,59 @@ class AnthropicLLMClient(LLMClient):
         )
 
 
+class GoogleLLMClient(LLMClient):
+    """Google Gemini API client."""
+    
+    def __init__(self, model: str = "gemini-3-flash-preview", api_key: Optional[str] = None):
+        try:
+            import google.generativeai as genai
+        except ImportError:
+            raise ImportError("google-generativeai package required. Install with: pip install google-generativeai")
+        
+        api_key = api_key or os.getenv("GOOGLE_API_KEY")
+        if not api_key:
+            raise RuntimeError("Missing GOOGLE_API_KEY environment variable")
+            
+        genai.configure(api_key=api_key)
+        self.model_name = model
+        self.client = genai.GenerativeModel(model_name=model)
+        
+    def call_structured(self, prompt: str, schema: Dict[str, Any], timeout: Optional[float] = None) -> LLMResponse:
+        """Call Google Gemini with structured output."""
+        start_time = time.time()
+        
+        # Using Gemini's native structured output if possible, or fallback to parsing
+        # For now, we'll use a simpler approach of forcing JSON in the response
+        generation_config = {
+            "response_mime_type": "application/json",
+        }
+        
+        try:
+            response = self.client.generate_content(
+                prompt,
+                generation_config=generation_config
+            )
+            
+            latency_ms = (time.time() - start_time) * 1000
+            content = json.loads(response.text)
+            
+            # Google's API usage attributes vary, simplified for now
+            return LLMResponse(
+                content=content,
+                model=self.model_name,
+                tokens_used=0, # Need to extract from response if needed
+                latency_ms=latency_ms,
+            )
+        except Exception as e:
+            latency_ms = (time.time() - start_time) * 1000
+            return LLMResponse(
+                content={"error": str(e), "raw": getattr(response, 'text', '') if 'response' in locals() else ""},
+                model=self.model_name,
+                tokens_used=0,
+                latency_ms=latency_ms,
+            )
+
+
 class GrokLLMClient(LLMClient):
     """Grok (xAI) API client."""
     
@@ -181,8 +234,10 @@ def create_llm_client(provider: str = "openai", model: Optional[str] = None) -> 
         return OpenAILLMClient(model=model or "gpt-4o-mini")
     elif provider.lower() == "anthropic":
         return AnthropicLLMClient(model=model or "claude-3-haiku-20240307")
+    elif provider.lower() == "google":
+        return GoogleLLMClient(model=model or "gemini-2.0-flash")
     elif provider.lower() == "grok" or provider.lower() == "xai":
         return GrokLLMClient(model=model or "grok-beta")
     else:
-        raise ValueError(f"Unknown provider: {provider}. Supported: openai, anthropic, grok")
+        raise ValueError(f"Unknown provider: {provider}. Supported: openai, anthropic, google, grok")
 

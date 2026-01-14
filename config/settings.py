@@ -45,11 +45,11 @@ MINIMUM_RISK_REWARD_RATIO = 2.0
 # This is the aggregated score from the LLM analysis.
 CONFIDENCE_THRESHOLD = 85  # Integer from 0 to 100
 
-# The LLM provider(s) to use for analysis. Can be "openai", "anthropic", or a list.
-LLM_PROVIDERS = ["openai"]
+# The LLM provider(s) to use for analysis. Can be "openai", "anthropic", "google", or a list.
+LLM_PROVIDERS = ["google"]
 
 # The specific model to use for the main analysis.
-LLM_MODEL = "gpt-5-mini"
+LLM_MODEL = "gemini-3-flash-preview"
 
 # The time in seconds the bot will wait between each analysis loop.
 ANALYSIS_INTERVAL_SECONDS = 30

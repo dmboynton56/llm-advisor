@@ -1,3 +1,7 @@
 .env
 LLM-ADVISOR.txt
 data/daily_news/
+
+data/trading.db
+
+gen-lang-client-0189185649-c545abd919a4.json

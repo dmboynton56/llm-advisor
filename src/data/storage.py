@@ -795,23 +795,44 @@ class Storage:
     
     @staticmethod
     def create(env: str = "dev", db_path: Optional[str] = None, 
-               connection_string: Optional[str] = None) -> StorageAdapter:
+               connection_string: Optional[str] = None,
+               project_id: Optional[str] = None,
+               dataset_id: Optional[str] = None,
+               credentials_path: Optional[str] = None) -> StorageAdapter:
         """
         Create storage adapter.
         
         Args:
-            env: Environment ("dev" for SQLite, "prod" for PostgreSQL)
+            env: Environment ("dev" for SQLite, "prod" for PostgreSQL, "bq" for BigQuery)
             db_path: SQLite database path (default: "data/trading.db")
             connection_string: PostgreSQL connection string (default: from DATABASE_URL env var)
+            project_id: GCP project ID (required for BigQuery)
+            dataset_id: BigQuery dataset ID (default: "trading_signals")
+            credentials_path: Path to GCP service account JSON (or use GOOGLE_APPLICATION_CREDENTIALS)
         
         Returns:
             StorageAdapter instance
         """
         if env == "dev":
             return SQLiteStorage(db_path or "data/trading.db")
+        elif env == "bq" or env == "prod":
+            # Check if BigQuery is requested
+            if env == "bq" or (env == "prod" and not connection_string):
+                from .bigquery_storage import BigQueryStorage
+                project_id = project_id or os.getenv("GCP_PROJECT_ID")
+                dataset_id = dataset_id or os.getenv("GCP_DATASET_ID", "trading_signals")
+                credentials_path = credentials_path or os.getenv("GOOGLE_APPLICATION_CREDENTIALS")
+                
+                if not project_id:
+                    raise ValueError("GCP_PROJECT_ID environment variable or project_id parameter required for BigQuery")
+                
+                return BigQueryStorage(project_id, dataset_id, credentials_path)
+            else:
+                # PostgreSQL fallback
+                conn_string = connection_string or os.getenv("DATABASE_URL")
+                if not conn_string:
+                    raise ValueError("DATABASE_URL environment variable required for PostgreSQL production")
+                return PostgreSQLStorage(conn_string)
         else:
-            conn_string = connection_string or os.getenv("DATABASE_URL")
-            if not conn_string:
-                raise ValueError("DATABASE_URL environment variable required for production")
-            return PostgreSQLStorage(conn_string)
+            raise ValueError(f"Unknown environment: {env}. Use 'dev', 'prod', or 'bq'")
 
