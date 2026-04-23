@@ -1,0 +1,37 @@
+name: Verify Key Hygiene
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Verify key file is not tracked
+        run: |
+          set -euo pipefail
+          KEY_FILE="gen-lang-client-0189185649-c545abd919a4.json"
+          if git ls-files --error-unmatch "$KEY_FILE" >/dev/null 2>&1; then
+            echo "Key file is tracked: $KEY_FILE"
+            exit 1
+          fi
+          if [ -f "$KEY_FILE" ]; then
+            git check-ignore -v "$KEY_FILE"
+          fi
+
+      - name: Verify key file absent from git history
+        run: |
+          set -euo pipefail
+          KEY_FILE="gen-lang-client-0189185649-c545abd919a4.json"
+          if [ -n "$(git log --all --pretty=format: --name-only -- "$KEY_FILE" | sed '/^$/d')" ]; then
+            echo "Key file found in git history: $KEY_FILE"
+            exit 1
+          fi

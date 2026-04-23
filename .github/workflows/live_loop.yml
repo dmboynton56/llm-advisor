@@ -66,3 +66,10 @@ jobs:
           SYMBOLS_SPACE=$(echo $SYMBOLS | tr ',' ' ')
           # Run the loop. --fast 60 means 1 minute iterations.
           python scripts/run_live_loop.py --symbols $SYMBOLS_SPACE --use-db --fast 60
+
+      - name: Notify Discord on Failure
+        if: failure()
+        run: |
+          curl -X POST -H "Content-Type: application/json" \
+            -d "{\"content\": \"❌ **LLM Advisor Live Loop Failed**\\nRun: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}\"}" \
+            $DISCORD_WEBHOOK_URL
