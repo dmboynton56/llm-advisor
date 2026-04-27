@@ -35,7 +35,7 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: '3.10'
+          python-version: '3.11'
           cache: 'pip'
 
       - name: Install Dependencies
@@ -43,10 +43,21 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
-      - name: Setup GCP Credentials
+      - name: Auth GCP
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCP_SA_KEY }}
+          create_credentials_file: true
+          export_environment_variables: true
+
+      - name: Validate GCP auth
         run: |
-          echo "${{ secrets.GCP_SA_KEY }}" > gcp-key.json
-          echo "GOOGLE_APPLICATION_CREDENTIALS=$GITHUB_WORKSPACE/gcp-key.json" >> $GITHUB_ENV
+          python -m json.tool "$GOOGLE_APPLICATION_CREDENTIALS" > /dev/null
+          python - <<'PY'
+          from google.cloud import bigquery
+          client = bigquery.Client()
+          print(f"BigQuery auth OK: {client.project}")
+          PY
 
       - name: Check Market Open
         id: market_check
@@ -66,6 +77,14 @@ jobs:
           SYMBOLS_SPACE=$(echo $SYMBOLS | tr ',' ' ')
           # Run the loop. --fast 60 means 1 minute iterations.
           python scripts/run_live_loop.py --symbols $SYMBOLS_SPACE --use-db --fast 60
+
+      - name: Upload daily telemetry artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: llm-advisor-daily-news-${{ github.run_id }}
+          path: data/daily_news/**/processed/*
+          if-no-files-found: warn
 
       - name: Notify Discord on Failure
         if: failure()
