@@ -29,7 +29,7 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: "3.10"
+          python-version: "3.11"
           cache: "pip"
 
       - name: Install Dependencies
@@ -45,18 +45,65 @@ jobs:
             python scripts/run_eod_aggregate.py --lookback-days 3 --validate
           fi
 
+      - name: Validate Supabase telemetry freshness
+        run: |
+          python - <<'PY'
+          import os
+          import psycopg2
+
+          host = os.environ.get("SUPABASE_DB_HOST")
+          db = os.environ.get("SUPABASE_DB_NAME", "postgres")
+          user = os.environ.get("SUPABASE_DB_USER", "postgres")
+          port = int(os.environ.get("SUPABASE_DB_PORT", "5432"))
+          password = os.environ.get("SUPABASE_DB_PASSWORD")
+          if not host or not password:
+              raise SystemExit("Missing Supabase DB credentials.")
+
+          conn = psycopg2.connect(
+              host=host,
+              dbname=db,
+              user=user,
+              password=password,
+              port=port,
+              sslmode="require",
+          )
+          with conn, conn.cursor() as cur:
+              cur.execute("SELECT COUNT(*) FROM llm_advisor_backtest_runs WHERE run_date >= CURRENT_DATE - INTERVAL '7 days'")
+              runs = int(cur.fetchone()[0])
+              cur.execute("SELECT COUNT(*) FROM llm_advisor_runtime_heartbeats WHERE heartbeat_ts >= NOW() - INTERVAL '7 days'")
+              heartbeats = int(cur.fetchone()[0])
+              cur.execute("SELECT COUNT(*) FROM llm_advisor_backtest_trades WHERE run_date >= CURRENT_DATE - INTERVAL '7 days'")
+              trades = int(cur.fetchone()[0])
+
+          print(f"7d rows => runs={runs} trades={trades} heartbeats={heartbeats}")
+          if runs <= 0 or heartbeats <= 0:
+              raise SystemExit("EOD verification failed: expected non-zero runs and heartbeats in last 7 days.")
+          PY
+
+      - name: Require metrics endpoint on main
+        if: github.ref == 'refs/heads/main'
+        run: |
+          if [ -z "$PORTFOLIO_METRICS_URL" ]; then
+            echo "PORTFOLIO_METRICS_URL must be configured on main."
+            exit 1
+          fi
+
       - name: Validate portfolio-facing metrics endpoint (optional)
         if: env.PORTFOLIO_METRICS_URL != ''
         run: |
-          curl --fail --silent "$PORTFOLIO_METRICS_URL" > /tmp/metrics_response.json
+          curl --fail --silent "$PORTFOLIO_METRICS_URL?source=supabase&force=true" > /tmp/metrics_response.json
           python - <<'PY'
           import json
           with open('/tmp/metrics_response.json', 'r', encoding='utf-8') as f:
               payload = json.load(f)
           data = payload.get('data', payload)
+          meta = payload.get('meta', {})
           runs = (data.get('coverage') or {}).get('runCount', 0)
+          source = meta.get('source')
           if runs <= 0:
               raise SystemExit("Portfolio metrics endpoint returned zero runCount")
+          if source != "supabase":
+              raise SystemExit(f"Portfolio metrics endpoint did not return supabase source (got {source!r})")
           print(f"runCount={runs}")
           PY
 

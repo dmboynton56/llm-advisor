@@ -79,6 +79,11 @@ def parse_args() -> argparse.Namespace:
         default=None,
         help="Override data/daily_news directory.",
     )
+    parser.add_argument(
+        "--allow-empty",
+        action="store_true",
+        help="Allow successful exit when no run directories or no ingestable rows are found.",
+    )
     parser.add_argument("--validate", action="store_true", help="Run post-write checks.")
     return parser.parse_args()
 
@@ -409,8 +414,11 @@ def main() -> None:
     data_dir = resolve_data_dir(args.data_dir)
     run_dirs = collect_run_dirs(data_dir, args.date, args.lookback_days)
     if not run_dirs:
-        LOGGER.warning("No run directories found under %s", data_dir)
-        return
+        message = f"No run directories found under {data_dir}"
+        if args.allow_empty:
+            LOGGER.warning("%s (allow-empty enabled)", message)
+            return
+        raise SystemExit(f"{message}. Failing fast to avoid silent-success EOD runs.")
 
     runs: list[RunRow] = []
     trades: list[TradeRow] = []
@@ -431,6 +439,12 @@ def main() -> None:
         len(trades),
         len(heartbeats),
     )
+    if not (runs or trades or heartbeats):
+        message = "No ingestable rows were parsed from located run directories"
+        if args.allow_empty:
+            LOGGER.warning("%s (allow-empty enabled)", message)
+            return
+        raise SystemExit(f"{message}. Failing fast to avoid empty EOD writes.")
 
     now_iso = datetime.now(timezone.utc).isoformat()
     conn = connect_supabase()
@@ -444,6 +458,12 @@ def main() -> None:
                 LOGGER.info("Validation checks: %s", json.dumps(checks, sort_keys=True))
                 if checks["runs_7d"] == 0:
                     raise SystemExit("Validation failed: no run rows in the last 7 days.")
+            LOGGER.info(
+                "EOD ingest complete | runs=%d trades=%d heartbeats=%d",
+                len(runs),
+                len(trades),
+                len(heartbeats),
+            )
     finally:
         conn.close()
 

@@ -94,6 +94,18 @@ pytest tests/unit/test_risk_calculator.py
 - .github/workflows/: Automated CI/CD pipelines for daily trading.
 - scripts/: Utility scripts for testing and manual execution.
 
+## Analysis Notebooks
+
+Week-2 analysis notebooks live in `notebooks/` and are used to back portfolio metrics and narrative claims.
+
+- `notebooks/trade_journal.ipynb`
+- `notebooks/pnl_attribution.ipynb`
+- `notebooks/threshold_sensitivity.ipynb`
+- `notebooks/prompt_ablation.ipynb`
+- `notebooks/premarket_bias_evaluation.ipynb`
+
+Use the template at `notebooks/_templates/llm_advisor_eval.ipynb` for additional analyses.
+
 ## Safety and Production Shields
 
 - Market Calendar Check: Scripts automatically verify if NYSE is open before running tasks.

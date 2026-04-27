@@ -1,0 +1,49 @@
+name: Publish LLM Advisor Notebooks
+
+on:
+  schedule:
+    - cron: "0 22 * * 0" # Sundays 22:00 UTC
+  workflow_dispatch:
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        notebook:
+          - trade_journal
+          - pnl_attribution
+          - threshold_sensitivity
+          - prompt_ablation
+          - premarket_bias_evaluation
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt papermill jupyter nbconvert
+
+      - name: Execute notebook
+        working-directory: notebooks
+        run: |
+          papermill "${{ matrix.notebook }}.ipynb" "outputs/${{ matrix.notebook }}.ipynb"
+
+      - name: Convert to HTML
+        working-directory: notebooks
+        run: |
+          jupyter nbconvert "outputs/${{ matrix.notebook }}.ipynb" --to html --output-dir rendered/
+
+      - name: Upload HTML artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: "${{ matrix.notebook }}-html"
+          path: notebooks/rendered/${{ matrix.notebook }}.html

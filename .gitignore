@@ -11,3 +11,12 @@ __pycache__/
 *:Zone.Identifier
 
 gen-lang-client-0189185649-c545abd919a4.json
+*-service-account*.json
+*service_account*.json
+gcp-key.json
+google-credentials.json
+
+# Notebook artifacts
+notebooks/outputs/
+notebooks/rendered/
+.ipynb_checkpoints/
