@@ -11,6 +11,10 @@ on:
         required: false
         default: 'SPY,QQQ,IWM'
 
+permissions:
+  contents: read
+  actions: read
+
 jobs:
   live-loop:
     runs-on: ubuntu-latest
@@ -64,12 +68,42 @@ jobs:
         run: python scripts/check_market_open.py
         continue-on-error: false
 
+      - name: Find latest premarket artifact
+        id: premarket_artifact
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const runs = await github.paginate(github.rest.actions.listWorkflowRuns, {
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              workflow_id: 'premarket.yml',
+              status: 'completed',
+              per_page: 20,
+            })
+            for (const run of runs) {
+              if (run.conclusion !== 'success') continue
+              const artifacts = await github.paginate(github.rest.actions.listWorkflowRunArtifacts, {
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                run_id: run.id,
+                per_page: 100,
+              })
+              const artifact = artifacts.find((item) => item.name === 'premarket-context')
+              if (artifact) {
+                core.setOutput('run_id', String(run.id))
+                core.setOutput('artifact_name', artifact.name)
+                return
+              }
+            }
+            core.setFailed('No successful premarket-context artifact found.')
+
       - name: Download Premarket Context
         uses: actions/download-artifact@v4
         with:
-          name: premarket-context
-          path: data/premarket
-        continue-on-error: true
+          name: ${{ steps.premarket_artifact.outputs.artifact_name }}
+          run-id: ${{ steps.premarket_artifact.outputs.run_id }}
+          github-token: ${{ github.token }}
+          path: data/daily_news
 
       - name: Run Live Loop
         run: |
