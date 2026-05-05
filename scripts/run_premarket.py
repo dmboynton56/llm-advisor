@@ -128,7 +128,12 @@ def main():
         
         # Also save to database if storage is enabled
         if storage:
-            save_premarket_context(premarket_context, output_path, storage=storage)
+            save_premarket_context(
+                premarket_context,
+                output_path,
+                storage=storage,
+                write_json_file=False,
+            )
             
             # Save snapshots to database
             from src.premarket.snapshot_builder import assemble_snapshot, SymbolSnapshot

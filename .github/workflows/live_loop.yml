@@ -2,7 +2,8 @@ name: Live Trading Loop
 
 on:
   schedule:
-    # 9:30 AM ET (14:30 UTC) Monday-Friday
+    # 9:30 America/New_York ≈ 13:30 UTC (EDT) or 14:30 UTC (EST), Mon–Fri
+    - cron: '30 13 * * 1-5'
     - cron: '30 14 * * 1-5'
   workflow_dispatch:
     inputs:

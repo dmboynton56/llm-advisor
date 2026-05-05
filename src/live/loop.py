@@ -293,6 +293,57 @@ def log_tick(
         f.write(json.dumps(record) + "\n")
 
 
+def append_shutdown_heartbeat(
+    log_path: Path,
+    symbols: List[str],
+    loop_count: int,
+    is_backtest: bool,
+) -> None:
+    """Append one JSON line so EOD ingest always has a parseable heartbeat after live sessions."""
+    record = {
+        "ts": datetime.now(timezone.utc).isoformat(),
+        "symbols": {s: {} for s in symbols},
+        "loop_count": loop_count,
+        "backtest": is_backtest,
+        "shutdown": True,
+    }
+    log_path.parent.mkdir(parents=True, exist_ok=True)
+    with log_path.open("a", encoding="utf-8") as f:
+        f.write(json.dumps(record) + "\n")
+
+
+def write_live_session_summary(
+    output_dir: Path,
+    date_str: str,
+    loop_count: int,
+    session_end_reason: str,
+) -> None:
+    """Persist same-shape summary as backtest_results.json for Supabase EOD (live/paper days)."""
+    summary = {
+        "date": date_str,
+        "mode": "live",
+        "session_end_reason": session_end_reason,
+        "loop_iterations": loop_count,
+        "total_trades": 0,
+        "closed_trades": 0,
+        "winning_trades": 0,
+        "losing_trades": 0,
+        "total_pnl": 0.0,
+        "average_win": 0.0,
+        "average_loss": 0.0,
+        "final_equity": None,
+        "return_pct": None,
+        "daily_return_pct": None,
+        "win_rate": None,
+        "trades": [],
+    }
+    path = output_dir / "session_summary.json"
+    output_dir.mkdir(parents=True, exist_ok=True)
+    with path.open("w", encoding="utf-8") as f:
+        json.dump(summary, f, indent=2, default=str)
+    logger.info("Wrote live session summary to %s", path)
+
+
 def execute_trade(signal: SignalEvent, state: SymbolState, order_manager: Optional[Any] = None) -> None:
     """
     Execute trade via order manager.
@@ -648,6 +699,13 @@ def main():
     
     # Main loop
     loop_count = 0
+
+    def finalize_live_session(reason: str) -> None:
+        if is_backtest:
+            return
+        append_shutdown_heartbeat(log_path, symbols, loop_count, False)
+        write_live_session_summary(output_dir, date_str, loop_count, reason)
+
     while True:
         if is_backtest:
             # Simulate time advancement in backtest mode
@@ -697,6 +755,7 @@ def main():
                     settings.trading.end_of_day_close_time
                 ):
                     logger.info("End-of-day positions closed. Exiting.")
+                    finalize_live_session("eod_close")
                     break
         
         # Check if before session start (skip in backtest)
@@ -709,7 +768,19 @@ def main():
         # Check if after session end (skip in backtest, we handle it above)
         if not is_backtest and current_et > run_end_et:
             logger.info("Trading session complete")
+            finalize_live_session("session_complete")
             break
+
+        if (
+            not is_backtest
+            and not states
+            and run_start_et <= current_et <= run_end_et
+        ):
+            logger.error(
+                "No symbol states during trading window — premarket artifact must "
+                "include snapshots (premarket_context.json with 'snapshots.symbols')."
+            )
+            sys.exit(1)
         
         # Check if market is open (skip time check in backtest)
         if not is_backtest and not market_is_open(current_et, settings.trading.trading_window_start, settings.trading.trading_window_end):

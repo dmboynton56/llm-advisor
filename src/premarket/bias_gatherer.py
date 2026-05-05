@@ -290,18 +290,20 @@ def _extract_news_summary(symbol: str, news_data: Dict[str, Any]) -> str:
 
 
 def save_premarket_context(context: PremarketContext, output_path: Path, 
-                           storage=None) -> None:
+                           storage=None, write_json_file: bool = True) -> None:
     """Save premarket context to JSON file and optionally to database.
     
     Args:
         context: PremarketContext to save
         output_path: Path to save JSON file
         storage: Optional StorageAdapter instance for database storage
+        write_json_file: If False, skip writing JSON (when caller already wrote a
+            combined file including snapshots).
     """
-    # Save to JSON file (backward compatibility)
-    output_path.parent.mkdir(parents=True, exist_ok=True)
-    with open(output_path, 'w') as f:
-        json.dump(asdict(context), f, indent=2, default=str)
+    if write_json_file:
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        with open(output_path, 'w') as f:
+            json.dump(asdict(context), f, indent=2, default=str)
     
     # Optionally save to database
     if storage:
