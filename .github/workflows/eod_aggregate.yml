@@ -7,8 +7,18 @@ on:
         description: "Optional date (YYYY-MM-DD)"
         required: false
         default: ""
+      live_loop_run_id:
+        description: "Optional GitHub Actions run id for Live Trading Loop (use that job's artifact)"
+        required: false
+        default: ""
+  workflow_run:
+    workflows:
+      - "Live Trading Loop"
+    types:
+      - completed
   schedule:
-    - cron: "30 20 * * 1-5"
+    # After live_loop max window (14:30 UTC start + 420m cap → ~21:30 UTC)
+    - cron: "35 21 * * 1-5"
 
 permissions:
   contents: read
@@ -17,7 +27,11 @@ permissions:
 jobs:
   aggregate:
     runs-on: ubuntu-latest
+    # Skip EOD when triggered by a failed live-loop completion (no telemetry contract).
+    if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
     env:
+      GCP_PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
+      GCP_DATASET_ID: ${{ secrets.GCP_DATASET_ID }}
       SUPABASE_DB_HOST: ${{ secrets.SUPABASE_DB_HOST }}
       SUPABASE_DB_NAME: ${{ secrets.SUPABASE_DB_NAME }}
       SUPABASE_DB_USER: ${{ secrets.SUPABASE_DB_USER }}
@@ -41,36 +55,72 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
-      - name: Find latest live-loop telemetry artifact
+      - name: Find live-loop telemetry artifact
         id: live_artifact
         uses: actions/github-script@v7
         with:
           script: |
+            const owner = context.repo.owner;
+            const repo = context.repo.repo;
+
+            async function useRun(runId) {
+              const artifacts = await github.paginate(github.rest.actions.listWorkflowRunArtifacts, {
+                owner,
+                repo,
+                run_id: runId,
+                per_page: 100,
+              });
+              const artifact = artifacts.find((item) => item.name.startsWith('llm-advisor-daily-news-'));
+              if (!artifact) {
+                core.setFailed(`No llm-advisor-daily-news-* artifact on workflow run ${runId}`);
+                return;
+              }
+              core.setOutput('run_id', String(runId));
+              core.setOutput('artifact_name', artifact.name);
+            }
+
+            if (context.eventName === 'workflow_run') {
+              const wr = context.payload.workflow_run;
+              await useRun(wr.id);
+              return;
+            }
+
+            const manualId = (context.payload.inputs && context.payload.inputs.live_loop_run_id || '').trim();
+            if (manualId) {
+              const n = parseInt(manualId, 10);
+              if (Number.isNaN(n)) {
+                core.setFailed(`Invalid live_loop_run_id: ${manualId}`);
+                return;
+              }
+              await useRun(n);
+              return;
+            }
+
             const runs = await github.paginate(github.rest.actions.listWorkflowRuns, {
-              owner: context.repo.owner,
-              repo: context.repo.repo,
+              owner,
+              repo,
               workflow_id: 'live_loop.yml',
               status: 'completed',
-              per_page: 20,
-            })
+              per_page: 25,
+            });
             for (const run of runs) {
-              if (run.conclusion !== 'success') continue
+              if (run.conclusion !== 'success') continue;
               const artifacts = await github.paginate(github.rest.actions.listWorkflowRunArtifacts, {
-                owner: context.repo.owner,
-                repo: context.repo.repo,
+                owner,
+                repo,
                 run_id: run.id,
                 per_page: 100,
-              })
-              const artifact = artifacts.find((item) => item.name.startsWith('llm-advisor-daily-news-'))
+              });
+              const artifact = artifacts.find((item) => item.name.startsWith('llm-advisor-daily-news-'));
               if (artifact) {
-                core.setOutput('run_id', String(run.id))
-                core.setOutput('artifact_name', artifact.name)
-                return
+                core.setOutput('run_id', String(run.id));
+                core.setOutput('artifact_name', artifact.name);
+                return;
               }
             }
             core.setFailed('No successful live-loop telemetry artifact found.')
 
-      - name: Download latest live-loop telemetry artifact
+      - name: Download live-loop telemetry artifact
         uses: actions/download-artifact@v4
         with:
           name: ${{ steps.live_artifact.outputs.artifact_name }}
@@ -78,13 +128,36 @@ jobs:
           github-token: ${{ github.token }}
           path: data/daily_news
 
+      - name: List downloaded telemetry tree
+        run: find data/daily_news -type f 2>/dev/null | sort || true
+
+      - name: Auth GCP
+        if: ${{ env.GCP_PROJECT_ID != '' }}
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCP_SA_KEY }}
+
       - name: Run EOD aggregate
         run: |
+          BQ_FLAG=""
+          if [ -n "${GCP_PROJECT_ID:-}" ]; then BQ_FLAG="--use-bigquery"; fi
           if [ -n "${{ github.event.inputs.date }}" ]; then
-            python scripts/run_eod_aggregate.py --date "${{ github.event.inputs.date }}" --validate
+            python scripts/run_eod_aggregate.py --date "${{ github.event.inputs.date }}" --validate $BQ_FLAG
           else
-            python scripts/run_eod_aggregate.py --lookback-days 3 --validate
+            python scripts/run_eod_aggregate.py --lookback-days 3 --validate $BQ_FLAG
           fi
+
+      - name: Sync BigQuery to Supabase (rolling window)
+        if: ${{ env.GCP_PROJECT_ID != '' }}
+        run: python scripts/sync_bq_to_supabase.py --days 14
+
+      - name: Telemetry layout on EOD failure
+        if: failure()
+        run: |
+          echo "---- find data/daily_news ----"
+          find data/daily_news -type f 2>/dev/null | sort || true
+          echo "---- directory tree ----"
+          find data/daily_news -type d 2>/dev/null | sort || true
 
       - name: Validate Supabase telemetry freshness
         run: |
