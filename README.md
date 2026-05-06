@@ -130,8 +130,8 @@ Use the template at `notebooks/_templates/llm_advisor_eval.ipynb` for additional
 
 ## GitHub Actions and portfolio verification
 
-- **Premarket** (`premarket.yml`) uploads artifact `premarket-context` (must include `snapshots` in `premarket_context.json`).
-- **Live Trading Loop** (`live_loop.yml`) downloads that artifact and runs the session window; artifacts uploaded as `llm-advisor-daily-news-*`.
+- **Premarket** (`premarket.yml`): weekdays **~7:20 AM Eastern** (`20 11` / `20 12` UTC — EDT vs EST). Uploads artifact `premarket-context` (must include `snapshots` in `premarket_context.json`).
+- **Live Trading Loop** (`live_loop.yml`): weekdays **~7:30 AM Eastern** (`30 11` / `30 12` UTC), ~10 minutes after premarket. Downloads that artifact; runtime trading window defaults **07:30–12:00 ET** (`TRADING_WINDOW_*`, overridable via env). Artifacts: `llm-advisor-daily-news-*`.
 - **EOD Aggregate** (`eod_aggregate.yml`) runs on a **weekday schedule** (default `21:35 UTC`) and **`workflow_dispatch`**. It downloads `llm-advisor-daily-news-*` at the **repo root** so paths stay `data/daily_news/<YYYY-MM-DD>/processed/…`. Pass **`live_loop_run_id`** (Actions → Live run URL → numeric id) to pin a specific Live artifact; otherwise the workflow picks the latest **successful** Live run with telemetry. EOD does **not** auto-chain off Live completion (avoids noop-session EOD noise). Legacy layouts where telemetry landed under `data/daily_news/data/daily_news/…` are normalized automatically in `run_eod_aggregate.py`.
 - **Portfolio checks:** optional secret **`PORTFOLIO_METRICS_URL`** = deployed `https://…/api/llm-advisor/metrics` base (no path suffix). When set, EOD curls metrics with `?source=supabase&force=true`. Unset the secret temporarily if the endpoint is still empty while debugging ingest.
 

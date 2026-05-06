@@ -2,9 +2,11 @@ name: Live Trading Loop
 
 on:
   schedule:
-    # 9:30 America/New_York ≈ 13:30 UTC (EDT) or 14:30 UTC (EST), Mon–Fri
-    - cron: '30 13 * * 1-5'
-    - cron: '30 14 * * 1-5'
+    # ~7:30 AM America/New_York — starts ~10 min after premarket crons (artifact upload buffer)
+    # EDT:  7:30 ET → 11:30 UTC
+    # EST:  7:30 ET → 12:30 UTC
+    - cron: '30 11 * * 1-5'
+    - cron: '30 12 * * 1-5'
   workflow_dispatch:
     inputs:
       symbols:
@@ -32,6 +34,8 @@ jobs:
       GCP_SA_KEY: ${{ secrets.GCP_SA_KEY }}
       DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
       STORAGE_ENV: bq
+      TRADING_WINDOW_START: '07:30'
+      TRADING_WINDOW_END: '12:00'
 
     steps:
       - name: Checkout Code

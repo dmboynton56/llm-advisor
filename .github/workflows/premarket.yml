@@ -2,8 +2,11 @@ name: Premarket Pipeline
 
 on:
   schedule:
-    # 8:30 AM ET (13:30 UTC) Monday-Friday
-    - cron: '30 13 * * 1-5'
+    # ~7:20 AM America/New_York (UTC via dual rules — GitHub cron is UTC-only)
+    # EDT:  7:20 ET → 11:20 UTC
+    # EST:  7:20 ET → 12:20 UTC
+    - cron: '20 11 * * 1-5'
+    - cron: '20 12 * * 1-5'
   workflow_dispatch:
     inputs:
       symbols:
