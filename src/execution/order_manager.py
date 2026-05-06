@@ -19,6 +19,7 @@ from alpaca.trading.requests import MarketOrderRequest, TakeProfitRequest, StopL
 from alpaca.trading.enums import OrderSide, TimeInForce, OrderClass
 from src.execution.risk_calculator import calculate_position_size, validate_risk_reward
 from src.core.config import Settings
+from src.utils.env_sanitize import getenv_strip
 
 load_dotenv()
 
@@ -35,8 +36,8 @@ class StockOrderManager:
             api_secret: Alpaca API secret (defaults to env var)
             paper: Use paper trading account (default: True)
         """
-        api_key = api_key or os.getenv("ALPACA_API_KEY")
-        api_secret = api_secret or os.getenv("ALPACA_SECRET_KEY")
+        api_key = api_key or getenv_strip("ALPACA_API_KEY")
+        api_secret = api_secret or getenv_strip("ALPACA_SECRET_KEY")
         
         if not api_key or not api_secret:
             raise RuntimeError("Missing ALPACA_API_KEY/ALPACA_SECRET_KEY")

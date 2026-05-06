@@ -48,6 +48,8 @@ DISCORD_WEBHOOK_URL=your_webhook_url
 STORAGE_ENV=bq
 ```
 
+Alpaca keys are read with leading/trailing whitespace stripped so CRLF line endings from Windows-saved `.env` files do not break HTTP headers.
+
 ### 3. Local Usage
 
 Run the premarket pipeline to generate daily context:

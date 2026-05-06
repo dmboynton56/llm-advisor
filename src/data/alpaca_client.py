@@ -10,6 +10,8 @@ from alpaca.data.timeframe import TimeFrame, TimeFrameUnit
 from alpaca.data.enums import DataFeed, Adjustment
 import pandas as pd
 
+from src.utils.env_sanitize import getenv_strip
+
 load_dotenv()
 
 
@@ -17,8 +19,8 @@ class AlpacaDataClient:
     """Alpaca data client wrapper."""
     
     def __init__(self, api_key: Optional[str] = None, api_secret: Optional[str] = None, feed: Optional[str] = None):
-        api_key = api_key or os.getenv("ALPACA_API_KEY")
-        api_secret = api_secret or os.getenv("ALPACA_SECRET_KEY")
+        api_key = api_key or getenv_strip("ALPACA_API_KEY")
+        api_secret = api_secret or getenv_strip("ALPACA_SECRET_KEY")
         
         if not api_key or not api_secret:
             raise RuntimeError("Missing ALPACA_API_KEY/ALPACA_SECRET_KEY")
