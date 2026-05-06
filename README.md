@@ -77,6 +77,8 @@ Roll up completed backtests into one JSON for narratives / portfolio metrics:
 python scripts/aggregate_backtest_results.py --output notebooks/_exported/backtest_roll_summary.json
 ```
 
+To refresh the portfolio artifact (`personal-portfolio/public/data/llm_advisor_backtest_snapshot.json`), re-run your dates, run `aggregate_backtest_results.py`, then merge the rollup object plus `experiment` / `linkedin_snippets` fields following schema `llm_advisor_portfolio_snapshot_v1`.
+
 ### Execution Modes
 
 - **Dry Run**: Default behavior when credentials are missing or not explicitly set to trade. Signals are logged but no orders are placed.
