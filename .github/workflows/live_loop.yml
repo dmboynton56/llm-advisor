@@ -102,13 +102,20 @@ jobs:
             }
             core.setFailed('No successful premarket-context artifact found.')
 
+      # Extract at repo root so paths stay ``data/daily_news/<YYYY-MM-DD>/processed/…``.
+      # Using ``path: data/daily_news`` duplicates the prefix (nested ``data/daily_news``).
       - name: Download Premarket Context
         uses: actions/download-artifact@v4
         with:
           name: ${{ steps.premarket_artifact.outputs.artifact_name }}
           run-id: ${{ steps.premarket_artifact.outputs.run_id }}
           github-token: ${{ github.token }}
-          path: data/daily_news
+          path: .
+
+      - name: Verify premarket paths (debug)
+        run: |
+          find data/daily_news -type f -name 'premarket_context.json' 2>/dev/null | sort || true
+          find data/daily_news/data/daily_news -type f -name 'premarket_context.json' 2>/dev/null | sort || true
 
       - name: Run Live Loop
         run: |

@@ -39,6 +39,7 @@ from src.analysis.market_analyzer import MarketAnalyzer
 from src.analysis.trade_validator import validate_trade_with_llm
 from config.thresholds import STDEVThresholds
 from src.utils.notifications import send_discord_alert, send_trade_alert
+from src.utils.daily_news_paths import normalize_daily_news_root
 
 ET = pytz.timezone("US/Eastern")
 logger = setup_logging()
@@ -445,7 +446,8 @@ def main():
     if args.output:
         output_dir = Path(args.output)
     else:
-        output_dir = PROJECT_ROOT / "data" / "daily_news" / date_str / "processed"
+        daily_root = normalize_daily_news_root(PROJECT_ROOT / "data" / "daily_news")
+        output_dir = daily_root / date_str / "processed"
     output_dir.mkdir(parents=True, exist_ok=True)
     
     log_path = output_dir / "live_loop_log.jsonl"
