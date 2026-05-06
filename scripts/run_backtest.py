@@ -22,10 +22,22 @@ if __name__ == "__main__":
     parser.add_argument("--output", default=None, help="Output directory")
     
     args = parser.parse_args()
-    
-    # Force test mode
-    args.test = True
-    
+
+    argv_tail = [
+        sys.argv[0],
+        "--date",
+        args.date,
+        "--fast",
+        str(args.fast),
+        "--test",
+    ]
+    if args.symbols:
+        argv_tail.extend(["--symbols", *args.symbols])
+    if args.output:
+        argv_tail.extend(["--output", args.output])
+
+    sys.argv = argv_tail
+
     print(f"Running backtest for {args.date}")
     print(f"Symbols: {args.symbols or 'default watchlist'}")
     print(f"Loop speed: {args.fast} seconds per iteration")
