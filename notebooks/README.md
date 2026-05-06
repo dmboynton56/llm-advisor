@@ -9,6 +9,18 @@ This folder contains Week-2 analysis notebooks that back portfolio claims with r
 - `threshold_sensitivity.ipynb`: threshold grid search and sensitivity analysis.
 - `prompt_ablation.ipynb`: prompt-version comparison scaffold.
 - `premarket_bias_evaluation.ipynb`: premarket bias accuracy and calibration.
+- `backtest_roll_summary.ipynb`: aggregate many `backtest_results.json` files into one summary JSON.
+
+## Batch backtests & rollups
+
+From repo root:
+
+```bash
+python scripts/run_backtest_batch.py --start YYYY-MM-DD --end YYYY-MM-DD
+python scripts/aggregate_backtest_results.py --output notebooks/_exported/backtest_roll_summary.json
+```
+
+(`notebooks/_exported/` is gitignored; commit HTML via `publish-notebooks` when ready.)
 
 ## Template
 

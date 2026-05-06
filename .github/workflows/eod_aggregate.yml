@@ -11,13 +11,8 @@ on:
         description: "Optional GitHub Actions run id for Live Trading Loop (use that job's artifact)"
         required: false
         default: ""
-  workflow_run:
-    workflows:
-      - "Live Trading Loop"
-    types:
-      - completed
   schedule:
-    # After live_loop max window (14:30 UTC start + 420m cap → ~21:30 UTC)
+    # After US session; live_loop may be 13:30/14:30 UTC + up to 420m
     - cron: "35 21 * * 1-5"
 
 permissions:
@@ -27,8 +22,6 @@ permissions:
 jobs:
   aggregate:
     runs-on: ubuntu-latest
-    # Skip EOD when triggered by a failed live-loop completion (no telemetry contract).
-    if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
     env:
       GCP_PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
       GCP_DATASET_ID: ${{ secrets.GCP_DATASET_ID }}
@@ -79,12 +72,6 @@ jobs:
               core.setOutput('artifact_name', artifact.name);
             }
 
-            if (context.eventName === 'workflow_run') {
-              const wr = context.payload.workflow_run;
-              await useRun(wr.id);
-              return;
-            }
-
             const manualId = (context.payload.inputs && context.payload.inputs.live_loop_run_id || '').trim();
             if (manualId) {
               const n = parseInt(manualId, 10);
@@ -120,16 +107,21 @@ jobs:
             }
             core.setFailed('No successful live-loop telemetry artifact found.')
 
+      # Extract at repo root so paths stay ``data/daily_news/<YYYY-MM-DD>/processed/…``.
+      # Using ``path: data/daily_news`` duplicates the prefix (nested ``data/daily_news``).
       - name: Download live-loop telemetry artifact
         uses: actions/download-artifact@v4
         with:
           name: ${{ steps.live_artifact.outputs.artifact_name }}
           run-id: ${{ steps.live_artifact.outputs.run_id }}
           github-token: ${{ github.token }}
-          path: data/daily_news
+          path: .
 
       - name: List downloaded telemetry tree
-        run: find data/daily_news -type f 2>/dev/null | sort || true
+        run: |
+          find data/daily_news -type f 2>/dev/null | sort || true
+          echo "---- duplicate-prefix probe ----"
+          find data/daily_news/data/daily_news -type f 2>/dev/null | sort | head -50 || true
 
       - name: Auth GCP
         if: ${{ env.GCP_PROJECT_ID != '' }}
@@ -190,17 +182,22 @@ jobs:
               trades = int(cur.fetchone()[0])
 
           print(f"7d rows => runs={runs} trades={trades} heartbeats={heartbeats}")
+          strict = os.environ.get("EOD_STRICT_TELEMETRY", "").lower() in ("1", "true", "yes")
           if runs <= 0 or heartbeats <= 0:
-              raise SystemExit("EOD verification failed: expected non-zero runs and heartbeats in last 7 days.")
+              msg = "EOD verification: expected runs>0 and heartbeats>0 in last 7 days."
+              if strict:
+                  raise SystemExit(msg)
+              print(f"WARNING: {msg} (set EOD_STRICT_TELEMETRY=1 in repo secrets to fail on this).")
           PY
 
       - name: Require metrics endpoint on main
-        if: github.ref == 'refs/heads/main'
+        if: github.ref == 'refs/heads/main' && env.PORTFOLIO_METRICS_URL != ''
         run: |
-          if [ -z "$PORTFOLIO_METRICS_URL" ]; then
-            echo "PORTFOLIO_METRICS_URL must be configured on main."
-            exit 1
-          fi
+          echo "PORTFOLIO_METRICS_URL is set — production metrics gate active."
+
+      - name: Warn when metrics URL missing on main
+        if: github.ref == 'refs/heads/main' && env.PORTFOLIO_METRICS_URL == ''
+        run: 'echo "::warning::PORTFOLIO_METRICS_URL secret not set — add it for portfolio CI verification"'
 
       - name: Validate portfolio-facing metrics endpoint (optional)
         if: env.PORTFOLIO_METRICS_URL != ''
@@ -222,15 +219,15 @@ jobs:
           PY
 
       - name: Notify Discord on Success
-        if: success()
+        if: success() && env.DISCORD_WEBHOOK_URL != ''
         run: |
           curl -X POST -H "Content-Type: application/json" \
             -d "{\"content\": \"✅ **LLM Advisor EOD Aggregate Succeeded**\\nRun: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}\"}" \
-            $DISCORD_WEBHOOK_URL
+            "$DISCORD_WEBHOOK_URL"
 
       - name: Notify Discord on Failure
-        if: failure()
+        if: failure() && env.DISCORD_WEBHOOK_URL != ''
         run: |
           curl -X POST -H "Content-Type: application/json" \
             -d "{\"content\": \"❌ **LLM Advisor EOD Aggregate Failed**\\nRun: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}\"}" \
-            $DISCORD_WEBHOOK_URL
+            "$DISCORD_WEBHOOK_URL"

@@ -62,7 +62,17 @@ python scripts/run_live_loop.py --symbols SPY QQQ IWM --use-db --fast 60
 
 Run a backtest on historical data:
 ```bash
-python scripts/run_backtest.py --date YYYY-MM-DD --symbols SPY --test
+python scripts/run_backtest.py --date YYYY-MM-DD --symbols SPY
+```
+
+Batch weekdays (writes `data/daily_news/<date>/processed/backtest_results.json` per day):
+```bash
+python scripts/run_backtest_batch.py --start YYYY-MM-DD --end YYYY-MM-DD --symbols SPY QQQ IWM
+```
+
+Roll up completed backtests into one JSON for narratives / portfolio metrics:
+```bash
+python scripts/aggregate_backtest_results.py --output notebooks/_exported/backtest_roll_summary.json
 ```
 
 ### Execution Modes
@@ -103,6 +113,7 @@ Week-2 analysis notebooks live in `notebooks/` and are used to back portfolio me
 - `notebooks/threshold_sensitivity.ipynb`
 - `notebooks/prompt_ablation.ipynb`
 - `notebooks/premarket_bias_evaluation.ipynb`
+- `notebooks/backtest_roll_summary.ipynb` — multi-day backtest rollup via `aggregate_backtest_results.py`
 
 Use the template at `notebooks/_templates/llm_advisor_eval.ipynb` for additional analyses.
 
@@ -112,3 +123,12 @@ Use the template at `notebooks/_templates/llm_advisor_eval.ipynb` for additional
 - State Persistence: The system syncs with BigQuery on startup to recover existing positions and prevent duplicate trades.
 - Error Alerting: Critical failures and trade executions are sent immediately to Discord.
 - Timeout Protection: GitHub Actions are configured with strict timeouts to ensure process termination after market close.
+
+## GitHub Actions and portfolio verification
+
+- **Premarket** (`premarket.yml`) uploads artifact `premarket-context` (must include `snapshots` in `premarket_context.json`).
+- **Live Trading Loop** (`live_loop.yml`) downloads that artifact and runs the session window; artifacts uploaded as `llm-advisor-daily-news-*`.
+- **EOD Aggregate** (`eod_aggregate.yml`) runs on a **weekday schedule** (default `21:35 UTC`) and **`workflow_dispatch`**. It downloads `llm-advisor-daily-news-*` at the **repo root** so paths stay `data/daily_news/<YYYY-MM-DD>/processed/…`. Pass **`live_loop_run_id`** (Actions → Live run URL → numeric id) to pin a specific Live artifact; otherwise the workflow picks the latest **successful** Live run with telemetry. EOD does **not** auto-chain off Live completion (avoids noop-session EOD noise). Legacy layouts where telemetry landed under `data/daily_news/data/daily_news/…` are normalized automatically in `run_eod_aggregate.py`.
+- **Portfolio checks:** optional secret **`PORTFOLIO_METRICS_URL`** = deployed `https://…/api/llm-advisor/metrics` base (no path suffix). When set, EOD curls metrics with `?source=supabase&force=true`. Unset the secret temporarily if the endpoint is still empty while debugging ingest.
+
+Optional repo secret: **`EOD_STRICT_TELEMETRY=1`** — fail EOD if Supabase has no `llm_advisor_*` rows in the 7-day rollout check (default is warn-only until telemetry is consistently populated).

@@ -19,4 +19,5 @@ google-credentials.json
 # Notebook artifacts
 notebooks/outputs/
 notebooks/rendered/
+notebooks/_exported/
 .ipynb_checkpoints/

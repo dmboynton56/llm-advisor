@@ -7,13 +7,20 @@ import argparse
 import json
 import logging
 import os
+import sys
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
+_PROJECT_ROOT = Path(__file__).resolve().parents[1]
+if str(_PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(_PROJECT_ROOT))
+
 import psycopg2
 from psycopg2.extras import execute_values
+
+from src.utils.daily_news_paths import normalize_daily_news_root
 
 LOGGER = logging.getLogger("run_eod_aggregate")
 
@@ -617,7 +624,7 @@ def main() -> None:
         format="%(asctime)s %(levelname)s %(name)s - %(message)s",
     )
 
-    data_dir = resolve_data_dir(args.data_dir)
+    data_dir = normalize_daily_news_root(resolve_data_dir(args.data_dir))
     run_dirs = collect_run_dirs(data_dir, args.date, args.lookback_days)
     if not run_dirs:
         message = f"No run directories found under {data_dir}"
