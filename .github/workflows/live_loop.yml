@@ -2,11 +2,11 @@ name: Live Trading Loop
 
 on:
   schedule:
-    # ~7:30 AM America/New_York — starts ~10 min after premarket crons (artifact upload buffer)
-    # EDT:  7:30 ET → 11:30 UTC
-    # EST:  7:30 ET → 12:30 UTC
-    - cron: '30 11 * * 1-5'
-    - cron: '30 12 * * 1-5'
+    # Starts ~9:28 AM America/New_York — after typical premarket completion (~9:20 ET).
+    # EDT: 9:28 ET → 13:28 UTC
+    # EST: 9:28 ET → 14:28 UTC
+    - cron: '28 13 * * 1-5'
+    - cron: '28 14 * * 1-5'
   workflow_dispatch:
     inputs:
       symbols:
@@ -34,7 +34,7 @@ jobs:
       GCP_SA_KEY: ${{ secrets.GCP_SA_KEY }}
       DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
       STORAGE_ENV: bq
-      TRADING_WINDOW_START: '07:30'
+      TRADING_WINDOW_START: '09:30'
       TRADING_WINDOW_END: '12:00'
 
     steps:

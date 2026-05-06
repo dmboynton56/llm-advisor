@@ -25,7 +25,7 @@ MAX_CONCURRENT_TRADES = 1
 
 # The window during which the bot is allowed to open new trades.
 # Format: "HH:MM" in US/Eastern timezone.
-TRADING_WINDOW_START = "07:30"
+TRADING_WINDOW_START = "09:30"
 TRADING_WINDOW_END = "12:00"
 
 # The time to close all open positions, regardless of P/L.

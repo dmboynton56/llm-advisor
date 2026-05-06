@@ -10,7 +10,7 @@ load_dotenv()
 
 class TradingSettings(BaseModel):
     watchlist: List[str] = Field(default=["SPY", "QQQ", "IWM", "NVDA", "TSLA"])
-    trading_window_start: str = "07:30"
+    trading_window_start: str = "09:30"
     trading_window_end: str = "12:00"
     end_of_day_close_time: str = "15:50"
 
@@ -39,7 +39,7 @@ class Settings(BaseModel):
         return cls(
             trading=TradingSettings(
                 watchlist=os.getenv("WATCHLIST", "SPY,QQQ,IWM,NVDA,TSLA").split(","),
-                trading_window_start=os.getenv("TRADING_WINDOW_START", "07:30"),
+                trading_window_start=os.getenv("TRADING_WINDOW_START", "09:30"),
                 trading_window_end=os.getenv("TRADING_WINDOW_END", "12:00"),
                 end_of_day_close_time=os.getenv("END_OF_DAY_CLOSE_TIME", "15:50"),
             ),

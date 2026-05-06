@@ -130,8 +130,8 @@ Use the template at `notebooks/_templates/llm_advisor_eval.ipynb` for additional
 
 ## GitHub Actions and portfolio verification
 
-- **Premarket** (`premarket.yml`): weekdays **~7:20 AM Eastern** (`20 11` / `20 12` UTC — EDT vs EST). Uploads artifact `premarket-context` (must include `snapshots` in `premarket_context.json`).
-- **Live Trading Loop** (`live_loop.yml`): weekdays **~7:30 AM Eastern** (`30 11` / `30 12` UTC), ~10 minutes after premarket. Downloads that artifact; runtime trading window defaults **07:30–12:00 ET** (`TRADING_WINDOW_*`, overridable via env). Artifacts: `llm-advisor-daily-news-*`.
+- **Premarket** (`premarket.yml`): weekdays **~9:15 AM Eastern** (`15 13` / `15 14` UTC — EDT vs EST) so the job typically **finishes ~9:17–9:20 ET** before the **9:30** cash open (**~7:15 AM Mountain** when ET is UTC−4 / MT is UTC−6). Uploads `premarket-context` (must include `snapshots` in `premarket_context.json`).
+- **Live Trading Loop** (`live_loop.yml`): weekdays **~9:28 AM Eastern** (`28 13` / `28 14` UTC), after premarket usually uploads. Runtime window defaults **09:30–12:00 ET** (`TRADING_WINDOW_*`). Artifacts: `llm-advisor-daily-news-*`.
 - **EOD Aggregate** (`eod_aggregate.yml`) runs on a **weekday schedule** (default `21:35 UTC`) and **`workflow_dispatch`**. It downloads `llm-advisor-daily-news-*` at the **repo root** so paths stay `data/daily_news/<YYYY-MM-DD>/processed/…`. Pass **`live_loop_run_id`** (Actions → Live run URL → numeric id) to pin a specific Live artifact; otherwise the workflow picks the latest **successful** Live run with telemetry. EOD does **not** auto-chain off Live completion (avoids noop-session EOD noise). Legacy layouts where telemetry landed under `data/daily_news/data/daily_news/…` are normalized automatically in `run_eod_aggregate.py`.
 - **Portfolio checks:** optional secret **`PORTFOLIO_METRICS_URL`** = deployed `https://…/api/llm-advisor/metrics` base (no path suffix). When set, EOD curls metrics with `?source=supabase&force=true`. Unset the secret temporarily if the endpoint is still empty while debugging ingest.
 
