@@ -2,11 +2,10 @@ name: Premarket Pipeline
 
 on:
   schedule:
-    # Starts ~9:15 AM America/New_York (~2h ahead of Mountain); finishes ~9:17–9:20 ET before 9:30 cash open.
-    # EDT: 9:15 ET → 13:15 UTC
-    # EST: 9:15 ET → 14:15 UTC
+    # GitHub cron is UTC only — one expression fires every weekday (no DST branching).
+    # 13:15 UTC → 9:15 Eastern during EDT; → 8:15 Eastern during EST (early but still pre-open).
+    # For exact EST wall-time, change this UTC hour when clocks change or use an external TZ scheduler.
     - cron: '15 13 * * 1-5'
-    - cron: '15 14 * * 1-5'
   workflow_dispatch:
     inputs:
       symbols:
