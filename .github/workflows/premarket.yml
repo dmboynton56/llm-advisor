@@ -2,10 +2,11 @@ name: Premarket Pipeline
 
 on:
   schedule:
-    # GitHub cron is UTC only — one expression fires every weekday (no DST branching).
-    # 13:15 UTC → 9:15 Eastern during EDT; → 8:15 Eastern during EST (early but still pre-open).
-    # For exact EST wall-time, change this UTC hour when clocks change or use an external TZ scheduler.
-    - cron: '15 13 * * 1-5'
+    # UTC cron format is MINUTE HOUR (not hour/minute). Swapping to `13 15` would be ~15:13 UTC (~11:13 EDT).
+    # Dual UTC lines approximate ~9:20 AM America/New_York year-round; wrong-season trigger exits via ET window gate.
+    # 13:20 UTC → 9:20 EDT | 14:20 UTC → 9:20 EST
+    - cron: '20 13 * * 1-5'
+    - cron: '20 14 * * 1-5'
   workflow_dispatch:
     inputs:
       symbols:
@@ -42,7 +43,21 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
+      - name: Check market open and scheduled ET window (~9:20 NY)
+        id: market_gate
+        run: |
+          ARGS=""
+          if [ "${{ github.event_name }}" = "schedule" ]; then
+            ARGS="--scheduled-et-window 09:10 10:05"
+          fi
+          python scripts/check_market_open.py $ARGS
+
+      - name: Scheduled noop outside ET window
+        if: success() && steps.market_gate.outputs.skip_remaining_steps == 'true'
+        run: echo "Skipping Premarket — outside dual-cron ET guard window (~9:20 ET target)."
+
       - name: Auth GCP
+        if: success() && steps.market_gate.outputs.skip_remaining_steps != 'true'
         uses: google-github-actions/auth@v2
         with:
           credentials_json: ${{ secrets.GCP_SA_KEY }}
@@ -50,6 +65,7 @@ jobs:
           export_environment_variables: true
 
       - name: Validate GCP auth
+        if: success() && steps.market_gate.outputs.skip_remaining_steps != 'true'
         run: |
           python -m json.tool "$GOOGLE_APPLICATION_CREDENTIALS" > /dev/null
           python - <<'PY'
@@ -58,19 +74,15 @@ jobs:
           print(f"BigQuery auth OK: {client.project}")
           PY
 
-      - name: Check Market Open
-        id: market_check
-        run: python scripts/check_market_open.py
-        continue-on-error: false
-
       - name: Run Premarket Pipeline
+        if: success() && steps.market_gate.outputs.skip_remaining_steps != 'true'
         run: |
           SYMBOLS="${{ github.event.inputs.symbols || 'SPY,QQQ,IWM' }}"
-          # Convert comma separated to space separated for the script
           SYMBOLS_SPACE=$(echo $SYMBOLS | tr ',' ' ')
           python scripts/run_premarket.py --symbols $SYMBOLS_SPACE --use-db
 
       - name: Upload Premarket Context
+        if: success() && steps.market_gate.outputs.skip_remaining_steps != 'true'
         uses: actions/upload-artifact@v4
         with:
           name: premarket-context
