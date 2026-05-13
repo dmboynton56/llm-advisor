@@ -4,10 +4,9 @@
 Exits with code 0 if market is open today, code 1 if closed (holiday/weekend).
 Used by GitHub Actions to skip runs on non-trading days.
 
-Optional ``--scheduled-et-window`` (with ``GITHUB_OUTPUT`` set): when the workflow
-is triggered by a *dual UTC cron* (DST-safe pair), runs outside the
-America/New_York clock window set ``skip_remaining_steps=true`` and exit 0 so the
-job succeeds without doing duplicate work.
+Optional ``--scheduled-et-window`` (with ``GITHUB_OUTPUT`` set): scheduled runs
+outside the America/New_York clock window set ``skip_remaining_steps=true`` and
+exit 0 so workflow YAML can decide whether to fail or noop the rest of the job.
 """
 from __future__ import annotations
 
@@ -73,7 +72,7 @@ def main() -> None:
         if not (start <= now_t <= end):
             print(
                 f"Outside scheduled ET window ({args.scheduled_et_window[0]}–{args.scheduled_et_window[1]}). "
-                f"Now {now.strftime('%H:%M:%S')} ET — skipping remaining steps (DST dual-cron guard)."
+                f"Now {now.strftime('%H:%M:%S')} ET — setting skip_remaining_steps=true."
             )
             _write_skip_remaining(True)
             sys.exit(0)

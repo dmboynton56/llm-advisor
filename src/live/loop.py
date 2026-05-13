@@ -455,9 +455,6 @@ def main():
     logger.info(f"Starting live loop for {date_str}")
     logger.info(f"Symbols: {', '.join(symbols)}")
     
-    # Heartbeat
-    send_discord_alert(f"🚀 Started live trading loop for {date_str}. Watchlist: {', '.join(symbols)}")
-    
     # Initialize storage if requested
     storage = None
     if args.use_db:
@@ -478,7 +475,7 @@ def main():
             logger.info("Premarket context not found - running pure technical backtest (no bias/news)")
         else:
             logger.error(f"Premarket context not found. Run premarket pipeline first.")
-            return
+            sys.exit(1)
     
     # Load premarket snapshots (optional for backtests)
     snapshots: Optional[Dict[str, Any]] = None
@@ -496,7 +493,7 @@ def main():
             logger.info(f"Loaded premarket snapshots for {len(snapshots.get('symbols', []))} symbols")
     elif not is_backtest:
         logger.error(f"Premarket snapshots not found at {snapshot_path}")
-        return
+        sys.exit(1)
     else:
         logger.info("Premarket snapshots not found - will create minimal snapshots from bars")
     
@@ -544,14 +541,14 @@ def main():
             logger.info("Mock data client initialized")
         except Exception as e:
             logger.error(f"Failed to fetch historical data for backtest: {e}")
-            return
+            sys.exit(1)
     else:
         # Use real client for live trading
         try:
             alpaca_client = AlpacaDataClient()
         except Exception as e:
             logger.error(f"Failed to initialize Alpaca client: {e}")
-            return
+            sys.exit(1)
     
     # Initialize thresholds
     thresholds = STDEVThresholds(
@@ -701,6 +698,7 @@ def main():
     
     # Main loop
     loop_count = 0
+    start_alert_sent = False
 
     def finalize_live_session(reason: str) -> None:
         if is_backtest:
@@ -783,6 +781,10 @@ def main():
                 "include snapshots (premarket_context.json with 'snapshots.symbols')."
             )
             sys.exit(1)
+
+        if not is_backtest and not start_alert_sent:
+            send_discord_alert(f"🚀 Started live trading loop for {date_str}. Watchlist: {', '.join(symbols)}")
+            start_alert_sent = True
         
         # Check if market is open (skip time check in backtest)
         if not is_backtest and not market_is_open(current_et, settings.trading.trading_window_start, settings.trading.trading_window_end):
@@ -1140,4 +1142,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-

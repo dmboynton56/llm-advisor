@@ -2,11 +2,9 @@ name: Premarket Pipeline
 
 on:
   schedule:
-    # UTC cron format is MINUTE HOUR (not hour/minute). Swapping to `13 15` would be ~15:13 UTC (~11:13 EDT).
-    # Dual UTC lines approximate ~9:20 AM America/New_York year-round; wrong-season trigger exits via ET window gate.
-    # 13:20 UTC → 9:20 EDT | 14:20 UTC → 9:20 EST
-    - cron: '20 13 * * 1-5'
-    - cron: '20 14 * * 1-5'
+    # GitHub schedule defaults to UTC; timezone pins this to the NYSE wall clock through DST.
+    - cron: '20 9 * * 1-5'
+      timezone: "America/New_York"
   workflow_dispatch:
     inputs:
       symbols:
@@ -48,13 +46,15 @@ jobs:
         run: |
           ARGS=""
           if [ "${{ github.event_name }}" = "schedule" ]; then
-            ARGS="--scheduled-et-window 09:10 10:05"
+            ARGS="--scheduled-et-window 09:05 09:30"
           fi
           python scripts/check_market_open.py $ARGS
 
-      - name: Scheduled noop outside ET window
+      - name: Fail scheduled run outside ET window
         if: success() && steps.market_gate.outputs.skip_remaining_steps == 'true'
-        run: echo "Skipping Premarket — outside dual-cron ET guard window (~9:20 ET target)."
+        run: |
+          echo "Premarket schedule missed the 09:05-09:30 ET guard window; failing so we do not create late/stale artifacts."
+          exit 1
 
       - name: Auth GCP
         if: success() && steps.market_gate.outputs.skip_remaining_steps != 'true'

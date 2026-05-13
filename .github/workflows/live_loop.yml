@@ -2,9 +2,9 @@ name: Live Trading Loop
 
 on:
   schedule:
-    # MINUTE HOUR — see premarket.yml. ~9:26 NY dual UTC + ET window guard on scheduled runs.
-    - cron: '26 13 * * 1-5'
-    - cron: '26 14 * * 1-5'
+    # GitHub schedule defaults to UTC; timezone pins this to the NYSE wall clock through DST.
+    - cron: '26 9 * * 1-5'
+      timezone: "America/New_York"
   workflow_dispatch:
     inputs:
       symbols:
@@ -39,8 +39,8 @@ jobs:
       - name: Checkout Code
         uses: actions/checkout@v4
 
-      # Belt-and-suspenders: if Actions queues a duplicate schedule late same ET day, skip after a success.
-      - name: Skip scheduled run if Live already succeeded today (America/New_York)
+      # Belt-and-suspenders: if Actions queues a duplicate schedule late same ET day, skip after telemetry exists.
+      - name: Skip scheduled run if Live already produced telemetry today (America/New_York)
         id: dupe_gate
         if: github.event_name == 'schedule'
         env:
@@ -63,13 +63,14 @@ jobs:
               f"https://api.github.com/repos/{owner}/{name}/actions/workflows/live_loop.yml/runs"
               "?branch=main&status=completed&per_page=20"
           )
+          headers = {
+              "Accept": "application/vnd.github+json",
+              "Authorization": f"Bearer {os.environ['GH_TOKEN']}",
+              "X-GitHub-Api-Version": "2022-11-28",
+          }
           req = urllib.request.Request(
               url,
-              headers={
-                  "Accept": "application/vnd.github+json",
-                  "Authorization": f"Bearer {os.environ['GH_TOKEN']}",
-                  "X-GitHub-Api-Version": "2022-11-28",
-              },
+              headers=headers,
           )
           with urllib.request.urlopen(req) as resp:
               data = json.load(resp)
@@ -84,6 +85,20 @@ jobs:
                   continue
               dt = datetime.fromisoformat(finished.replace("Z", "+00:00")).astimezone(et)
               if dt.date().isoformat() == today_et:
+                  artifacts_url = (
+                      f"https://api.github.com/repos/{owner}/{name}/actions/runs/{wr['id']}/artifacts"
+                      "?per_page=100"
+                  )
+                  artifacts_req = urllib.request.Request(artifacts_url, headers=headers)
+                  with urllib.request.urlopen(artifacts_req) as artifacts_resp:
+                      artifacts_data = json.load(artifacts_resp)
+                  has_telemetry = any(
+                      item.get("name", "").startswith("llm-advisor-daily-news-")
+                      for item in artifacts_data.get("artifacts", [])
+                  )
+                  if not has_telemetry:
+                      print(f"Ignore successful Live run {wr['id']} today ET: no telemetry artifact.")
+                      continue
                   with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as gh:
                       gh.write("skip=true\n")
                   print(f"Skip: successful Live run {wr['id']} already finished today ET ({today_et}).")
@@ -117,13 +132,15 @@ jobs:
         run: |
           ARGS=""
           if [ "${{ github.event_name }}" = "schedule" ]; then
-            ARGS="--scheduled-et-window 09:18 10:12"
+            ARGS="--scheduled-et-window 09:15 09:45"
           fi
           python scripts/check_market_open.py $ARGS
 
-      - name: Scheduled noop outside ET window
+      - name: Fail scheduled run outside ET window
         if: success() && github.event_name == 'schedule' && steps.dupe_gate.outputs.skip != 'true' && steps.market_gate.outputs.skip_remaining_steps == 'true'
-        run: echo "Skipping Live — outside dual-cron ET guard window."
+        run: |
+          echo "Live schedule missed the 09:15-09:45 ET guard window; failing so a late run cannot masquerade as a market-open session."
+          exit 1
 
       - name: Auth GCP
         if: success() && (github.event_name != 'schedule' || steps.dupe_gate.outputs.skip != 'true') && steps.market_gate.outputs.skip_remaining_steps != 'true'
@@ -146,32 +163,63 @@ jobs:
       - name: Find latest premarket artifact
         id: premarket_artifact
         if: success() && (github.event_name != 'schedule' || steps.dupe_gate.outputs.skip != 'true') && steps.market_gate.outputs.skip_remaining_steps != 'true'
+        timeout-minutes: 15
         uses: actions/github-script@v7
         with:
           script: |
-            const runs = await github.paginate(github.rest.actions.listWorkflowRuns, {
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              workflow_id: 'premarket.yml',
-              status: 'completed',
-              per_page: 20,
+            const owner = context.repo.owner
+            const repo = context.repo.repo
+            const formatter = new Intl.DateTimeFormat('en-US', {
+              timeZone: 'America/New_York',
+              year: 'numeric',
+              month: '2-digit',
+              day: '2-digit',
             })
-            for (const run of runs) {
-              if (run.conclusion !== 'success') continue
-              const artifacts = await github.paginate(github.rest.actions.listWorkflowRunArtifacts, {
+            function etDate(value) {
+              const parts = Object.fromEntries(
+                formatter.formatToParts(new Date(value)).map((part) => [part.type, part.value])
+              )
+              return `${parts.year}-${parts.month}-${parts.day}`
+            }
+
+            const todayEt = etDate(new Date())
+            const deadline = Date.now() + 12 * 60 * 1000
+
+            while (true) {
+              const runs = await github.paginate(github.rest.actions.listWorkflowRuns, {
                 owner: context.repo.owner,
                 repo: context.repo.repo,
-                run_id: run.id,
-                per_page: 100,
+                workflow_id: 'premarket.yml',
+                status: 'completed',
+                per_page: 30,
               })
-              const artifact = artifacts.find((item) => item.name === 'premarket-context')
-              if (artifact) {
-                core.setOutput('run_id', String(run.id))
-                core.setOutput('artifact_name', artifact.name)
+              for (const run of runs) {
+                if (run.conclusion !== 'success') continue
+                const finishedAt = run.updated_at || run.run_started_at || run.created_at
+                if (!finishedAt || etDate(finishedAt) !== todayEt) continue
+
+                const artifacts = await github.paginate(github.rest.actions.listWorkflowRunArtifacts, {
+                  owner,
+                  repo,
+                  run_id: run.id,
+                  per_page: 100,
+                })
+                const artifact = artifacts.find((item) => item.name === 'premarket-context')
+                if (artifact) {
+                  core.setOutput('run_id', String(run.id))
+                  core.setOutput('artifact_name', artifact.name)
+                  core.setOutput('premarket_date', todayEt)
+                  return
+                }
+              }
+
+              if (Date.now() >= deadline || context.eventName !== 'schedule') {
+                core.setFailed(`No successful premarket-context artifact found for ${todayEt} ET.`)
                 return
               }
+              core.info(`Waiting for today's premarket-context artifact (${todayEt} ET)...`)
+              await new Promise((resolve) => setTimeout(resolve, 30000))
             }
-            core.setFailed('No successful premarket-context artifact found.')
 
       # Extract at repo root so paths stay ``data/daily_news/<YYYY-MM-DD>/processed/…``.
       # Using ``path: data/daily_news`` duplicates the prefix (nested ``data/daily_news``).
@@ -204,7 +252,7 @@ jobs:
         with:
           name: llm-advisor-daily-news-${{ github.run_id }}
           path: data/daily_news/**/processed/*
-          if-no-files-found: warn
+          if-no-files-found: error
 
       - name: Notify Discord on Failure
         if: failure() && (github.event_name != 'schedule' || steps.dupe_gate.outputs.skip != 'true') && steps.market_gate.outputs.skip_remaining_steps != 'true'

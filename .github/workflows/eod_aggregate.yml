@@ -1,6 +1,10 @@
 name: EOD Aggregate
 
 on:
+  workflow_run:
+    workflows: ["Live Trading Loop"]
+    types:
+      - completed
   workflow_dispatch:
     inputs:
       date:
@@ -11,9 +15,6 @@ on:
         description: "Optional GitHub Actions run id for Live Trading Loop (use that job's artifact)"
         required: false
         default: ""
-  schedule:
-    # After US session; live_loop may be 13:30/14:30 UTC + up to 420m
-    - cron: "35 21 * * 1-5"
 
 permissions:
   contents: read
@@ -21,6 +22,7 @@ permissions:
 
 jobs:
   aggregate:
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
     runs-on: ubuntu-latest
     env:
       GCP_PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
@@ -65,11 +67,39 @@ jobs:
               });
               const artifact = artifacts.find((item) => item.name.startsWith('llm-advisor-daily-news-'));
               if (!artifact) {
-                core.setFailed(`No llm-advisor-daily-news-* artifact on workflow run ${runId}`);
-                return;
+                core.setFailed(`No llm-advisor-daily-news-* artifact on workflow run ${runId}.`);
+                return false;
               }
               core.setOutput('run_id', String(runId));
               core.setOutput('artifact_name', artifact.name);
+              core.setOutput('skip_remaining_steps', 'false');
+              return true;
+            }
+
+            async function useTriggeringRun(runId) {
+              const deadline = Date.now() + 3 * 60 * 1000;
+              while (true) {
+                const artifacts = await github.paginate(github.rest.actions.listWorkflowRunArtifacts, {
+                  owner,
+                  repo,
+                  run_id: runId,
+                  per_page: 100,
+                });
+                const artifact = artifacts.find((item) => item.name.startsWith('llm-advisor-daily-news-'));
+                if (artifact) {
+                  core.setOutput('run_id', String(runId));
+                  core.setOutput('artifact_name', artifact.name);
+                  core.setOutput('skip_remaining_steps', 'false');
+                  return;
+                }
+                if (Date.now() >= deadline) {
+                  core.notice(`No llm-advisor-daily-news-* artifact on triggering Live run ${runId}; skipping EOD aggregate.`);
+                  core.setOutput('skip_remaining_steps', 'true');
+                  return;
+                }
+                core.info(`Waiting for telemetry artifact on triggering Live run ${runId}...`);
+                await new Promise((resolve) => setTimeout(resolve, 15000));
+              }
             }
 
             const manualId = (context.payload.inputs && context.payload.inputs.live_loop_run_id || '').trim();
@@ -80,6 +110,11 @@ jobs:
                 return;
               }
               await useRun(n);
+              return;
+            }
+
+            if (context.eventName === 'workflow_run') {
+              await useTriggeringRun(context.payload.workflow_run.id);
               return;
             }
 
@@ -102,14 +137,20 @@ jobs:
               if (artifact) {
                 core.setOutput('run_id', String(run.id));
                 core.setOutput('artifact_name', artifact.name);
+                core.setOutput('skip_remaining_steps', 'false');
                 return;
               }
             }
             core.setFailed('No successful live-loop telemetry artifact found.')
 
+      - name: EOD noop when triggering Live had no telemetry
+        if: steps.live_artifact.outputs.skip_remaining_steps == 'true'
+        run: echo "Skipping EOD aggregate because the triggering Live workflow produced no telemetry artifact."
+
       # Extract at repo root so paths stay ``data/daily_news/<YYYY-MM-DD>/processed/…``.
       # Using ``path: data/daily_news`` duplicates the prefix (nested ``data/daily_news``).
       - name: Download live-loop telemetry artifact
+        if: steps.live_artifact.outputs.skip_remaining_steps != 'true'
         uses: actions/download-artifact@v4
         with:
           name: ${{ steps.live_artifact.outputs.artifact_name }}
@@ -118,18 +159,20 @@ jobs:
           path: .
 
       - name: List downloaded telemetry tree
+        if: steps.live_artifact.outputs.skip_remaining_steps != 'true'
         run: |
           find data/daily_news -type f 2>/dev/null | sort || true
           echo "---- duplicate-prefix probe ----"
           find data/daily_news/data/daily_news -type f 2>/dev/null | sort | head -50 || true
 
       - name: Auth GCP
-        if: ${{ env.GCP_PROJECT_ID != '' }}
+        if: ${{ steps.live_artifact.outputs.skip_remaining_steps != 'true' && env.GCP_PROJECT_ID != '' }}
         uses: google-github-actions/auth@v2
         with:
           credentials_json: ${{ secrets.GCP_SA_KEY }}
 
       - name: Run EOD aggregate
+        if: steps.live_artifact.outputs.skip_remaining_steps != 'true'
         run: |
           BQ_FLAG=""
           if [ -n "${GCP_PROJECT_ID:-}" ]; then BQ_FLAG="--use-bigquery"; fi
@@ -140,11 +183,11 @@ jobs:
           fi
 
       - name: Sync BigQuery to Supabase (rolling window)
-        if: ${{ env.GCP_PROJECT_ID != '' }}
+        if: ${{ steps.live_artifact.outputs.skip_remaining_steps != 'true' && env.GCP_PROJECT_ID != '' }}
         run: python scripts/sync_bq_to_supabase.py --days 14
 
       - name: Telemetry layout on EOD failure
-        if: failure()
+        if: failure() && steps.live_artifact.outputs.skip_remaining_steps != 'true'
         run: |
           echo "---- find data/daily_news ----"
           find data/daily_news -type f 2>/dev/null | sort || true
@@ -152,6 +195,7 @@ jobs:
           find data/daily_news -type d 2>/dev/null | sort || true
 
       - name: Validate Supabase telemetry freshness
+        if: steps.live_artifact.outputs.skip_remaining_steps != 'true'
         run: |
           python - <<'PY'
           import os
@@ -191,16 +235,16 @@ jobs:
           PY
 
       - name: Require metrics endpoint on main
-        if: github.ref == 'refs/heads/main' && env.PORTFOLIO_METRICS_URL != ''
+        if: steps.live_artifact.outputs.skip_remaining_steps != 'true' && github.ref == 'refs/heads/main' && env.PORTFOLIO_METRICS_URL != ''
         run: |
           echo "PORTFOLIO_METRICS_URL is set — production metrics gate active."
 
       - name: Warn when metrics URL missing on main
-        if: github.ref == 'refs/heads/main' && env.PORTFOLIO_METRICS_URL == ''
+        if: steps.live_artifact.outputs.skip_remaining_steps != 'true' && github.ref == 'refs/heads/main' && env.PORTFOLIO_METRICS_URL == ''
         run: 'echo "::warning::PORTFOLIO_METRICS_URL secret not set — add it for portfolio CI verification"'
 
       - name: Validate portfolio-facing metrics endpoint (optional)
-        if: env.PORTFOLIO_METRICS_URL != ''
+        if: steps.live_artifact.outputs.skip_remaining_steps != 'true' && env.PORTFOLIO_METRICS_URL != ''
         run: |
           curl --fail --silent "$PORTFOLIO_METRICS_URL?source=supabase&force=true" > /tmp/metrics_response.json
           python - <<'PY'
@@ -219,14 +263,14 @@ jobs:
           PY
 
       - name: Notify Discord on Success
-        if: success() && env.DISCORD_WEBHOOK_URL != ''
+        if: success() && steps.live_artifact.outputs.skip_remaining_steps != 'true' && env.DISCORD_WEBHOOK_URL != ''
         run: |
           curl -X POST -H "Content-Type: application/json" \
             -d "{\"content\": \"✅ **LLM Advisor EOD Aggregate Succeeded**\\nRun: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}\"}" \
             "$DISCORD_WEBHOOK_URL"
 
       - name: Notify Discord on Failure
-        if: failure() && env.DISCORD_WEBHOOK_URL != ''
+        if: failure() && steps.live_artifact.outputs.skip_remaining_steps != 'true' && env.DISCORD_WEBHOOK_URL != ''
         run: |
           curl -X POST -H "Content-Type: application/json" \
             -d "{\"content\": \"❌ **LLM Advisor EOD Aggregate Failed**\\nRun: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}\"}" \
