@@ -1,10 +1,6 @@
 name: Premarket Pipeline
 
 on:
-  schedule:
-    # GitHub schedule defaults to UTC; timezone pins this to the NYSE wall clock through DST.
-    - cron: '20 9 * * 1-5'
-      timezone: "America/New_York"
   workflow_dispatch:
     inputs:
       symbols:
@@ -41,23 +37,10 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
-      - name: Check market open and scheduled ET window (~9:20 NY)
-        id: market_gate
-        run: |
-          ARGS=""
-          if [ "${{ github.event_name }}" = "schedule" ]; then
-            ARGS="--scheduled-et-window 09:05 09:30"
-          fi
-          python scripts/check_market_open.py $ARGS
-
-      - name: Fail scheduled run outside ET window
-        if: success() && steps.market_gate.outputs.skip_remaining_steps == 'true'
-        run: |
-          echo "Premarket schedule missed the 09:05-09:30 ET guard window; failing so we do not create late/stale artifacts."
-          exit 1
+      - name: Check market open
+        run: python scripts/check_market_open.py
 
       - name: Auth GCP
-        if: success() && steps.market_gate.outputs.skip_remaining_steps != 'true'
         uses: google-github-actions/auth@v2
         with:
           credentials_json: ${{ secrets.GCP_SA_KEY }}
@@ -65,7 +48,6 @@ jobs:
           export_environment_variables: true
 
       - name: Validate GCP auth
-        if: success() && steps.market_gate.outputs.skip_remaining_steps != 'true'
         run: |
           python -m json.tool "$GOOGLE_APPLICATION_CREDENTIALS" > /dev/null
           python - <<'PY'
@@ -75,14 +57,12 @@ jobs:
           PY
 
       - name: Run Premarket Pipeline
-        if: success() && steps.market_gate.outputs.skip_remaining_steps != 'true'
         run: |
           SYMBOLS="${{ github.event.inputs.symbols || 'SPY,QQQ,IWM' }}"
           SYMBOLS_SPACE=$(echo $SYMBOLS | tr ',' ' ')
           python scripts/run_premarket.py --symbols $SYMBOLS_SPACE --use-db
 
       - name: Upload Premarket Context
-        if: success() && steps.market_gate.outputs.skip_remaining_steps != 'true'
         uses: actions/upload-artifact@v4
         with:
           name: premarket-context

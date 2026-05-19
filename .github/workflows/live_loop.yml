@@ -1,10 +1,6 @@
 name: Live Trading Loop
 
 on:
-  schedule:
-    # GitHub schedule defaults to UTC; timezone pins this to the NYSE wall clock through DST.
-    - cron: '26 9 * * 1-5'
-      timezone: "America/New_York"
   workflow_dispatch:
     inputs:
       symbols:
@@ -39,111 +35,21 @@ jobs:
       - name: Checkout Code
         uses: actions/checkout@v4
 
-      # Belt-and-suspenders: if Actions queues a duplicate schedule late same ET day, skip after telemetry exists.
-      - name: Skip scheduled run if Live already produced telemetry today (America/New_York)
-        id: dupe_gate
-        if: github.event_name == 'schedule'
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          python3 <<'PY'
-          import json
-          import os
-          import urllib.request
-          from datetime import datetime
-          from zoneinfo import ZoneInfo
-
-          repo = os.environ["GITHUB_REPOSITORY"]
-          run_id = int(os.environ["GITHUB_RUN_ID"])
-          owner, name = repo.split("/", 1)
-          et = ZoneInfo("America/New_York")
-          today_et = datetime.now(et).date().isoformat()
-
-          url = (
-              f"https://api.github.com/repos/{owner}/{name}/actions/workflows/live_loop.yml/runs"
-              "?branch=main&status=completed&per_page=20"
-          )
-          headers = {
-              "Accept": "application/vnd.github+json",
-              "Authorization": f"Bearer {os.environ['GH_TOKEN']}",
-              "X-GitHub-Api-Version": "2022-11-28",
-          }
-          req = urllib.request.Request(
-              url,
-              headers=headers,
-          )
-          with urllib.request.urlopen(req) as resp:
-              data = json.load(resp)
-
-          for wr in data.get("workflow_runs", []):
-              if wr.get("conclusion") != "success":
-                  continue
-              if wr.get("id") == run_id:
-                  continue
-              finished = wr.get("updated_at") or wr.get("run_started_at")
-              if not finished:
-                  continue
-              dt = datetime.fromisoformat(finished.replace("Z", "+00:00")).astimezone(et)
-              if dt.date().isoformat() == today_et:
-                  artifacts_url = (
-                      f"https://api.github.com/repos/{owner}/{name}/actions/runs/{wr['id']}/artifacts"
-                      "?per_page=100"
-                  )
-                  artifacts_req = urllib.request.Request(artifacts_url, headers=headers)
-                  with urllib.request.urlopen(artifacts_req) as artifacts_resp:
-                      artifacts_data = json.load(artifacts_resp)
-                  has_telemetry = any(
-                      item.get("name", "").startswith("llm-advisor-daily-news-")
-                      for item in artifacts_data.get("artifacts", [])
-                  )
-                  if not has_telemetry:
-                      print(f"Ignore successful Live run {wr['id']} today ET: no telemetry artifact.")
-                      continue
-                  with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as gh:
-                      gh.write("skip=true\n")
-                  print(f"Skip: successful Live run {wr['id']} already finished today ET ({today_et}).")
-                  raise SystemExit(0)
-
-          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as gh:
-              gh.write("skip=false\n")
-          print("Proceed: no prior successful Live run today ET.")
-          PY
-
-      - name: Scheduled skip notice
-        if: github.event_name == 'schedule' && steps.dupe_gate.outputs.skip == 'true'
-        run: echo "Skipping Live loop — duplicate schedule after successful run today (ET)."
-
       - name: Set up Python
-        if: github.event_name != 'schedule' || steps.dupe_gate.outputs.skip != 'true'
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
           cache: 'pip'
 
       - name: Install Dependencies
-        if: github.event_name != 'schedule' || steps.dupe_gate.outputs.skip != 'true'
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
-      - name: Check market open and scheduled ET window (~9:26 NY)
-        id: market_gate
-        if: github.event_name != 'schedule' || steps.dupe_gate.outputs.skip != 'true'
-        run: |
-          ARGS=""
-          if [ "${{ github.event_name }}" = "schedule" ]; then
-            ARGS="--scheduled-et-window 09:15 09:45"
-          fi
-          python scripts/check_market_open.py $ARGS
-
-      - name: Fail scheduled run outside ET window
-        if: success() && github.event_name == 'schedule' && steps.dupe_gate.outputs.skip != 'true' && steps.market_gate.outputs.skip_remaining_steps == 'true'
-        run: |
-          echo "Live schedule missed the 09:15-09:45 ET guard window; failing so a late run cannot masquerade as a market-open session."
-          exit 1
+      - name: Check market open
+        run: python scripts/check_market_open.py
 
       - name: Auth GCP
-        if: success() && (github.event_name != 'schedule' || steps.dupe_gate.outputs.skip != 'true') && steps.market_gate.outputs.skip_remaining_steps != 'true'
         uses: google-github-actions/auth@v2
         with:
           credentials_json: ${{ secrets.GCP_SA_KEY }}
@@ -151,7 +57,6 @@ jobs:
           export_environment_variables: true
 
       - name: Validate GCP auth
-        if: success() && (github.event_name != 'schedule' || steps.dupe_gate.outputs.skip != 'true') && steps.market_gate.outputs.skip_remaining_steps != 'true'
         run: |
           python -m json.tool "$GOOGLE_APPLICATION_CREDENTIALS" > /dev/null
           python - <<'PY'
@@ -162,7 +67,6 @@ jobs:
 
       - name: Find latest premarket artifact
         id: premarket_artifact
-        if: success() && (github.event_name != 'schedule' || steps.dupe_gate.outputs.skip != 'true') && steps.market_gate.outputs.skip_remaining_steps != 'true'
         timeout-minutes: 15
         uses: actions/github-script@v7
         with:
@@ -213,7 +117,7 @@ jobs:
                 }
               }
 
-              if (Date.now() >= deadline || context.eventName !== 'schedule') {
+              if (Date.now() >= deadline) {
                 core.setFailed(`No successful premarket-context artifact found for ${todayEt} ET.`)
                 return
               }
@@ -224,7 +128,6 @@ jobs:
       # Extract at repo root so paths stay ``data/daily_news/<YYYY-MM-DD>/processed/…``.
       # Using ``path: data/daily_news`` duplicates the prefix (nested ``data/daily_news``).
       - name: Download Premarket Context
-        if: success() && (github.event_name != 'schedule' || steps.dupe_gate.outputs.skip != 'true') && steps.market_gate.outputs.skip_remaining_steps != 'true'
         uses: actions/download-artifact@v4
         with:
           name: ${{ steps.premarket_artifact.outputs.artifact_name }}
@@ -233,13 +136,11 @@ jobs:
           path: .
 
       - name: Verify premarket paths (debug)
-        if: success() && (github.event_name != 'schedule' || steps.dupe_gate.outputs.skip != 'true') && steps.market_gate.outputs.skip_remaining_steps != 'true'
         run: |
           find data/daily_news -type f -name 'premarket_context.json' 2>/dev/null | sort || true
           find data/daily_news/data/daily_news -type f -name 'premarket_context.json' 2>/dev/null | sort || true
 
       - name: Run Live Loop
-        if: success() && (github.event_name != 'schedule' || steps.dupe_gate.outputs.skip != 'true') && steps.market_gate.outputs.skip_remaining_steps != 'true'
         run: |
           SYMBOLS="${{ github.event.inputs.symbols || 'SPY,QQQ,IWM' }}"
           SYMBOLS_SPACE=$(echo $SYMBOLS | tr ',' ' ')
@@ -247,7 +148,7 @@ jobs:
           python scripts/run_live_loop.py --symbols $SYMBOLS_SPACE --use-db --fast 60
 
       - name: Upload daily telemetry artifacts
-        if: always() && (github.event_name != 'schedule' || steps.dupe_gate.outputs.skip != 'true') && steps.market_gate.outputs.skip_remaining_steps != 'true'
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: llm-advisor-daily-news-${{ github.run_id }}
@@ -255,7 +156,7 @@ jobs:
           if-no-files-found: error
 
       - name: Notify Discord on Failure
-        if: failure() && (github.event_name != 'schedule' || steps.dupe_gate.outputs.skip != 'true') && steps.market_gate.outputs.skip_remaining_steps != 'true'
+        if: failure()
         run: |
           curl -X POST -H "Content-Type: application/json" \
             -d "{\"content\": \"❌ **LLM Advisor Live Loop Failed**\\nRun: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}\"}" \
