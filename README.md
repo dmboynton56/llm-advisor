@@ -130,7 +130,7 @@ Use the template at `notebooks/_templates/llm_advisor_eval.ipynb` for additional
 
 ## GitHub Actions and portfolio verification
 
-- **Premarket** (`premarket.yml`): triggered via `workflow_dispatch` (GCP Cloud Scheduler at `09:20 America/New_York`, Mon–Fri). Skips NYSE holidays/weekends via `check_market_open.py`.
+- **Premarket** (`premarket.yml`): triggered via `workflow_dispatch` (GCP Cloud Scheduler at `09:20 America/New_York`, Mon–Fri). Skips NYSE holidays/weekends via `check_market_open.py`. Infra lives in `infra/gcp/` (`./infra/gcp/deploy.sh`).
 - **Live Trading Loop** (`live_loop.yml`): triggered via `workflow_dispatch` (GCP Cloud Scheduler at `09:27 America/New_York`, Mon–Fri). Waits up to 12 minutes for a **same-ET-day** `premarket-context` artifact, fails if today’s premarket artifact is missing, and fails telemetry upload if the loop produced no processed files.
 - **EOD Aggregate** (`eod_aggregate.yml`) auto-runs via `workflow_run` after a successful **Live Trading Loop** and downloads the triggering run’s exact `llm-advisor-daily-news-*` artifact at the **repo root** so paths stay `data/daily_news/<YYYY-MM-DD>/processed/…`. Triggering Live runs with no telemetry artifact noop EOD; manual `workflow_dispatch` still supports **`live_loop_run_id`** (Actions → Live run URL → numeric id) and fails loudly if the pinned artifact is missing.
 - **Portfolio checks:** optional secret **`PORTFOLIO_METRICS_URL`** = deployed `https://…/api/llm-advisor/metrics` base (no path suffix). When set, EOD curls metrics with `?source=supabase&force=true`. Unset the secret temporarily if the endpoint is still empty while debugging ingest.
