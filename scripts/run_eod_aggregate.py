@@ -702,6 +702,12 @@ def main() -> None:
                 LOGGER.info("Validation checks: %s", json.dumps(checks, sort_keys=True))
                 if checks["runs_7d"] == 0:
                     raise SystemExit("Validation failed: no run rows in the last 7 days.")
+                strict = os.getenv("EOD_STRICT_TELEMETRY", "").lower() in ("1", "true", "yes")
+                if checks["heartbeats_7d"] == 0:
+                    msg = "Validation failed: no runtime heartbeats in the last 7 days."
+                    if strict:
+                        raise SystemExit(msg)
+                    LOGGER.warning("%s (set EOD_STRICT_TELEMETRY=1 to fail on this)", msg)
             LOGGER.info(
                 "EOD ingest complete | runs=%d trades=%d heartbeats=%d",
                 len(runs),

@@ -158,6 +158,16 @@ jobs:
           github-token: ${{ github.token }}
           path: .
 
+      - name: Normalize telemetry layout
+        if: steps.live_artifact.outputs.skip_remaining_steps != 'true'
+        run: |
+          DATE="${{ github.event.inputs.date }}"
+          if [ -n "$DATE" ]; then
+            python scripts/normalize_telemetry_layout.py --date "$DATE"
+          else
+            python scripts/normalize_telemetry_layout.py
+          fi
+
       - name: List downloaded telemetry tree
         if: steps.live_artifact.outputs.skip_remaining_steps != 'true'
         run: |
@@ -170,6 +180,8 @@ jobs:
         uses: google-github-actions/auth@v2
         with:
           credentials_json: ${{ secrets.GCP_SA_KEY }}
+          create_credentials_file: true
+          export_environment_variables: true
 
       - name: Run EOD aggregate
         if: steps.live_artifact.outputs.skip_remaining_steps != 'true'

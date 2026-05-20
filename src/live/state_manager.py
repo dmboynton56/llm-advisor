@@ -52,9 +52,9 @@ class SymbolState:
     
     def update_features(self, mu: float, sigma: float, z: float, timestamp: datetime) -> None:
         """Update rolling stats and feature values."""
-        self.last_mu = mu
-        self.last_sigma = sigma
-        self.last_z = z
+        self.last_mu = float(mu)
+        self.last_sigma = float(sigma)
+        self.last_z = float(z)
         self.last_update_utc = timestamp.isoformat()
     
     def reset_to_idle(self) -> None:

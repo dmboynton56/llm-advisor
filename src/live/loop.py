@@ -43,6 +43,7 @@ from src.utils.daily_news_paths import (
     normalize_daily_news_root,
     resolve_premarket_context_path,
 )
+from src.utils.json_encode import json_default
 
 ET = pytz.timezone("US/Eastern")
 logger = setup_logging()
@@ -294,7 +295,7 @@ def log_tick(
     }
     
     with log_path.open("a", encoding="utf-8") as f:
-        f.write(json.dumps(record) + "\n")
+        f.write(json.dumps(record, default=json_default) + "\n")
 
 
 def append_shutdown_heartbeat(
@@ -313,7 +314,7 @@ def append_shutdown_heartbeat(
     }
     log_path.parent.mkdir(parents=True, exist_ok=True)
     with log_path.open("a", encoding="utf-8") as f:
-        f.write(json.dumps(record) + "\n")
+        f.write(json.dumps(record, default=json_default) + "\n")
 
 
 def write_live_session_summary(
@@ -344,7 +345,7 @@ def write_live_session_summary(
     path = output_dir / "session_summary.json"
     output_dir.mkdir(parents=True, exist_ok=True)
     with path.open("w", encoding="utf-8") as f:
-        json.dump(summary, f, indent=2, default=str)
+        json.dump(summary, f, indent=2, default=json_default)
     logger.info("Wrote live session summary to %s", path)
 
 
@@ -411,9 +412,9 @@ def sync_state_with_positions(states: Dict[str, SymbolState], storage: Optional[
                 state.trade = TradePlan(
                     setup="RECOVERY",
                     side=state.side,
-                    entry_price=pos.get("entry_price", 0.0),
-                    sl_price=pos.get("stop_loss", 0.0),
-                    tp_price=pos.get("take_profit", 0.0),
+                    entry_price=float(pos.get("entry_price", 0.0) or 0.0),
+                    sl_price=float(pos.get("stop_loss", 0.0) or 0.0),
+                    tp_price=float(pos.get("take_profit", 0.0) or 0.0),
                     triggered_at=datetime.now()
                 )
                 logger.info(f"[RECOVERY] Synced {symbol} state with open position: {state.side} @ {state.trade.entry_price}")
@@ -734,7 +735,7 @@ def main():
                         # Save backtest results
                         backtest_path = output_dir / "backtest_results.json"
                         with open(backtest_path, 'w') as f:
-                            json.dump(summary, f, indent=2, default=str)
+                            json.dump(summary, f, indent=2, default=json_default)
                         logger.info(f"Backtest complete. Results saved to {backtest_path}")
                         logger.info(f"Total trades: {summary['total_trades']}, P/L: ${summary['total_pnl']:.2f}")
                 break
@@ -1121,12 +1122,12 @@ def main():
                             storage.save_live_loop_log({
                                 "timestamp": current_utc.isoformat(),
                                 "symbol": symbol,
-                                "z_score": state.last_z,
-                                "mu": state.last_mu,
-                                "sigma": state.last_sigma,
+                                "z_score": float(state.last_z),
+                                "mu": float(state.last_mu),
+                                "sigma": float(state.last_sigma),
                                 "status": state.status,
                                 "side": state.side,
-                                "current_price": current_price,
+                                "current_price": float(current_price),
                             })
                 except Exception as e:
                     logger.error(f"Failed to save live loop log to database: {e}")

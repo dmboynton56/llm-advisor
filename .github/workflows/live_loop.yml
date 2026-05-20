@@ -167,12 +167,18 @@ jobs:
           # Run the loop. --fast 60 means 1 minute iterations.
           python scripts/run_live_loop.py --symbols $SYMBOLS_SPACE --use-db --fast 60
 
+      - name: Prepare telemetry artifact paths
+        if: always()
+        run: touch .telemetry-artifact-anchor
+
       - name: Upload daily telemetry artifacts
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: llm-advisor-daily-news-${{ github.run_id }}
-          path: data/daily_news/**/processed/*
+          path: |
+            data/daily_news/
+            .telemetry-artifact-anchor
           if-no-files-found: error
 
       - name: Notify Discord on Failure
