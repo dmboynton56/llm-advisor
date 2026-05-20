@@ -135,10 +135,30 @@ jobs:
           github-token: ${{ github.token }}
           path: .
 
-      - name: Verify premarket paths (debug)
+      - name: Verify premarket context on disk
+        env:
+          PREMARKET_DATE: ${{ steps.premarket_artifact.outputs.premarket_date }}
         run: |
-          find data/daily_news -type f -name 'premarket_context.json' 2>/dev/null | sort || true
-          find data/daily_news/data/daily_news -type f -name 'premarket_context.json' 2>/dev/null | sort || true
+          set -euo pipefail
+          DATE="${PREMARKET_DATE:-}"
+          if [ -z "$DATE" ]; then
+            echo "premarket_date output missing from Find latest premarket artifact step"
+            exit 1
+          fi
+          DEST="data/daily_news/${DATE}/processed/premarket_context.json"
+          if [ -f "$DEST" ]; then
+            echo "OK: $DEST"
+            exit 0
+          fi
+          if [ -f premarket_context.json ]; then
+            mkdir -p "data/daily_news/${DATE}/processed"
+            mv premarket_context.json "$DEST"
+            echo "Relocated flat artifact to $DEST"
+            exit 0
+          fi
+          echo "premarket_context.json not found (checked $DEST and repo root)"
+          find . -name 'premarket_context.json' 2>/dev/null || true
+          exit 1
 
       - name: Run Live Loop
         run: |

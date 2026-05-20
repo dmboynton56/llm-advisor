@@ -39,7 +39,10 @@ from src.analysis.market_analyzer import MarketAnalyzer
 from src.analysis.trade_validator import validate_trade_with_llm
 from config.thresholds import STDEVThresholds
 from src.utils.notifications import send_discord_alert, send_trade_alert
-from src.utils.daily_news_paths import normalize_daily_news_root
+from src.utils.daily_news_paths import (
+    normalize_daily_news_root,
+    resolve_premarket_context_path,
+)
 
 ET = pytz.timezone("US/Eastern")
 logger = setup_logging()
@@ -479,7 +482,9 @@ def main():
     
     # Load premarket snapshots (optional for backtests)
     snapshots: Optional[Dict[str, Any]] = None
-    snapshot_path = output_dir / "premarket_context.json"
+    snapshot_path = resolve_premarket_context_path(date_str, PROJECT_ROOT) or (
+        output_dir / "premarket_context.json"
+    )
     if snapshot_path.exists():
         with open(snapshot_path, 'r') as f:
             premarket_data = json.load(f)

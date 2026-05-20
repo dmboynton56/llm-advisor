@@ -323,18 +323,24 @@ def save_premarket_context(context: PremarketContext, output_path: Path,
 
 def load_premarket_context(date_str: str, base_dir: Optional[Path] = None) -> PremarketContext:
     """Load premarket context from JSON file."""
-    if base_dir is None:
-        project_root = Path(__file__).resolve().parents[2]
-        base_dir = project_root / "data" / "daily_news" / date_str / "processed"
-        context_path = base_dir / "premarket_context.json"
-    else:
-        # If base_dir is provided, check both processed/ subdirectory and direct
-        context_path = base_dir / "processed" / "premarket_context.json"
-        if not context_path.exists():
-            context_path = base_dir / "premarket_context.json"
-    
-    if not context_path.exists():
-        raise FileNotFoundError(f"Premarket context not found at {context_path}")
+    from src.utils.daily_news_paths import resolve_premarket_context_path
+
+    project_root = Path(__file__).resolve().parents[2]
+    context_path = resolve_premarket_context_path(date_str, project_root)
+    if context_path is None and base_dir is not None:
+        for candidate in (
+            base_dir / "processed" / "premarket_context.json",
+            base_dir / "premarket_context.json",
+        ):
+            if candidate.exists():
+                context_path = candidate
+                break
+
+    if context_path is None:
+        raise FileNotFoundError(
+            f"Premarket context not found for {date_str} "
+            f"(searched under {project_root / 'data' / 'daily_news'} and repo root)"
+        )
     
     with open(context_path, 'r') as f:
         data = json.load(f)

@@ -62,9 +62,16 @@ jobs:
           SYMBOLS_SPACE=$(echo $SYMBOLS | tr ',' ' ')
           python scripts/run_premarket.py --symbols $SYMBOLS_SPACE --use-db
 
+      # Anchor at repo root so upload-artifact LCA stays ``.`` and paths remain
+      # ``data/daily_news/<date>/processed/premarket_context.json`` (not a bare filename).
+      - name: Prepare artifact paths
+        run: touch .premarket-artifact-anchor
+
       - name: Upload Premarket Context
         uses: actions/upload-artifact@v4
         with:
           name: premarket-context
-          path: data/daily_news/*/processed/premarket_context.json
+          path: |
+            data/daily_news/
+            .premarket-artifact-anchor
           retention-days: 1
