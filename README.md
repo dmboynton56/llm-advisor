@@ -33,6 +33,16 @@ cd llm-advisor
 pip install -r requirements.txt
 ```
 
+### Daily bias models (premarket)
+
+The premarket pipeline loads per-symbol classifiers from [`models/`](models/README.md). For CI defaults (`SPY`, `QQQ`, `IWM`), commit the `.pkl` files or generate dev placeholders:
+
+```bash
+python scripts/export_minimal_bias_models.py SPY QQQ IWM
+```
+
+Replace placeholders with production-trained models before relying on ML bias for execution decisions.
+
 ### 2. Configuration
 
 Set up your environment variables in a .env file:
@@ -85,6 +95,12 @@ To refresh the portfolio artifact (`personal-portfolio/public/data/llm_advisor_b
 - **Paper Trading**: Set `ALPACA_PAPER_TRADING=true` in your environment.
 - **Live Trading**: Set `ALPACA_PAPER_TRADING=false`. Use with extreme caution.
 
+Successful Alpaca bracket submits are persisted when `--use-db` is set: `trade_signals`, optional `llm_validations`, `trades`, `positions`, and `live_loop_log.jsonl` / `session_summary.json` in the telemetry artifact for EOD.
+
+### Optional
+
+- `MAX_CONCURRENT_TRADES` (default `1`) caps simultaneous open positions before new entries are sent.
+
 ## Testing
 
 The system includes unit tests using pytest:
@@ -127,6 +143,10 @@ Use the template at `notebooks/_templates/llm_advisor_eval.ipynb` for additional
 - State Persistence: The system syncs with BigQuery on startup to recover existing positions and prevent duplicate trades.
 - Error Alerting: Critical failures and trade executions are sent immediately to Discord.
 - Timeout Protection: GitHub Actions are configured with strict timeouts to ensure process termination after market close.
+
+## Portfolio chat
+
+The portfolio page `/projects/llm-advisor` includes scoped chat (`scope=llm-advisor`) that answers from `personal-portfolio/docs/project-knowledge/llm-advisor/` and Supabase telemetry via `get_model_metrics` when EOD/sync has populated tables. Keep docs aligned with workflow behavior; see `plans/llm-advisor/README.md` and `plans/portfolio-site/06-chatbot-agent-tools.md`.
 
 ## GitHub Actions and portfolio verification
 

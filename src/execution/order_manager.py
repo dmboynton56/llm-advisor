@@ -54,6 +54,16 @@ class StockOrderManager:
         account = self.trading_client.get_account()
         return float(account.equity)
     
+    def close_position(self, symbol: str) -> bool:
+        """Close an open position via Alpaca (market close)."""
+        try:
+            self.trading_client.close_position(symbol)
+            print(f"  > Closed position {symbol}")
+            return True
+        except Exception as e:
+            print(f"  ! Failed to close position {symbol}: {e}")
+            return False
+    
     def _normalize_side(self, side: str) -> str:
         """Normalize trade side values (e.g., 'long' -> 'buy')."""
         if not side:

@@ -322,26 +322,38 @@ def write_live_session_summary(
     date_str: str,
     loop_count: int,
     session_end_reason: str,
+    storage: Optional[StorageAdapter] = None,
+    order_manager: Optional[Any] = None,
 ) -> None:
     """Persist same-shape summary as backtest_results.json for Supabase EOD (live/paper days)."""
-    summary = {
-        "date": date_str,
-        "mode": "live",
-        "session_end_reason": session_end_reason,
-        "loop_iterations": loop_count,
-        "total_trades": 0,
-        "closed_trades": 0,
-        "winning_trades": 0,
-        "losing_trades": 0,
-        "total_pnl": 0.0,
-        "average_win": 0.0,
-        "average_loss": 0.0,
-        "final_equity": None,
-        "return_pct": None,
-        "daily_return_pct": None,
-        "win_rate": None,
-        "trades": [],
-    }
+    summary: Dict[str, Any]
+    if storage:
+        summary = build_live_session_summary(
+            storage=storage,
+            date_str=date_str,
+            loop_count=loop_count,
+            session_end_reason=session_end_reason,
+            order_manager=order_manager,
+        )
+    else:
+        summary = {
+            "date": date_str,
+            "mode": "live",
+            "session_end_reason": session_end_reason,
+            "loop_iterations": loop_count,
+            "total_trades": 0,
+            "closed_trades": 0,
+            "winning_trades": 0,
+            "losing_trades": 0,
+            "total_pnl": 0.0,
+            "average_win": 0.0,
+            "average_loss": 0.0,
+            "final_equity": None,
+            "return_pct": None,
+            "daily_return_pct": None,
+            "win_rate": None,
+            "trades": [],
+        }
     path = output_dir / "session_summary.json"
     output_dir.mkdir(parents=True, exist_ok=True)
     with path.open("w", encoding="utf-8") as f:
@@ -349,31 +361,117 @@ def write_live_session_summary(
     logger.info("Wrote live session summary to %s", path)
 
 
-def execute_trade(signal: SignalEvent, state: SymbolState, order_manager: Optional[Any] = None) -> None:
+def build_live_session_summary(
+    storage: StorageAdapter,
+    date_str: str,
+    loop_count: int,
+    session_end_reason: str,
+    order_manager: Optional[Any] = None,
+) -> Dict[str, Any]:
+    """Aggregate session_summary.json fields from storage trades for run date."""
+    from datetime import date as date_type
+
+    run_date = datetime.strptime(date_str, "%Y-%m-%d").date()
+    rows = storage.get_trades(start_date=run_date, end_date=None, symbol=None)
+    rows = [
+        r
+        for r in rows
+        if r.get("entry_time") is not None
+        and date_str in str(r.get("entry_time", ""))
+    ]
+    closed = [r for r in rows if str(r.get("status", "")).lower() == "closed"]
+    open_ct = len([r for r in rows if str(r.get("status", "")).lower() in ("open", "filled", "pending")])
+
+    def _f(x: Any) -> float:
+        try:
+            return float(x) if x is not None else 0.0
+        except (TypeError, ValueError):
+            return 0.0
+
+    total_pnl = sum(_f(r.get("pnl")) for r in closed)
+    wins = [r for r in closed if _f(r.get("pnl")) > 0]
+    losses = [r for r in closed if _f(r.get("pnl")) <= 0]
+
+    final_equity: Optional[float] = None
+    if order_manager and hasattr(order_manager, "get_account_equity"):
+        try:
+            final_equity = float(order_manager.get_account_equity())
+        except Exception:
+            final_equity = None
+
+    win_rate = (len(wins) / len(closed)) if closed else None
+
+    trades_out: List[Dict[str, Any]] = []
+    for r in rows:
+        trades_out.append(
+            {
+                "order_id": r.get("trade_id"),
+                "symbol": r.get("symbol"),
+                "side": r.get("side"),
+                "qty": r.get("qty"),
+                "entry_price": _f(r.get("entry_price")),
+                "stop_loss": _f(r.get("stop_loss")),
+                "take_profit": _f(r.get("take_profit")),
+                "entry_time": r.get("entry_time"),
+                "exit_time": r.get("exit_time"),
+                "exit_price": _f(r.get("exit_price")) if r.get("exit_price") is not None else None,
+                "exit_reason": r.get("exit_reason"),
+                "pnl": _f(r.get("pnl")),
+                "status": r.get("status"),
+            }
+        )
+
+    return {
+        "date": date_str,
+        "mode": "live",
+        "session_end_reason": session_end_reason,
+        "loop_iterations": loop_count,
+        "total_trades": len(rows),
+        "closed_trades": len(closed),
+        "open_positions": open_ct,
+        "winning_trades": len(wins),
+        "losing_trades": len(losses),
+        "total_pnl": total_pnl,
+        "average_win": sum(_f(r.get("pnl")) for r in wins) / len(wins) if wins else 0.0,
+        "average_loss": sum(_f(r.get("pnl")) for r in losses) / len(losses) if losses else 0.0,
+        "final_equity": final_equity,
+        "return_pct": None,
+        "daily_return_pct": None,
+        "win_rate": win_rate,
+        "trades": trades_out,
+    }
+
+
+def execute_trade(
+    signal: SignalEvent,
+    state: SymbolState,
+    order_manager: Optional[Any] = None,
+) -> Optional[Dict[str, Any]]:
     """
     Execute trade via order manager.
-    
-    Args:
-        signal: Signal event
-        state: Symbol state with trade plan
-        order_manager: Optional StockOrderManager instance
+
+    Returns:
+        Order dict from Alpaca on success, None on failure / dry-run.
     """
     logger.info(f"TRADE SIGNAL: {signal.symbol} {signal.setup_type} {signal.side} @ {signal.entry_price}")
     logger.info(f"  Stop Loss: {state.trade.sl_price if state.trade else 'N/A'}")
     logger.info(f"  Take Profit: {state.trade.tp_price if state.trade else 'N/A'}")
-    
+
     if order_manager:
         try:
             from src.execution.order_manager import execute_trade_from_signal
+
             result = execute_trade_from_signal(signal, state, order_manager)
             if result:
                 logger.info(f"Trade executed: Order ID {result.get('order_id')}")
             else:
                 logger.warning(f"Trade execution failed for {signal.symbol}")
+            return result
         except Exception as e:
             logger.error(f"Trade execution error: {e}")
-    else:
-        logger.info("Order manager not initialized - trade not executed (dry run)")
+            return None
+    logger.info("Order manager not initialized - trade not executed (dry run)")
+    return None
 
 
 def update_positions(trade_tracker: Optional[Any] = None) -> None:
@@ -480,6 +578,16 @@ def main():
         else:
             logger.error(f"Premarket context not found. Run premarket pipeline first.")
             sys.exit(1)
+    
+    if premarket_context and not is_backtest:
+        for sym in symbols:
+            bias = premarket_context.symbols.get(sym)
+            if bias and isinstance(bias.model_output, dict) and bias.model_output.get("error"):
+                logger.warning(
+                    "Premarket ML bias unavailable for %s: %s",
+                    sym,
+                    bias.model_output.get("error"),
+                )
     
     # Load premarket snapshots (optional for backtests)
     snapshots: Optional[Dict[str, Any]] = None
@@ -686,7 +794,7 @@ def main():
             
             paper_trading = os.getenv("ALPACA_PAPER_TRADING", "true").lower() == "true"
             order_manager = StockOrderManager(paper=paper_trading)
-            trade_tracker = TradeTracker(order_manager)
+            trade_tracker = TradeTracker(order_manager, storage=storage if args.use_db else None)
             logger.info(f"Order manager initialized (paper trading: {paper_trading})")
         except Exception as e:
             logger.warning(f"Order manager initialization failed: {e}. Running in dry-run mode.")
@@ -710,7 +818,14 @@ def main():
         if is_backtest:
             return
         append_shutdown_heartbeat(log_path, symbols, loop_count, False)
-        write_live_session_summary(output_dir, date_str, loop_count, reason)
+        write_live_session_summary(
+            output_dir,
+            date_str,
+            loop_count,
+            reason,
+            storage=storage,
+            order_manager=order_manager,
+        )
 
     while True:
         if is_backtest:
@@ -957,6 +1072,7 @@ def main():
                 
                 latest_price = bars_1m[-1]["c"]
                 state = states[symbol]
+                prev_status = state.status
                 
                 # Evaluate thresholds
                 signal = evaluate_thresholds(
@@ -965,30 +1081,37 @@ def main():
                     multiplier=state.threshold_multiplier
                 )
                 
+                if state.status != prev_status:
+                    logger.info(
+                        "%s state: %s -> %s (z=%.3f, ATRpct=%.1f)",
+                        symbol,
+                        prev_status,
+                        state.status,
+                        state.last_z,
+                        state.atr_percentile,
+                    )
+                
                 if signal:
                     logger.info(f"TRADE SIGNAL DETECTED for {symbol}: {signal.setup_type} {signal.side.upper()} @ ${signal.entry_price:.2f}")
                     
-                    # Optional LLM trade validation
-                    # In test/backtest mode: log but don't actually call LLM (saves API costs)
+                    last_validation = None
                     if settings.llm.enable_trade_validation and premarket_context:
                         if is_backtest:
-                            # Test mode: just log that we would check with LLM
                             logger.info(f"Would check with LLM for {symbol} trade validation (test mode - skipping API call)")
                         else:
-                            # Live mode: actually call LLM
                             try:
-                                validation = validate_trade_with_llm(
+                                last_validation = validate_trade_with_llm(
                                     signal=signal,
                                     state=state,
                                     premarket_context=premarket_context,
                                     llm_client=llm_client
                                 )
                                 
-                                if validation.should_execute:
-                                    reasoning_str = str(validation.reasoning) if validation.reasoning else "Approved"
-                                    logger.info(f"LLM VALIDATION APPROVED {symbol} trade (confidence: {validation.confidence}%): {reasoning_str[:150]}...")
+                                if last_validation.should_execute:
+                                    reasoning_str = str(last_validation.reasoning) if last_validation.reasoning else "Approved"
+                                    logger.info(f"LLM VALIDATION APPROVED {symbol} trade (confidence: {last_validation.confidence}%): {reasoning_str[:150]}...")
                                 else:
-                                    reasoning_str = str(validation.reasoning) if validation.reasoning else "Rejected"
+                                    reasoning_str = str(last_validation.reasoning) if last_validation.reasoning else "Rejected"
                                     logger.info(f"LLM validation rejected trade for {symbol}: {reasoning_str}")
                                     continue
                             except Exception as e:
@@ -1001,7 +1124,7 @@ def main():
                     
                     signals.append(signal)
                     
-                    # Save trade signal to database
+                    signal_id: Optional[int] = None
                     if storage:
                         try:
                             signal_id = storage.save_trade_signal({
@@ -1017,14 +1140,26 @@ def main():
                         except Exception as e:
                             logger.error(f"Failed to save trade signal to database: {e}")
                     
-                    # Track execution attempts
+                    if storage and last_validation is not None and signal_id is not None:
+                        try:
+                            storage.save_llm_validation({
+                                "signal_id": signal_id,
+                                "timestamp": current_utc.isoformat(),
+                                "should_execute": last_validation.should_execute,
+                                "confidence": last_validation.confidence,
+                                "reasoning": last_validation.reasoning,
+                                "risk_assessment": last_validation.risk_assessment,
+                                "llm_model": settings.llm.model,
+                            })
+                        except Exception as e:
+                            logger.error(f"Failed to save LLM validation to database: {e}")
+                    
                     if state.trade:
                         if state.trade.first_execution_attempt is None:
                             state.trade.first_execution_attempt = current_utc
                         state.trade.execution_attempts += 1
                         attempt_num = state.trade.execution_attempts
                         
-                        # Check timeout: if we've been trying for more than 5 minutes, give up
                         if state.trade.first_execution_attempt:
                             time_since_first_attempt = current_utc - state.trade.first_execution_attempt
                             if time_since_first_attempt > timedelta(minutes=5):
@@ -1035,14 +1170,26 @@ def main():
                     else:
                         attempt_num = 1
                     
-                    # Use appropriate execute function based on mode
+                    if not is_backtest:
+                        open_n = 0
+                        if order_manager and hasattr(order_manager, "get_open_positions"):
+                            try:
+                                open_n = len(order_manager.get_open_positions())
+                            except Exception as e:
+                                logger.error(f"Could not list open positions: {e}")
+                        if open_n >= settings.trading.max_concurrent_trades:
+                            logger.warning(
+                                "Max concurrent trades (%s) reached; skipping execution for %s",
+                                settings.trading.max_concurrent_trades,
+                                symbol,
+                            )
+                            continue
+                    
                     if is_backtest and hasattr(order_manager, 'execute_stock_trade'):
-                        # Use mock manager's execute function directly
                         from src.execution.mock_order_manager import execute_trade_from_signal
                         logger.info(f"ENTERING {symbol} TRADE (BACKTEST): {signal.side.upper()} {signal.setup_type} @ ${signal.entry_price:.2f} (attempt #{attempt_num})")
                         result = execute_trade_from_signal(signal, state, order_manager)
                         
-                        # Check execution result
                         if result:
                             logger.info(f"TRADE EXECUTED SUCCESSFULLY for {symbol}: Order ID {result.get('order_id', 'N/A')}")
                             state.trade = None
@@ -1053,12 +1200,10 @@ def main():
                             state.status = "idle"
                         else:
                             logger.warning(f"TRADE EXECUTION FAILED for {symbol}: Attempt #{attempt_num} failed (risk/reward check, position sizing, or other reason)")
-                            # Don't clear trade plan yet - will retry up to timeout
                     else:
                         logger.info(f"ENTERING {symbol} TRADE: {signal.side.upper()} {signal.setup_type} @ ${signal.entry_price:.2f} (attempt #{attempt_num})")
                         result = execute_trade(signal, state, order_manager)
                         
-                        # Check execution result
                         if result:
                             logger.info(f"TRADE EXECUTED SUCCESSFULLY for {symbol}: Order ID {result.get('order_id', 'N/A')}")
                             send_trade_alert(
@@ -1067,16 +1212,53 @@ def main():
                                 price=signal.entry_price,
                                 setup=signal.setup_type
                             )
+                            oid = str(result.get("order_id", ""))
+                            qty_raw = result.get("qty", 0)
+                            try:
+                                qty_i = int(float(qty_raw))
+                            except (TypeError, ValueError):
+                                qty_i = 0
+                            if storage and state.trade and oid:
+                                try:
+                                    trade_pk = storage.save_trade({
+                                        "trade_id": oid,
+                                        "symbol": symbol,
+                                        "side": state.trade.side,
+                                        "entry_price": state.trade.entry_price,
+                                        "stop_loss": state.trade.sl_price,
+                                        "take_profit": state.trade.tp_price,
+                                        "qty": qty_i,
+                                        "status": "open",
+                                        "entry_time": current_utc,
+                                        "exit_time": None,
+                                        "exit_price": None,
+                                        "pnl": None,
+                                        "exit_reason": "",
+                                    })
+                                    storage.update_position({
+                                        "trade_id": trade_pk,
+                                        "symbol": symbol,
+                                        "side": state.trade.side,
+                                        "entry_price": state.trade.entry_price,
+                                        "current_price": latest_price,
+                                        "stop_loss": state.trade.sl_price,
+                                        "take_profit": state.trade.tp_price,
+                                        "qty": qty_i,
+                                        "unrealized_pnl": 0.0,
+                                    })
+                                    if trade_tracker:
+                                        trade_tracker.register_open_trade(symbol, oid, trade_pk)
+                                except Exception as e:
+                                    logger.error(f"Failed to persist trade/position: {e}")
                             state.trade = None
                             state.status = "idle"
                         else:
-                            # Check if position already exists (live trading)
                             if order_manager and hasattr(order_manager, 'get_open_positions'):
                                 try:
                                     open_positions = order_manager.get_open_positions()
                                     existing_pos = next((p for p in open_positions if p.get('symbol') == symbol), None)
                                     if existing_pos:
-                                        logger.info(f"TRADE ALREADY EXISTS for {symbol}: Position already open (order ID: {existing_pos.get('order_id', 'N/A')}), clearing trade plan")
+                                        logger.info(f"TRADE ALREADY EXISTS for {symbol}: Position already open, clearing trade plan")
                                         state.trade = None
                                         state.status = "idle"
                                     else:
@@ -1086,7 +1268,6 @@ def main():
                                     logger.warning(f"TRADE EXECUTION FAILED for {symbol}: Attempt #{attempt_num} failed")
                             else:
                                 logger.warning(f"TRADE EXECUTION FAILED for {symbol}: Attempt #{attempt_num} failed")
-                            # Don't clear trade plan yet - will retry up to timeout
             
             # Check for position exits (stop loss/take profit) - for mock manager
             if is_backtest and order_manager and hasattr(order_manager, 'check_exits'):

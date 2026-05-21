@@ -27,31 +27,11 @@ def close_all_positions_at_eod(
         if not positions:
             return []
         
-        # Close each position
         for pos in positions:
             symbol = pos["symbol"]
-            side = pos["side"]
-            
-            # For long positions, sell to close
-            # For short positions (... we're not doing shorts in this system, but handle it)
-            try:
-                # Cancel any existing orders first (bracket orders)
-                # Then place market order to close
-                # Note: This is simplified - in practice you'd want to check order status
-                
-                # Use Alpaca's close_position method if available, or submit market order
-                # For now, we'll just log that we would close
-                # In production, you'd need to:
-                # 1. Cancel any bracket order OCO groups
-                # 2. Submit market order to close position
-                
+            if order_manager.close_position(symbol):
                 closed_symbols.append(symbol)
-                print(f"  > EOD: Would close {symbol} {side} position")
-                
-            except Exception as e:
-                print(f"  ! EOD: Failed to close {symbol}: {e}")
         
-        # Update trade tracker if provided
         if trade_tracker:
             trade_tracker.update_positions()
         
@@ -87,14 +67,19 @@ def check_and_close_eod(
     hour, minute = map(int, eod_close_time.split(":"))
     eod_datetime = current_time.replace(hour=hour, minute=minute, second=0, microsecond=0)
     
-    # Check if we're within EOD window (within 10 minutes of EOD)
-    time_diff = (eod_datetime - current_time).total_seconds()
+    if current_time < eod_datetime:
+        return False
     
-    if 0 <= time_diff <= 600:  # Within 10 minutes of EOD
-        closed = close_all_positions_at_eod(order_manager, trade_tracker)
-        if closed:
-            print(f"  ✓ EOD: Closed {len(closed)} positions")
-        return len(closed) > 0
+    try:
+        open_now = order_manager.get_open_positions()
+    except Exception:
+        return False
     
-    return False
+    if not open_now:
+        return True
+    
+    closed = close_all_positions_at_eod(order_manager, trade_tracker)
+    if closed:
+        print(f"  ✓ EOD: Closed {len(closed)} positions")
+    return len(closed) > 0
 

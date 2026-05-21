@@ -127,11 +127,14 @@ def gather_premarket_bias(
     # Step 2: Run daily bias computation
     print(f"  Running daily_bias_computing.py...")
     bias_script = project_root / "src" / "data_processing" / "daily_bias_computing.py"
+    bias_env = env.copy()
+    if symbols:
+        bias_env["DAILY_BIAS_SYMBOLS"] = ",".join(symbols)
     try:
         result = subprocess.run(
             [sys.executable, str(bias_script)],
             cwd=str(project_root),
-            env=env,
+            env=bias_env,
             check=True,
             capture_output=True,
             text=True
@@ -230,6 +233,23 @@ def gather_premarket_bias(
         # Filter to only requested symbols if provided
         if symbols:
             symbol_biases = {sym: bias for sym, bias in symbol_biases.items() if sym in symbols}
+    
+    if symbols and "symbols" in bias_data:
+        symbols_dict = bias_data["symbols"]
+        if isinstance(symbols_dict, dict):
+            for sym in symbols:
+                raw = symbols_dict.get(sym)
+                if not isinstance(raw, dict):
+                    raise RuntimeError(
+                        f"No bias dict for {sym} in daily_bias.json (got {raw!r}). "
+                        "Check DAILY_BIAS_SYMBOLS / model artifacts."
+                    )
+                if raw.get("error"):
+                    raise RuntimeError(f"Daily bias failed for {sym}: {raw.get('error')}")
+                if "bias" not in raw:
+                    raise RuntimeError(
+                        f"Daily bias output for {sym} missing 'bias' (ML inference did not run successfully)."
+                    )
     
     # Extract market context
     market_context = {

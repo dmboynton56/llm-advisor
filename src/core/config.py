@@ -13,6 +13,7 @@ class TradingSettings(BaseModel):
     trading_window_start: str = "09:30"
     trading_window_end: str = "12:00"
     end_of_day_close_time: str = "15:50"
+    max_concurrent_trades: int = Field(default=1, ge=1, le=20)
 
 
 class RiskSettings(BaseModel):
@@ -42,6 +43,7 @@ class Settings(BaseModel):
                 trading_window_start=os.getenv("TRADING_WINDOW_START", "09:30"),
                 trading_window_end=os.getenv("TRADING_WINDOW_END", "12:00"),
                 end_of_day_close_time=os.getenv("END_OF_DAY_CLOSE_TIME", "15:50"),
+                max_concurrent_trades=int(os.getenv("MAX_CONCURRENT_TRADES", "1")),
             ),
             risk=RiskSettings(
                 max_risk_per_trade_percent=float(os.getenv("MAX_RISK_PER_TRADE_PERCENT", "1.0")),

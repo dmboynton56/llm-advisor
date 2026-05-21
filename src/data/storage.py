@@ -77,6 +77,11 @@ class StorageAdapter(ABC):
         pass
     
     @abstractmethod
+    def delete_position_by_trade_pk(self, trade_pk: int) -> None:
+        """Remove open position row linked to trades.id (internal PK)."""
+        pass
+    
+    @abstractmethod
     def get_open_positions(self) -> List[Dict[str, Any]]:
         """Get all open positions."""
         pass
@@ -390,29 +395,62 @@ class SQLiteStorage(StorageAdapter):
             conn.close()
     
     def save_trade(self, trade: Dict[str, Any]) -> int:
-        """Save trade."""
+        """Save trade (insert or update by Alpaca trade_id)."""
         conn = self._get_connection()
         try:
-            cursor = conn.execute("""
+            ext_id = trade.get("trade_id")
+            if ext_id:
+                row = conn.execute(
+                    "SELECT id FROM trades WHERE trade_id = ?",
+                    (ext_id,),
+                ).fetchone()
+                if row:
+                    tid = row["id"]
+                    conn.execute(
+                        """
+                        UPDATE trades SET status = ?, exit_time = ?, exit_price = ?, pnl = ?, exit_reason = ?
+                        WHERE id = ?
+                        """,
+                        (
+                            trade.get("status", "pending"),
+                            trade.get("exit_time").isoformat()
+                            if isinstance(trade.get("exit_time"), datetime)
+                            else trade.get("exit_time"),
+                            trade.get("exit_price"),
+                            trade.get("pnl"),
+                            trade.get("exit_reason", ""),
+                            tid,
+                        ),
+                    )
+                    conn.commit()
+                    return int(tid)
+            cursor = conn.execute(
+                """
                 INSERT INTO trades 
                 (trade_id, symbol, side, entry_price, stop_loss, take_profit, qty, status, 
                  entry_time, exit_time, exit_price, pnl, exit_reason)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """, (
-                trade.get("trade_id"),
-                trade.get("symbol", ""),
-                trade.get("side", ""),
-                trade.get("entry_price"),
-                trade.get("stop_loss"),
-                trade.get("take_profit"),
-                trade.get("qty", 0),
-                trade.get("status", "pending"),
-                trade.get("entry_time").isoformat() if isinstance(trade.get("entry_time"), datetime) else trade.get("entry_time"),
-                trade.get("exit_time").isoformat() if isinstance(trade.get("exit_time"), datetime) else trade.get("exit_time"),
-                trade.get("exit_price"),
-                trade.get("pnl"),
-                trade.get("exit_reason", "")
-            ))
+                """,
+                (
+                    trade.get("trade_id"),
+                    trade.get("symbol", ""),
+                    trade.get("side", ""),
+                    trade.get("entry_price"),
+                    trade.get("stop_loss"),
+                    trade.get("take_profit"),
+                    trade.get("qty", 0),
+                    trade.get("status", "pending"),
+                    trade.get("entry_time").isoformat()
+                    if isinstance(trade.get("entry_time"), datetime)
+                    else trade.get("entry_time"),
+                    trade.get("exit_time").isoformat()
+                    if isinstance(trade.get("exit_time"), datetime)
+                    else trade.get("exit_time"),
+                    trade.get("exit_price"),
+                    trade.get("pnl"),
+                    trade.get("exit_reason", ""),
+                ),
+            )
             conn.commit()
             return cursor.lastrowid
         finally:
@@ -437,6 +475,14 @@ class SQLiteStorage(StorageAdapter):
                 position.get("qty", 0),
                 position.get("unrealized_pnl", 0.0)
             ))
+            conn.commit()
+        finally:
+            conn.close()
+    
+    def delete_position_by_trade_pk(self, trade_pk: int) -> None:
+        conn = self._get_connection()
+        try:
+            conn.execute("DELETE FROM positions WHERE trade_id = ?", (trade_pk,))
             conn.commit()
         finally:
             conn.close()
@@ -756,6 +802,11 @@ class PostgreSQLStorage(StorageAdapter):
                     position.get("qty", 0),
                     position.get("unrealized_pnl", 0.0)
                 ))
+    
+    def delete_position_by_trade_pk(self, trade_pk: int) -> None:
+        with self._get_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute("DELETE FROM positions WHERE trade_id = %s", (trade_pk,))
     
     def get_open_positions(self) -> List[Dict[str, Any]]:
         """Get all open positions."""

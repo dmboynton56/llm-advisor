@@ -46,9 +46,14 @@ def validate_trade_with_llm(
     # Get symbol's premarket bias
     symbol_bias = premarket_context.symbols.get(signal.symbol)
     
-    # Build premarket context string with ML and LLM opinions
-    premarket_text = "No premarket data available"
-    if symbol_bias:
+    if symbol_bias and isinstance(symbol_bias.model_output, dict) and symbol_bias.model_output.get("error"):
+        err = symbol_bias.model_output.get("error")
+        premarket_text = (
+            f"ML daily bias model failed to load or run: {err}. "
+            "Do not treat ML bias as authoritative; rely on news summary and technical context below.\n"
+            f"News Summary: {symbol_bias.news_summary or 'None'}"
+        )
+    elif symbol_bias:
         ml_bias = symbol_bias.daily_bias
         ml_conf = symbol_bias.confidence
         
@@ -68,6 +73,8 @@ News Summary: {symbol_bias.news_summary or 'None'}"""
         else:
             premarket_text = f"""ML Model Prediction: {ml_bias} ({ml_conf}% confidence)
 News Summary: {symbol_bias.news_summary or 'None'}"""
+    else:
+        premarket_text = "No premarket data available"
     
     prompt = f"""A trade signal has been triggered:
 

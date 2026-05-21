@@ -517,10 +517,16 @@ def main():
     data_client, feed = _init_alpaca()
     et_date = str(pd.Timestamp.now(tz=ET_TZ).date())
 
+    symbols_csv = os.environ.get("DAILY_BIAS_SYMBOLS", "").strip()
+    if symbols_csv:
+        sym_list = [s.strip().upper() for s in symbols_csv.split(",") if s.strip()]
+    else:
+        sym_list = list(WATCHLIST)
+
     # 1) Compute ML priors (as before, but trimmed & tidy)
     results = {}
     per_symbol_frames = {}  # cache frames to reuse in snapshot step
-    for symbol in WATCHLIST:
+    for symbol in sym_list:
         print(f"--- {symbol} ---")
         try:
             model, le, feature_names = _load_model_and_encoder(symbol)
@@ -565,7 +571,7 @@ def main():
     snapshots = []
     daily_map = {}
 
-    for symbol in WATCHLIST:
+    for symbol in sym_list:
         ddf, m1df, m5df = per_symbol_frames.get(symbol, (pd.DataFrame(), pd.DataFrame(), pd.DataFrame()))
         if ddf is None or ddf.empty or len(ddf) < 2:
             snapshots.append({"symbol": symbol, "needs_more_data": True, "missing": ["daily_bars"]})
@@ -595,7 +601,7 @@ def main():
         )
         snapshots.append(snap)
 
-    cross_market = _build_cross_market(spy_5m, qqq_5m, vix_5m, dxy_5m, ust_5m, daily_map, WATCHLIST)
+    cross_market = _build_cross_market(spy_5m, qqq_5m, vix_5m, dxy_5m, ust_5m, daily_map, sym_list)
 
     _write_snapshots_and_cross(et_date, snapshots, cross_market, inline_into_bias=True)
 

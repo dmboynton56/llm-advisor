@@ -708,6 +708,16 @@ class BigQueryStorage(StorageAdapter):
             )
             self.client.query(insert_query, job_config=job_config).result()
     
+    def delete_position_by_trade_pk(self, trade_pk: int) -> None:
+        table_id = f"{self.project_id}.{self.dataset_id}.positions"
+        q = f"DELETE FROM `{table_id}` WHERE trade_id = @trade_pk"
+        job_config = bigquery.QueryJobConfig(
+            query_parameters=[
+                bigquery.ScalarQueryParameter("trade_pk", "INT64", int(trade_pk)),
+            ]
+        )
+        self.client.query(q, job_config=job_config).result()
+    
     def get_open_positions(self) -> List[Dict[str, Any]]:
         """Get all open positions."""
         table_id = f"{self.project_id}.{self.dataset_id}.positions"

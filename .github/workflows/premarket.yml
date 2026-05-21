@@ -37,6 +37,15 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
+      - name: Verify daily bias model artifacts
+        run: |
+          set -euo pipefail
+          for s in SPY QQQ IWM; do
+            test -f "models/${s}_daily_bias.pkl"
+            test -f "models/${s}_label_encoder.pkl"
+          done
+          echo "OK: bias model files present"
+
       - name: Check market open
         run: python scripts/check_market_open.py
 
