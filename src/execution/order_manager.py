@@ -64,6 +64,11 @@ class StockOrderManager:
             print(f"  ! Failed to close position {symbol}: {e}")
             return False
     
+    @staticmethod
+    def _round_price(price: float) -> float:
+        """Alpaca equity orders require penny increments."""
+        return round(float(price), 2)
+
     def _normalize_side(self, side: str) -> str:
         """Normalize trade side values (e.g., 'long' -> 'buy')."""
         if not side:
@@ -128,6 +133,9 @@ class StockOrderManager:
         # Normalize and determine order side
         normalized_side = self._normalize_side(side)
         order_side = OrderSide.BUY if normalized_side == "buy" else OrderSide.SELL
+
+        stop_loss = self._round_price(stop_loss)
+        take_profit = self._round_price(take_profit)
         
         # Construct bracket order using MarketOrderRequest
         bracket_order = MarketOrderRequest(

@@ -82,6 +82,9 @@ def evaluate_thresholds(
         # Execution will clear the trade plan, so if it still exists, it needs execution
         if state.trade and state.trade.setup:
             setup_type = state.trade.setup.upper()
+            # Synced open positions should not re-submit bracket orders each loop.
+            if setup_type == "RECOVERY":
+                return None
             return SignalEvent(
                 symbol=state.symbol,
                 setup_type=setup_type,

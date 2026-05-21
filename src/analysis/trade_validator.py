@@ -114,11 +114,15 @@ Should we execute this trade? Analyze risk/reward and return JSON with:
     try:
         response = llm_client.call_structured(prompt, schema)
         content = response.content
+        if not isinstance(content, dict):
+            raise TypeError(
+                f"Expected dict from LLM, got {type(content).__name__}"
+            )
         return TradeValidation(
             should_execute=bool(content.get("should_execute", False)),
             confidence=int(content.get("confidence", 0)),
-            reasoning=content.get("reasoning", ""),
-            risk_assessment=content.get("risk_assessment", "unknown"),
+            reasoning=str(content.get("reasoning", "")),
+            risk_assessment=str(content.get("risk_assessment", "unknown")),
         )
     except Exception as e:
         # Graceful degradation: allow trade if LLM fails

@@ -216,9 +216,10 @@ jobs:
           host = os.environ.get("SUPABASE_DB_HOST")
           db = os.environ.get("SUPABASE_DB_NAME", "postgres")
           user = os.environ.get("SUPABASE_DB_USER", "postgres")
-          port = int(os.environ.get("SUPABASE_DB_PORT", "5432"))
-          password = os.environ.get("SUPABASE_DB_PASSWORD")
-          if not host or not password:
+          port_raw = (os.environ.get("SUPABASE_DB_PORT") or "5432").strip() or "5432"
+          port = int(port_raw)
+          password = (os.environ.get("SUPABASE_DB_PASSWORD") or "").strip()
+          if not (host or "").strip() or not password:
               raise SystemExit("Missing Supabase DB credentials.")
 
           conn = psycopg2.connect(

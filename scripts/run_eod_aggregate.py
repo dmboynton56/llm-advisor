@@ -21,6 +21,7 @@ import psycopg2
 from psycopg2.extras import execute_values
 
 from src.utils.daily_news_paths import normalize_daily_news_root
+from src.utils.env_sanitize import getenv_strip
 
 LOGGER = logging.getLogger("run_eod_aggregate")
 
@@ -450,14 +451,22 @@ def parse_heartbeat(run_date: str, log_path: Path) -> HeartbeatRow | None:
 
 
 def connect_supabase() -> psycopg2.extensions.connection:
-    host = os.getenv("SUPABASE_DB_HOST")
-    db = os.getenv("SUPABASE_DB_NAME", "postgres")
-    user = os.getenv("SUPABASE_DB_USER", "postgres")
-    port = int(os.getenv("SUPABASE_DB_PORT", "5432"))
-    password = os.getenv("SUPABASE_DB_PASSWORD") or os.getenv("supabaseDBpass")
+    host = getenv_strip("SUPABASE_DB_HOST")
+    db = getenv_strip("SUPABASE_DB_NAME") or "postgres"
+    user = getenv_strip("SUPABASE_DB_USER") or "postgres"
+    port_raw = getenv_strip("SUPABASE_DB_PORT") or "5432"
+    try:
+        port = int(port_raw)
+    except ValueError as exc:
+        raise SystemExit(f"Invalid SUPABASE_DB_PORT: {port_raw!r}") from exc
+    password = getenv_strip("SUPABASE_DB_PASSWORD") or getenv_strip("supabaseDBpass")
 
     if not host or not password:
-        raise SystemExit("Missing Supabase DB credentials (host/password).")
+        raise SystemExit(
+            "Missing Supabase DB credentials. Set GitHub secrets: "
+            "SUPABASE_DB_HOST, SUPABASE_DB_PASSWORD (and optionally "
+            "SUPABASE_DB_NAME, SUPABASE_DB_USER, SUPABASE_DB_PORT)."
+        )
 
     return psycopg2.connect(
         host=host,
@@ -653,7 +662,7 @@ def main() -> None:
     run_dates_list = [d for d, _ in run_dirs]
     if use_bq:
         project_id = os.getenv("GCP_PROJECT_ID", "").strip()
-        dataset_id = os.getenv("GCP_DATASET_ID", "trading_signals").strip()
+        dataset_id = getenv_strip("GCP_DATASET_ID") or "trading_signals"
         if project_id:
             try:
                 bq_runs, bq_trades, bq_hb = fetch_bq_ingest_for_dates(
