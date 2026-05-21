@@ -53,10 +53,13 @@ ALPACA_SECRET_KEY=your_secret
 ALPACA_PAPER_TRADING=true
 GOOGLE_API_KEY=your_gemini_key
 GCP_PROJECT_ID=your_gcp_project
+GCP_DATASET_ID=trading_signals
 GCP_SA_KEY=your_service_account_json_content
 DISCORD_WEBHOOK_URL=your_webhook_url
 STORAGE_ENV=bq
 ```
+
+**GitHub Actions (EOD → Supabase)** also require repo secrets: `SUPABASE_DB_HOST`, `SUPABASE_DB_PORT`, `SUPABASE_DB_NAME`, `SUPABASE_DB_USER`, `SUPABASE_DB_PASSWORD`. Optional: `PORTFOLIO_METRICS_URL`, `EOD_STRICT_TELEMETRY=1`.
 
 Alpaca keys are read with leading/trailing whitespace stripped so CRLF line endings from Windows-saved `.env` files do not break HTTP headers.
 
