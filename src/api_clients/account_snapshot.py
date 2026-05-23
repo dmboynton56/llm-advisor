@@ -3,7 +3,7 @@
 account_snapshot.py
 
 Reads ALPACA_API_KEY, ALPACA_SECRET_KEY, ALPACA_PAPER_TRADING from .env,
-then saves account_details.json (in this directory) containing:
+then saves account_details.local.json (in this directory) containing:
 - current equity (balance)
 - daily P/L (vs previous trading day's close)
 - P/L over past 24h, 7d, 30d, YTD, and all-time
@@ -248,7 +248,7 @@ def main():
         },
     }
 
-    out_path = Path(__file__).parent / "account_details.json"
+    out_path = Path(__file__).parent / "account_details.local.json"
     out_path.write_text(json.dumps(payload, indent=2))
     print(f"Wrote {out_path}")
 

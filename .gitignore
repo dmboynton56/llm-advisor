@@ -4,6 +4,7 @@ data/daily_news/
 
 data/trading.db
 data/*.db
+src/api_clients/account_details*.json
 __pycache__/
 **/__pycache__/
 .venv/

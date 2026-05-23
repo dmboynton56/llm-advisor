@@ -16,10 +16,34 @@ This project implements a hybrid trading approach focused on Standard Deviation 
 The system is built for reliable, automated daily execution:
 
 - Database: Google BigQuery for persistent storage of trades, logs, and market analysis.
+- Serving telemetry: Supabase tables populated after EOD for portfolio metrics.
 - Orchestration: GitHub Actions for daily automated runs (Premarket and Live Loop).
+- Scheduler: GCP Cloud Scheduler dispatches the Premarket and Live Loop workflows.
 - AI Engine: Google Gemini 3 Flash (via Google Generative AI API).
 - Broker: Alpaca Markets (supports paper and live trading).
 - Notifications: Discord Webhook integration for real-time trade alerts and heartbeat monitoring.
+
+## Current public state
+
+LLM Advisor is still an in-progress flagship project. The live architecture is
+real, but the public portfolio intentionally presents it as a consolidation
+story: premarket ML bias, Gemini threshold overlays, execution guardrails, and
+EOD telemetry are being brought into one recruiter-facing dashboard.
+
+Current serving contract:
+
+- BigQuery dataset `trading_signals` stores cold-path live-loop rows such as
+  trades, trade signals, and loop logs when `STORAGE_ENV=bq`.
+- EOD aggregation upserts into Supabase tables:
+  `llm_advisor_backtest_runs`, `llm_advisor_backtest_trades`, and
+  `llm_advisor_runtime_heartbeats`.
+- The portfolio reads those Supabase tables through
+  `/api/llm-advisor/metrics` and uses docs under
+  `personal-portfolio/docs/project-knowledge/llm-advisor/` for scoped chat.
+- Last terminal verification: 2026-05-23. Supabase contained 1
+  `llm_advisor_backtest_runs` row, 0 `llm_advisor_backtest_trades` rows, and 3
+  `llm_advisor_runtime_heartbeats` rows. Latest run date and heartbeat were
+  2026-05-21.
 
 ## Getting Started
 
@@ -149,7 +173,15 @@ Use the template at `notebooks/_templates/llm_advisor_eval.ipynb` for additional
 
 ## Portfolio chat
 
-The portfolio page `/projects/llm-advisor` includes scoped chat (`scope=llm-advisor`) that answers from `personal-portfolio/docs/project-knowledge/llm-advisor/` and Supabase telemetry via `get_model_metrics` when EOD/sync has populated tables. Keep docs aligned with workflow behavior; see `plans/llm-advisor/README.md` and `plans/portfolio-site/06-chatbot-agent-tools.md`.
+The portfolio page `/projects/llm-advisor` includes scoped chat (`scope=llm-advisor`) that answers from `personal-portfolio/docs/project-knowledge/llm-advisor/` and Supabase telemetry via `get_model_metrics` when EOD/sync has populated tables.
+
+Keep portfolio-facing claims aligned with:
+
+- `personal-portfolio/docs/project-knowledge/llm-advisor/`
+- `personal-portfolio/supabase/migrations/005_llm_advisor_telemetry.sql`
+- `.github/workflows/premarket.yml`
+- `.github/workflows/live_loop.yml`
+- `.github/workflows/eod_aggregate.yml`
 
 ## GitHub Actions and portfolio verification
 
