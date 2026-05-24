@@ -728,7 +728,7 @@ class BigQueryStorage(StorageAdapter):
         result = self.client.query(query).result()
         return [dict(row) for row in result]
     
-    def get_trades(self, start_date: Optional[date] = None, end_date: Optional[date] = None, 
+    def get_trades(self, start_date: Optional[date] = None, end_date: Optional[date] = None,
                    symbol: Optional[str] = None) -> List[Dict[str, Any]]:
         """Get trades with optional filters."""
         table_id = f"{self.project_id}.{self.dataset_id}.trades"
@@ -736,12 +736,20 @@ class BigQueryStorage(StorageAdapter):
         params = []
         
         if start_date:
-            query += " AND entry_time >= @start_date"
-            params.append(bigquery.ScalarQueryParameter("start_date", "DATE", start_date))
+            if isinstance(start_date, datetime):
+                query += " AND entry_time >= @start_date"
+                params.append(bigquery.ScalarQueryParameter("start_date", "TIMESTAMP", start_date))
+            else:
+                query += " AND DATE(entry_time, 'America/New_York') >= @start_date"
+                params.append(bigquery.ScalarQueryParameter("start_date", "DATE", start_date))
         
         if end_date:
-            query += " AND entry_time <= @end_date"
-            params.append(bigquery.ScalarQueryParameter("end_date", "DATE", end_date))
+            if isinstance(end_date, datetime):
+                query += " AND entry_time <= @end_date"
+                params.append(bigquery.ScalarQueryParameter("end_date", "TIMESTAMP", end_date))
+            else:
+                query += " AND DATE(entry_time, 'America/New_York') <= @end_date"
+                params.append(bigquery.ScalarQueryParameter("end_date", "DATE", end_date))
         
         if symbol:
             query += " AND symbol = @symbol"

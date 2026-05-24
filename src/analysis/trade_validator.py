@@ -125,12 +125,11 @@ Should we execute this trade? Analyze risk/reward and return JSON with:
             risk_assessment=str(content.get("risk_assessment", "unknown")),
         )
     except Exception as e:
-        # Graceful degradation: allow trade if LLM fails
+        # Validation failures should not become implicit approvals.
         print(f"LLM trade validation failed: {e}")
         return TradeValidation(
-            should_execute=True,  # Default to allowing trade
-            confidence=50,
+            should_execute=False,
+            confidence=0,
             reasoning=f"LLM validation failed: {str(e)}",
-            risk_assessment="unknown",
+            risk_assessment="validation_error",
         )
-

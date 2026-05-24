@@ -60,8 +60,8 @@ def test_calculate_risk_reward_ratio():
     rr = calculate_risk_reward_ratio(100.0, 95.0, 110.0)
     assert rr == 2.0
     
-    # Poor R:R (1:1)
-    rr = calculate_risk_reward_ratio(100.0, 95.0, 100.0)
+    # 1:1 R:R
+    rr = calculate_risk_reward_ratio(100.0, 95.0, 105.0)
     assert rr == 1.0
     
     # Zero risk (invalid)
@@ -79,4 +79,3 @@ def test_validate_risk_reward():
     
     # Exactly at minimum
     assert validate_risk_reward(100.0, 95.0, 107.5, 1.5) == True  # R:R = 1.5
-

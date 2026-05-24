@@ -22,7 +22,7 @@ permissions:
 
 jobs:
   aggregate:
-    if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion != 'cancelled' }}
     runs-on: ubuntu-latest
     env:
       GCP_PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
@@ -126,7 +126,7 @@ jobs:
               per_page: 25,
             });
             for (const run of runs) {
-              if (run.conclusion !== 'success') continue;
+              if (run.conclusion === 'cancelled' || run.conclusion === 'skipped') continue;
               const artifacts = await github.paginate(github.rest.actions.listWorkflowRunArtifacts, {
                 owner,
                 repo,
@@ -141,7 +141,7 @@ jobs:
                 return;
               }
             }
-            core.setFailed('No successful live-loop telemetry artifact found.')
+            core.setFailed('No completed live-loop telemetry artifact found.')
 
       - name: EOD noop when triggering Live had no telemetry
         if: steps.live_artifact.outputs.skip_remaining_steps == 'true'
@@ -175,8 +175,28 @@ jobs:
           echo "---- duplicate-prefix probe ----"
           find data/daily_news/data/daily_news -type f 2>/dev/null | sort | head -50 || true
 
+      - name: Detect ingestable telemetry
+        id: telemetry_content
+        if: steps.live_artifact.outputs.skip_remaining_steps != 'true'
+        run: |
+          if find data/daily_news -type f \( \
+            -name 'session_summary.json' -o \
+            -name 'backtest_results.json' -o \
+            -name 'live_loop_log.jsonl' -o \
+            -name 'order_events.jsonl' \
+          \) 2>/dev/null | grep -q .; then
+            echo "has_content=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "has_content=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::No ingestable telemetry files found in live-loop artifact; treating EOD as noop."
+          fi
+
+      - name: EOD noop when artifact has no ingestable telemetry
+        if: steps.live_artifact.outputs.skip_remaining_steps != 'true' && steps.telemetry_content.outputs.has_content != 'true'
+        run: echo "Skipping EOD aggregate because the live-loop artifact contains no telemetry payload files."
+
       - name: Auth GCP
-        if: ${{ steps.live_artifact.outputs.skip_remaining_steps != 'true' && env.GCP_PROJECT_ID != '' }}
+        if: ${{ steps.live_artifact.outputs.skip_remaining_steps != 'true' && steps.telemetry_content.outputs.has_content == 'true' && env.GCP_PROJECT_ID != '' }}
         uses: google-github-actions/auth@v2
         with:
           credentials_json: ${{ secrets.GCP_SA_KEY }}
@@ -184,7 +204,7 @@ jobs:
           export_environment_variables: true
 
       - name: Run EOD aggregate
-        if: steps.live_artifact.outputs.skip_remaining_steps != 'true'
+        if: steps.live_artifact.outputs.skip_remaining_steps != 'true' && steps.telemetry_content.outputs.has_content == 'true'
         run: |
           BQ_FLAG=""
           if [ -n "${GCP_PROJECT_ID:-}" ]; then BQ_FLAG="--use-bigquery"; fi
@@ -195,11 +215,11 @@ jobs:
           fi
 
       - name: Sync BigQuery to Supabase (rolling window)
-        if: ${{ steps.live_artifact.outputs.skip_remaining_steps != 'true' && env.GCP_PROJECT_ID != '' }}
+        if: ${{ steps.live_artifact.outputs.skip_remaining_steps != 'true' && steps.telemetry_content.outputs.has_content == 'true' && env.GCP_PROJECT_ID != '' }}
         run: python scripts/sync_bq_to_supabase.py --days 14
 
       - name: Telemetry layout on EOD failure
-        if: failure() && steps.live_artifact.outputs.skip_remaining_steps != 'true'
+        if: failure() && steps.live_artifact.outputs.skip_remaining_steps != 'true' && steps.telemetry_content.outputs.has_content == 'true'
         run: |
           echo "---- find data/daily_news ----"
           find data/daily_news -type f 2>/dev/null | sort || true
@@ -207,7 +227,7 @@ jobs:
           find data/daily_news -type d 2>/dev/null | sort || true
 
       - name: Validate Supabase telemetry freshness
-        if: steps.live_artifact.outputs.skip_remaining_steps != 'true'
+        if: steps.live_artifact.outputs.skip_remaining_steps != 'true' && steps.telemetry_content.outputs.has_content == 'true'
         run: |
           python - <<'PY'
           import os
@@ -237,8 +257,10 @@ jobs:
               heartbeats = int(cur.fetchone()[0])
               cur.execute("SELECT COUNT(*) FROM llm_advisor_backtest_trades WHERE run_date >= CURRENT_DATE - INTERVAL '7 days'")
               trades = int(cur.fetchone()[0])
+              cur.execute("SELECT COUNT(*) FROM llm_advisor_order_events WHERE run_date >= CURRENT_DATE - INTERVAL '7 days'")
+              order_events = int(cur.fetchone()[0])
 
-          print(f"7d rows => runs={runs} trades={trades} heartbeats={heartbeats}")
+          print(f"7d rows => runs={runs} trades={trades} heartbeats={heartbeats} order_events={order_events}")
           strict = os.environ.get("EOD_STRICT_TELEMETRY", "").lower() in ("1", "true", "yes")
           if runs <= 0 or heartbeats <= 0:
               msg = "EOD verification: expected runs>0 and heartbeats>0 in last 7 days."
@@ -248,16 +270,16 @@ jobs:
           PY
 
       - name: Require metrics endpoint on main
-        if: steps.live_artifact.outputs.skip_remaining_steps != 'true' && github.ref == 'refs/heads/main' && env.PORTFOLIO_METRICS_URL != ''
+        if: steps.live_artifact.outputs.skip_remaining_steps != 'true' && steps.telemetry_content.outputs.has_content == 'true' && github.ref == 'refs/heads/main' && env.PORTFOLIO_METRICS_URL != ''
         run: |
           echo "PORTFOLIO_METRICS_URL is set — production metrics gate active."
 
       - name: Warn when metrics URL missing on main
-        if: steps.live_artifact.outputs.skip_remaining_steps != 'true' && github.ref == 'refs/heads/main' && env.PORTFOLIO_METRICS_URL == ''
+        if: steps.live_artifact.outputs.skip_remaining_steps != 'true' && steps.telemetry_content.outputs.has_content == 'true' && github.ref == 'refs/heads/main' && env.PORTFOLIO_METRICS_URL == ''
         run: 'echo "::warning::PORTFOLIO_METRICS_URL secret not set — add it for portfolio CI verification"'
 
       - name: Validate portfolio-facing metrics endpoint (optional)
-        if: steps.live_artifact.outputs.skip_remaining_steps != 'true' && env.PORTFOLIO_METRICS_URL != ''
+        if: steps.live_artifact.outputs.skip_remaining_steps != 'true' && steps.telemetry_content.outputs.has_content == 'true' && env.PORTFOLIO_METRICS_URL != ''
         run: |
           curl --fail --silent "$PORTFOLIO_METRICS_URL?source=supabase&force=true" > /tmp/metrics_response.json
           python - <<'PY'
@@ -276,14 +298,14 @@ jobs:
           PY
 
       - name: Notify Discord on Success
-        if: success() && steps.live_artifact.outputs.skip_remaining_steps != 'true' && env.DISCORD_WEBHOOK_URL != ''
+        if: success() && steps.live_artifact.outputs.skip_remaining_steps != 'true' && steps.telemetry_content.outputs.has_content == 'true' && env.DISCORD_WEBHOOK_URL != ''
         run: |
           curl -X POST -H "Content-Type: application/json" \
             -d "{\"content\": \"✅ **LLM Advisor EOD Aggregate Succeeded**\\nRun: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}\"}" \
             "$DISCORD_WEBHOOK_URL"
 
       - name: Notify Discord on Failure
-        if: failure() && steps.live_artifact.outputs.skip_remaining_steps != 'true' && env.DISCORD_WEBHOOK_URL != ''
+        if: failure() && steps.live_artifact.outputs.skip_remaining_steps != 'true' && steps.telemetry_content.outputs.has_content == 'true' && env.DISCORD_WEBHOOK_URL != ''
         run: |
           curl -X POST -H "Content-Type: application/json" \
             -d "{\"content\": \"❌ **LLM Advisor EOD Aggregate Failed**\\nRun: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}\"}" \

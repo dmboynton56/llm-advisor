@@ -42,12 +42,9 @@ def test_idle_state_no_signal(test_state):
 
 def test_mr_arming(test_state):
     """Test mean reversion arming."""
-    # Update to high z-score (should arm)
-    test_state.rolling.update(102.5)  # High price
-    mu, sigma, z = test_state.rolling.update(102.5)
-    test_state.update_features(mu, sigma, z, datetime.now())
+    test_state.update_features(100.0, 1.0, 1.3, datetime.now())
     
-    signal = evaluate_thresholds(test_state, 102.5)
+    signal = evaluate_thresholds(test_state, 101.3)
     
     # Should arm but not trigger yet
     assert signal is None
@@ -62,10 +59,7 @@ def test_mr_trigger(test_state):
     test_state.side = "short"
     test_state.armed_z = 1.5
     
-    # Update to trigger level (z returns toward 0)
-    test_state.rolling.update(100.5)
-    mu, sigma, z = test_state.rolling.update(100.5)
-    test_state.update_features(mu, sigma, z, datetime.now())
+    test_state.update_features(100.0, 1.0, 0.5, datetime.now())
     
     signal = evaluate_thresholds(test_state, 100.5)
     
@@ -79,17 +73,14 @@ def test_tc_arming(test_state):
     # Bullish trend (positive slope)
     test_state.ema_slope_hourly = 0.5
     
-    # Update to high z-score with trend (should arm TC)
-    test_state.rolling.update(102.0)
-    mu, sigma, z = test_state.rolling.update(102.0)
-    test_state.update_features(mu, sigma, z, datetime.now())
+    test_state.update_features(100.0, 1.0, 2.0, datetime.now())
     
     signal = evaluate_thresholds(test_state, 102.0)
     
     # Should arm TC if z is high enough
-    if z >= test_state.thresholds.tc_arm_z:
-        assert test_state.status == "tc_armed"
-        assert test_state.side == "long"
+    assert signal is None
+    assert test_state.status == "tc_armed"
+    assert test_state.side == "long"
 
 
 def test_multiplier_applied(test_state):
@@ -125,4 +116,3 @@ def test_gating_prevents_trading(test_state):
     # Should reset to idle due to gating
     assert signal is None
     assert test_state.status == "idle"
-

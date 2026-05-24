@@ -29,6 +29,11 @@ def test_relocate_moves_flat_files(tmp_path: Path) -> None:
         '{"ts":"2026-05-20T16:00:00+00:00","symbols":{},"shutdown":true}\n',
         encoding="utf-8",
     )
+    order_events = tmp_path / "order_events.jsonl"
+    order_events.write_text(
+        '{"ts":"2026-05-20T14:00:00+00:00","event_type":"signal_detected","symbol":"SPY"}\n',
+        encoding="utf-8",
+    )
 
     argv = sys.argv
     try:
@@ -46,3 +51,4 @@ def test_relocate_moves_flat_files(tmp_path: Path) -> None:
     dest = tmp_path / "data" / "daily_news" / "2026-05-20" / "processed"
     assert (dest / "session_summary.json").is_file()
     assert (dest / "live_loop_log.jsonl").is_file()
+    assert (dest / "order_events.jsonl").is_file()

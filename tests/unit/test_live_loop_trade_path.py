@@ -1,12 +1,18 @@
 """Tests for live loop trade execution and session summary."""
 from __future__ import annotations
 
+import json
 from datetime import datetime, timezone
 from pathlib import Path
 
 import pytest
 
-from src.live.loop import build_live_session_summary, execute_trade
+from src.live.loop import (
+    append_order_event,
+    build_live_session_summary,
+    execute_trade,
+    write_live_session_summary,
+)
 from src.live.state_manager import SymbolState, TradePlan
 from src.live.threshold_evaluator import SignalEvent
 from src.features.stdev_features import RollingStats
@@ -106,3 +112,56 @@ def test_build_live_session_summary_from_sqlite(tmp_path: Path) -> None:
     assert summary["closed_trades"] >= 1
     assert summary["total_pnl"] == pytest.approx(1.0)
     assert len(summary["trades"]) >= 1
+
+
+def test_write_live_session_summary_degrades_when_storage_query_fails(tmp_path: Path) -> None:
+    class BrokenStorage:
+        def get_trades(self, *args, **kwargs):
+            raise RuntimeError("warehouse unavailable")
+
+    write_live_session_summary(
+        output_dir=tmp_path,
+        date_str="2026-05-22",
+        loop_count=124,
+        session_end_reason="session_complete",
+        storage=BrokenStorage(),
+        order_manager=None,
+    )
+
+    payload = json.loads((tmp_path / "session_summary.json").read_text(encoding="utf-8"))
+    assert payload["summary_status"] == "degraded"
+    assert payload["total_trades"] == 0
+    assert payload["loop_iterations"] == 124
+    assert "warehouse unavailable" in payload["summary_error"]
+
+
+def test_append_order_event_writes_lifecycle_jsonl(tmp_path: Path) -> None:
+    sig = SignalEvent(
+        symbol="SPY",
+        setup_type="MR",
+        side="long",
+        entry_price=100.0,
+        z_score=-0.5,
+        thresholds_used={"mr": 1.0},
+        timestamp=datetime.now(timezone.utc),
+    )
+    state = _minimal_state()
+
+    append_order_event(
+        tmp_path / "order_events.jsonl",
+        "execution_failed",
+        "SPY",
+        7,
+        signal=sig,
+        state=state,
+        details={"reason": "risk_reward"},
+    )
+
+    line = (tmp_path / "order_events.jsonl").read_text(encoding="utf-8").strip()
+    payload = json.loads(line)
+    assert payload["event_type"] == "execution_failed"
+    assert payload["symbol"] == "SPY"
+    assert payload["loop_count"] == 7
+    assert payload["signal"]["setup_type"] == "MR"
+    assert payload["trade_plan"]["stop_loss"] == 99.0
+    assert payload["details"]["reason"] == "risk_reward"

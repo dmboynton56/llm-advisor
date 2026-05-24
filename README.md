@@ -18,7 +18,8 @@ The system is built for reliable, automated daily execution:
 - Database: Google BigQuery for persistent storage of trades, logs, and market analysis.
 - Serving telemetry: Supabase tables populated after EOD for portfolio metrics.
 - Orchestration: GitHub Actions for daily automated runs (Premarket and Live Loop).
-- Scheduler: GCP Cloud Scheduler dispatches the Premarket and Live Loop workflows.
+- Scheduler: Google Cloud Scheduler dispatches the Premarket and Live Loop
+  workflows via `workflow_dispatch`.
 - AI Engine: Google Gemini 3 Flash (via Google Generative AI API).
 - Broker: Alpaca Markets (supports paper and live trading).
 - Notifications: Discord Webhook integration for real-time trade alerts and heartbeat monitoring.
@@ -35,15 +36,15 @@ Current serving contract:
 - BigQuery dataset `trading_signals` stores cold-path live-loop rows such as
   trades, trade signals, and loop logs when `STORAGE_ENV=bq`.
 - EOD aggregation upserts into Supabase tables:
-  `llm_advisor_backtest_runs`, `llm_advisor_backtest_trades`, and
-  `llm_advisor_runtime_heartbeats`.
+  `llm_advisor_backtest_runs`, `llm_advisor_backtest_trades`,
+  `llm_advisor_runtime_heartbeats`, and `llm_advisor_order_events`.
 - The portfolio reads those Supabase tables through
   `/api/llm-advisor/metrics` and uses docs under
   `personal-portfolio/docs/project-knowledge/llm-advisor/` for scoped chat.
-- Last terminal verification: 2026-05-23. Supabase contained 1
-  `llm_advisor_backtest_runs` row, 0 `llm_advisor_backtest_trades` rows, and 3
-  `llm_advisor_runtime_heartbeats` rows. Latest run date and heartbeat were
-  2026-05-21.
+- Last terminal verification: 2026-05-23. Supabase contained 1 recent
+  `llm_advisor_backtest_runs` row, 0 recent `llm_advisor_backtest_trades`
+  rows, 3 recent `llm_advisor_runtime_heartbeats` rows, and the
+  `llm_advisor_order_events` table was live with RLS and API grants.
 
 ## Getting Started
 
@@ -123,6 +124,9 @@ To refresh the portfolio artifact (`personal-portfolio/public/data/llm_advisor_b
 - **Live Trading**: Set `ALPACA_PAPER_TRADING=false`. Use with extreme caution.
 
 Successful Alpaca bracket submits are persisted when `--use-db` is set: `trade_signals`, optional `llm_validations`, `trades`, `positions`, and `live_loop_log.jsonl` / `session_summary.json` in the telemetry artifact for EOD.
+
+For next-day operational checks and artifact expectations, see
+[`LIVE_LOOP_RUNBOOK.md`](LIVE_LOOP_RUNBOOK.md).
 
 ### Optional
 

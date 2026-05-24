@@ -17,8 +17,12 @@ _PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(_PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(_PROJECT_ROOT))
 
-import psycopg2
-from psycopg2.extras import execute_values
+try:
+    import psycopg2
+    from psycopg2.extras import execute_values
+except ImportError:
+    psycopg2 = None  # type: ignore[assignment]
+    execute_values = None  # type: ignore[assignment]
 
 from src.utils.daily_news_paths import normalize_daily_news_root
 from src.utils.env_sanitize import getenv_strip
@@ -73,6 +77,23 @@ class HeartbeatRow:
     source_file: str
 
 
+@dataclass
+class OrderEventRow:
+    event_uid: str
+    run_date: str
+    event_ts: str
+    event_type: str
+    symbol: str
+    loop_count: int | None
+    setup_type: str | None
+    side: str | None
+    entry_price: float | None
+    z_score: float | None
+    order_id: str | None
+    details: dict[str, Any]
+    source_file: str
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Aggregate EOD artifacts to Supabase.")
     parser.add_argument("--date", help="Single date to process (YYYY-MM-DD).")
@@ -93,6 +114,11 @@ def parse_args() -> argparse.Namespace:
         help="Allow successful exit when no run directories or no ingestable rows are found.",
     )
     parser.add_argument("--validate", action="store_true", help="Run post-write checks.")
+    parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Parse artifacts and BigQuery rows, then exit before Supabase writes.",
+    )
     parser.add_argument(
         "--use-bigquery",
         dest="use_bigquery",
@@ -216,6 +242,13 @@ def dedupe_heartbeats(rows: list[HeartbeatRow]) -> list[HeartbeatRow]:
         if prev is None or r.heartbeat_ts > prev.heartbeat_ts:
             by_day[r.source_date] = r
     return sorted(by_day.values(), key=lambda x: x.source_date)
+
+
+def dedupe_order_events(rows: list[OrderEventRow]) -> list[OrderEventRow]:
+    by_uid: dict[str, OrderEventRow] = {}
+    for row in rows:
+        by_uid[row.event_uid] = row
+    return sorted(by_uid.values(), key=lambda x: (x.run_date, x.event_ts, x.event_uid))
 
 
 def _ts_to_iso(val: Any) -> str | None:
@@ -450,7 +483,101 @@ def parse_heartbeat(run_date: str, log_path: Path) -> HeartbeatRow | None:
     )
 
 
-def connect_supabase() -> psycopg2.extensions.connection:
+def parse_order_events(run_date: str, events_path: Path) -> list[OrderEventRow]:
+    if not events_path.exists():
+        return []
+
+    rows: list[OrderEventRow] = []
+    with events_path.open("r", encoding="utf-8") as f:
+        for idx, line in enumerate(f, start=1):
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                payload = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            if not isinstance(payload, dict):
+                continue
+
+            event_ts = _as_iso(payload.get("ts"))
+            event_type = str(payload.get("event_type") or "").strip()
+            symbol = str(payload.get("symbol") or "").strip()
+            if not event_ts or not event_type or not symbol:
+                continue
+
+            signal = payload.get("signal")
+            if not isinstance(signal, dict):
+                signal = {}
+            details = payload.get("details")
+            if not isinstance(details, dict):
+                details = {}
+            order = details.get("order")
+            order_id = None
+            if isinstance(order, dict):
+                order_id = str(order.get("order_id") or "").strip() or None
+
+            event_uid = f"{run_date}:{event_ts}:{event_type}:{symbol}:{idx}"
+            rows.append(
+                OrderEventRow(
+                    event_uid=event_uid,
+                    run_date=run_date,
+                    event_ts=event_ts,
+                    event_type=event_type,
+                    symbol=symbol,
+                    loop_count=_as_int(payload.get("loop_count")),
+                    setup_type=str(signal.get("setup_type") or "").strip() or None,
+                    side=str(signal.get("side") or "").strip() or None,
+                    entry_price=_as_float(signal.get("entry_price")),
+                    z_score=_as_float(signal.get("z_score")),
+                    order_id=order_id,
+                    details=details,
+                    source_file=str(events_path),
+                )
+            )
+    return rows
+
+
+def run_row_from_heartbeat(run_date: str, heartbeat: HeartbeatRow) -> RunRow:
+    return RunRow(
+        run_date=run_date,
+        total_trades=0,
+        closed_trades=0,
+        winning_trades=0,
+        losing_trades=0,
+        total_pnl=0.0,
+        average_win=0.0,
+        average_loss=0.0,
+        final_equity=None,
+        return_pct=None,
+        daily_return_pct=None,
+        win_rate=None,
+        source_file=heartbeat.source_file,
+    )
+
+
+def run_row_from_order_events(run_date: str, events: list[OrderEventRow]) -> RunRow:
+    return RunRow(
+        run_date=run_date,
+        total_trades=0,
+        closed_trades=0,
+        winning_trades=0,
+        losing_trades=0,
+        total_pnl=0.0,
+        average_win=0.0,
+        average_loss=0.0,
+        final_equity=None,
+        return_pct=None,
+        daily_return_pct=None,
+        win_rate=None,
+        source_file=events[0].source_file if events else "",
+    )
+
+
+def connect_supabase() -> Any:
+    if psycopg2 is None:
+        raise SystemExit("Missing psycopg2. Install requirements before running EOD Supabase sync.")
+
     host = getenv_strip("SUPABASE_DB_HOST")
     db = getenv_strip("SUPABASE_DB_NAME") or "postgres"
     user = getenv_strip("SUPABASE_DB_USER") or "postgres"
@@ -481,6 +608,8 @@ def connect_supabase() -> psycopg2.extensions.connection:
 def upsert_runs(cur, rows: list[RunRow], now_iso: str) -> int:
     if not rows:
         return 0
+    if execute_values is None:
+        raise SystemExit("Missing psycopg2. Install requirements before running EOD Supabase sync.")
     values = [
         (
             row.run_date,
@@ -529,6 +658,8 @@ def upsert_runs(cur, rows: list[RunRow], now_iso: str) -> int:
 def upsert_trades(cur, rows: list[TradeRow], now_iso: str) -> int:
     if not rows:
         return 0
+    if execute_values is None:
+        raise SystemExit("Missing psycopg2. Install requirements before running EOD Supabase sync.")
     values = [
         (
             row.trade_uid,
@@ -583,6 +714,8 @@ def upsert_trades(cur, rows: list[TradeRow], now_iso: str) -> int:
 def upsert_heartbeats(cur, rows: list[HeartbeatRow], now_iso: str) -> int:
     if not rows:
         return 0
+    if execute_values is None:
+        raise SystemExit("Missing psycopg2. Install requirements before running EOD Supabase sync.")
     values = [
         (
             row.source_date,
@@ -613,6 +746,56 @@ def upsert_heartbeats(cur, rows: list[HeartbeatRow], now_iso: str) -> int:
     return len(rows)
 
 
+def upsert_order_events(cur, rows: list[OrderEventRow], now_iso: str) -> int:
+    if not rows:
+        return 0
+    if execute_values is None:
+        raise SystemExit("Missing psycopg2. Install requirements before running EOD Supabase sync.")
+    values = [
+        (
+            row.event_uid,
+            row.run_date,
+            row.event_ts,
+            row.event_type,
+            row.symbol,
+            row.loop_count,
+            row.setup_type,
+            row.side,
+            row.entry_price,
+            row.z_score,
+            row.order_id,
+            json.dumps(row.details, sort_keys=True),
+            row.source_file,
+            now_iso,
+        )
+        for row in rows
+    ]
+    execute_values(
+        cur,
+        """
+        INSERT INTO llm_advisor_order_events
+        (event_uid,run_date,event_ts,event_type,symbol,loop_count,setup_type,side,entry_price,z_score,order_id,details,source_file,updated_at)
+        VALUES %s
+        ON CONFLICT (event_uid) DO UPDATE SET
+          run_date = EXCLUDED.run_date,
+          event_ts = EXCLUDED.event_ts,
+          event_type = EXCLUDED.event_type,
+          symbol = EXCLUDED.symbol,
+          loop_count = EXCLUDED.loop_count,
+          setup_type = EXCLUDED.setup_type,
+          side = EXCLUDED.side,
+          entry_price = EXCLUDED.entry_price,
+          z_score = EXCLUDED.z_score,
+          order_id = EXCLUDED.order_id,
+          details = EXCLUDED.details,
+          source_file = EXCLUDED.source_file,
+          updated_at = EXCLUDED.updated_at
+        """,
+        values,
+    )
+    return len(rows)
+
+
 def validate(cur) -> dict[str, int]:
     checks: dict[str, int] = {}
     cur.execute("SELECT COUNT(*) FROM llm_advisor_backtest_runs WHERE run_date >= CURRENT_DATE - INTERVAL '7 days'")
@@ -623,6 +806,8 @@ def validate(cur) -> dict[str, int]:
         "SELECT COUNT(*) FROM llm_advisor_runtime_heartbeats WHERE heartbeat_ts >= NOW() - INTERVAL '7 days'"
     )
     checks["heartbeats_7d"] = int(cur.fetchone()[0])
+    cur.execute("SELECT COUNT(*) FROM llm_advisor_order_events WHERE run_date >= CURRENT_DATE - INTERVAL '7 days'")
+    checks["order_events_7d"] = int(cur.fetchone()[0])
     return checks
 
 
@@ -645,15 +830,22 @@ def main() -> None:
     runs: list[RunRow] = []
     trades: list[TradeRow] = []
     heartbeats: list[HeartbeatRow] = []
+    order_events: list[OrderEventRow] = []
     for run_date, run_dir in run_dirs:
         processed = run_dir / "processed"
         run_row, trade_rows = parse_daily_run_payload(run_date, processed)
+        heartbeat_row = parse_heartbeat(run_date, processed / "live_loop_log.jsonl")
+        event_rows = parse_order_events(run_date, processed / "order_events.jsonl")
         if run_row:
             runs.append(run_row)
+        elif heartbeat_row:
+            runs.append(run_row_from_heartbeat(run_date, heartbeat_row))
+        elif event_rows:
+            runs.append(run_row_from_order_events(run_date, event_rows))
         trades.extend(trade_rows)
-        heartbeat_row = parse_heartbeat(run_date, processed / "live_loop_log.jsonl")
         if heartbeat_row:
             heartbeats.append(heartbeat_row)
+        order_events.extend(event_rows)
 
     use_bq = args.use_bigquery
     if use_bq is None:
@@ -685,19 +877,25 @@ def main() -> None:
     runs = dedupe_runs(runs)
     trades = dedupe_trades(trades)
     heartbeats = dedupe_heartbeats(heartbeats)
+    order_events = dedupe_order_events(order_events)
 
     LOGGER.info(
-        "Prepared aggregate rows | runs=%d trades=%d heartbeats=%d",
+        "Prepared aggregate rows | runs=%d trades=%d heartbeats=%d order_events=%d",
         len(runs),
         len(trades),
         len(heartbeats),
+        len(order_events),
     )
-    if not (runs or trades or heartbeats):
+    if not (runs or trades or heartbeats or order_events):
         message = "No ingestable rows were parsed from located run directories"
         if args.allow_empty:
             LOGGER.warning("%s (allow-empty enabled)", message)
             return
         raise SystemExit(f"{message}. Failing fast to avoid empty EOD writes.")
+
+    if args.dry_run:
+        LOGGER.info("Dry run enabled; skipping Supabase writes.")
+        return
 
     now_iso = datetime.now(timezone.utc).isoformat()
     conn = connect_supabase()
@@ -706,6 +904,7 @@ def main() -> None:
             upsert_runs(cur, runs, now_iso)
             upsert_trades(cur, trades, now_iso)
             upsert_heartbeats(cur, heartbeats, now_iso)
+            upsert_order_events(cur, order_events, now_iso)
             if args.validate:
                 checks = validate(cur)
                 LOGGER.info("Validation checks: %s", json.dumps(checks, sort_keys=True))
@@ -718,10 +917,11 @@ def main() -> None:
                         raise SystemExit(msg)
                     LOGGER.warning("%s (set EOD_STRICT_TELEMETRY=1 to fail on this)", msg)
             LOGGER.info(
-                "EOD ingest complete | runs=%d trades=%d heartbeats=%d",
+                "EOD ingest complete | runs=%d trades=%d heartbeats=%d order_events=%d",
                 len(runs),
                 len(trades),
                 len(heartbeats),
+                len(order_events),
             )
     finally:
         conn.close()

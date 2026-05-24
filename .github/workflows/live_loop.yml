@@ -182,7 +182,7 @@ jobs:
           if-no-files-found: error
 
       - name: Notify Discord on Failure
-        if: failure()
+        if: failure() && env.DISCORD_WEBHOOK_URL != ''
         run: |
           curl -X POST -H "Content-Type: application/json" \
             -d "{\"content\": \"❌ **LLM Advisor Live Loop Failed**\\nRun: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}\"}" \

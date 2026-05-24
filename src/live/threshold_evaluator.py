@@ -47,15 +47,9 @@ def evaluate_thresholds(
     
     z = state.last_z
     
-    # Mean reversion arming
+    # Trend continuation gets first claim only at its stronger threshold and
+    # when slope agrees. Moderate z-scores still belong to mean reversion.
     if state.status == "idle":
-        if abs(z) >= thresholds.mr_arm_z:
-            state.status = "mr_armed"
-            state.side = "long" if z < 0 else "short"
-            state.armed_z = z
-            return None
-        
-        # Trend continuation arming (requires slope alignment)
         if state.ema_slope_hourly > 0 and z >= thresholds.tc_arm_z:
             state.status = "tc_armed"
             state.side = "long"
@@ -64,6 +58,12 @@ def evaluate_thresholds(
         if state.ema_slope_hourly < 0 and z <= -thresholds.tc_arm_z:
             state.status = "tc_armed"
             state.side = "short"
+            state.armed_z = z
+            return None
+
+        if abs(z) >= thresholds.mr_arm_z:
+            state.status = "mr_armed"
+            state.side = "long" if z < 0 else "short"
             state.armed_z = z
             return None
     
@@ -157,4 +157,3 @@ def _create_signal(
         },
         timestamp=datetime.now(),
     )
-

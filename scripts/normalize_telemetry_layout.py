@@ -19,6 +19,7 @@ from src.utils.daily_news_paths import normalize_daily_news_root
 TELEMETRY_NAMES = (
     "session_summary.json",
     "live_loop_log.jsonl",
+    "order_events.jsonl",
     "backtest_results.json",
     "premarket_context.json",
 )
