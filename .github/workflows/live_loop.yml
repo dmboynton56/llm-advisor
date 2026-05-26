@@ -30,6 +30,7 @@ jobs:
       STORAGE_ENV: bq
       TRADING_WINDOW_START: '09:30'
       TRADING_WINDOW_END: '12:00'
+      END_OF_DAY_CLOSE_TIME: '15:50'
 
     steps:
       - name: Checkout Code

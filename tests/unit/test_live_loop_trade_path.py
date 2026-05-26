@@ -11,6 +11,8 @@ from src.live.loop import (
     append_order_event,
     build_live_session_summary,
     execute_trade,
+    reconcile_positions_with_alpaca,
+    sync_state_with_positions,
     write_live_session_summary,
 )
 from src.live.state_manager import SymbolState, TradePlan
@@ -165,3 +167,63 @@ def test_append_order_event_writes_lifecycle_jsonl(tmp_path: Path) -> None:
     assert payload["signal"]["setup_type"] == "MR"
     assert payload["trade_plan"]["stop_loss"] == 99.0
     assert payload["details"]["reason"] == "risk_reward"
+
+
+def test_startup_reconcile_deletes_bq_orphan_without_recovery(tmp_path: Path) -> None:
+    class FakeStorage:
+        def __init__(self):
+            self.closed = []
+            self.deleted = []
+
+        def get_open_positions(self):
+            return [
+                {
+                    "trade_id": 42,
+                    "symbol": "SPY",
+                    "side": "long",
+                    "entry_price": 452.0,
+                    "current_price": 750.0,
+                    "stop_loss": 440.0,
+                    "take_profit": 470.0,
+                    "qty": 1,
+                    "unrealized_pnl": 0.0,
+                }
+            ]
+
+        def close_trade_by_pk(self, trade_pk, exit_time, exit_price=None, pnl=None, exit_reason=""):
+            self.closed.append((trade_pk, exit_price, exit_reason))
+
+        def delete_position_by_trade_pk(self, trade_pk):
+            self.deleted.append(trade_pk)
+
+    class FlatOrderManager:
+        def get_open_positions(self):
+            return []
+
+    state = _minimal_state()
+    state.reset_to_idle()
+    states = {"SPY": state}
+    storage = FakeStorage()
+
+    reconciled = reconcile_positions_with_alpaca(
+        states=states,
+        storage=storage,
+        order_manager=FlatOrderManager(),
+        trade_tracker=None,
+        order_events_path=tmp_path / "order_events.jsonl",
+        latest_prices={"SPY": 750.0},
+    )
+    sync_state_with_positions(states, positions=reconciled)
+
+    assert reconciled == []
+    assert storage.closed == [(42, 750.0, "startup_reconcile_orphan_bq")]
+    assert storage.deleted == [42]
+    assert states["SPY"].status == "idle"
+    events = [
+        json.loads(line)
+        for line in (tmp_path / "order_events.jsonl").read_text(encoding="utf-8").splitlines()
+    ]
+    assert {event["event_type"] for event in events} >= {
+        "startup_reconcile_orphan_bq_closed",
+        "startup_reconcile_flat",
+    }

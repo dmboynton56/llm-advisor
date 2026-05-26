@@ -80,6 +80,18 @@ class StorageAdapter(ABC):
     def delete_position_by_trade_pk(self, trade_pk: int) -> None:
         """Remove open position row linked to trades.id (internal PK)."""
         pass
+
+    @abstractmethod
+    def close_trade_by_pk(
+        self,
+        trade_pk: int,
+        exit_time: datetime,
+        exit_price: Optional[float] = None,
+        pnl: Optional[float] = None,
+        exit_reason: str = "",
+    ) -> None:
+        """Mark a trade row closed by trades.id (internal PK)."""
+        pass
     
     @abstractmethod
     def get_open_positions(self) -> List[Dict[str, Any]]:
@@ -486,6 +498,35 @@ class SQLiteStorage(StorageAdapter):
             conn.commit()
         finally:
             conn.close()
+
+    def close_trade_by_pk(
+        self,
+        trade_pk: int,
+        exit_time: datetime,
+        exit_price: Optional[float] = None,
+        pnl: Optional[float] = None,
+        exit_reason: str = "",
+    ) -> None:
+        conn = self._get_connection()
+        try:
+            conn.execute(
+                """
+                UPDATE trades
+                SET status = ?, exit_time = ?, exit_price = ?, pnl = ?, exit_reason = ?
+                WHERE id = ?
+                """,
+                (
+                    "closed",
+                    exit_time.isoformat() if isinstance(exit_time, datetime) else exit_time,
+                    exit_price,
+                    pnl,
+                    exit_reason,
+                    int(trade_pk),
+                ),
+            )
+            conn.commit()
+        finally:
+            conn.close()
     
     def get_open_positions(self) -> List[Dict[str, Any]]:
         """Get all open positions."""
@@ -807,6 +848,25 @@ class PostgreSQLStorage(StorageAdapter):
         with self._get_connection() as conn:
             with conn.cursor() as cur:
                 cur.execute("DELETE FROM positions WHERE trade_id = %s", (trade_pk,))
+
+    def close_trade_by_pk(
+        self,
+        trade_pk: int,
+        exit_time: datetime,
+        exit_price: Optional[float] = None,
+        pnl: Optional[float] = None,
+        exit_reason: str = "",
+    ) -> None:
+        with self._get_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    UPDATE trades
+                    SET status = %s, exit_time = %s, exit_price = %s, pnl = %s, exit_reason = %s
+                    WHERE id = %s
+                    """,
+                    ("closed", exit_time, exit_price, pnl, exit_reason, int(trade_pk)),
+                )
     
     def get_open_positions(self) -> List[Dict[str, Any]]:
         """Get all open positions."""
@@ -886,4 +946,3 @@ class Storage:
                 return PostgreSQLStorage(conn_string)
         else:
             raise ValueError(f"Unknown environment: {env}. Use 'dev', 'prod', or 'bq'")
-

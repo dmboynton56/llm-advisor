@@ -554,38 +554,333 @@ def update_positions(trade_tracker: Optional[Any] = None) -> None:
             logger.error(f"Position update error: {e}")
 
 
-def sync_state_with_positions(states: Dict[str, SymbolState], storage: Optional[StorageAdapter]):
-    """Sync symbol states with open positions from database on startup."""
-    if not storage:
-        return
-    
+def _float_or_none(value: Any) -> Optional[float]:
+    if value is None:
+        return None
     try:
-        open_positions = storage.get_open_positions()
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _position_qty(pos: Dict[str, Any]) -> float:
+    qty = _float_or_none(pos.get("qty"))
+    if qty is None:
+        return 0.0
+    return abs(qty)
+
+
+def _position_entry_price(pos: Dict[str, Any]) -> Optional[float]:
+    direct = _float_or_none(pos.get("entry_price"))
+    if direct is not None and direct > 0:
+        return direct
+    qty = _position_qty(pos)
+    cost_basis = _float_or_none(pos.get("cost_basis"))
+    if qty > 0 and cost_basis is not None:
+        return abs(cost_basis) / qty
+    return None
+
+
+def _position_current_price(pos: Dict[str, Any], latest_prices: Optional[Dict[str, float]] = None) -> Optional[float]:
+    direct = _float_or_none(pos.get("current_price"))
+    if direct is not None and direct > 0:
+        return direct
+    symbol = pos.get("symbol")
+    if latest_prices and symbol in latest_prices:
+        return latest_prices[symbol]
+    qty = _position_qty(pos)
+    market_value = _float_or_none(pos.get("market_value"))
+    if qty > 0 and market_value is not None:
+        return abs(market_value) / qty
+    return None
+
+
+def _position_trade_pk(pos: Dict[str, Any]) -> Optional[int]:
+    raw = pos.get("trade_id")
+    if raw is None:
+        return None
+    try:
+        return int(raw)
+    except (TypeError, ValueError):
+        return None
+
+
+def _position_side(pos: Dict[str, Any]) -> str:
+    side = str(pos.get("side") or "long").lower()
+    if side in ("buy", "long"):
+        return "long"
+    if side in ("sell", "short"):
+        return "short"
+    return side
+
+
+def _entry_price_is_wildly_stale(entry_price: Optional[float], current_price: Optional[float]) -> bool:
+    if entry_price is None or current_price is None or entry_price <= 0 or current_price <= 0:
+        return False
+    max_drift = float(os.getenv("RECONCILE_MAX_ENTRY_DRIFT_PCT", "0.25"))
+    return abs(entry_price - current_price) / current_price > max_drift
+
+
+def _close_warehouse_position(
+    storage: StorageAdapter,
+    pos: Dict[str, Any],
+    reason: str,
+    exit_price: Optional[float],
+) -> None:
+    trade_pk = _position_trade_pk(pos)
+    if trade_pk is None:
+        raise ValueError(f"Position row for {pos.get('symbol')} has no internal trade_id")
+    if hasattr(storage, "close_trade_by_pk"):
+        storage.close_trade_by_pk(
+            trade_pk,
+            datetime.now(timezone.utc),
+            exit_price=exit_price,
+            pnl=_float_or_none(pos.get("unrealized_pnl")),
+            exit_reason=reason,
+        )
+    storage.delete_position_by_trade_pk(trade_pk)
+
+
+def reconcile_positions_with_alpaca(
+    states: Dict[str, SymbolState],
+    storage: Optional[StorageAdapter],
+    order_manager: Optional[Any],
+    trade_tracker: Optional[Any],
+    order_events_path: Path,
+    latest_prices: Optional[Dict[str, float]] = None,
+) -> List[Dict[str, Any]]:
+    """
+    Reconcile warehouse position rows against Alpaca before enabling recovery state.
+
+    Alpaca is the source of truth for whether a position is actually open. Warehouse
+    rows without an Alpaca match are closed/deleted so stale test rows cannot block
+    a new trading day.
+    """
+    if not storage:
+        return []
+    if not order_manager or not hasattr(order_manager, "get_open_positions"):
+        logger.warning("[RECONCILE] Order manager unavailable; skipping DB recovery to avoid stale position carryover")
+        append_order_event(
+            order_events_path,
+            "startup_reconcile_skipped",
+            "ALL",
+            0,
+            details={"reason": "order_manager_unavailable"},
+        )
+        return []
+
+    try:
+        bq_positions = storage.get_open_positions()
+    except Exception as exc:
+        logger.error("[RECONCILE] Failed to load warehouse positions: %s", exc)
+        append_order_event(
+            order_events_path,
+            "startup_reconcile_error",
+            "ALL",
+            0,
+            details={"source": "warehouse", "error": str(exc)},
+        )
+        bq_positions = []
+
+    try:
+        alpaca_positions = order_manager.get_open_positions()
+    except Exception as exc:
+        logger.error("[RECONCILE] Failed to load Alpaca positions: %s", exc)
+        append_order_event(
+            order_events_path,
+            "startup_reconcile_error",
+            "ALL",
+            0,
+            details={"source": "alpaca", "error": str(exc)},
+        )
+        return []
+
+    bq_by_symbol = {str(pos.get("symbol")): pos for pos in bq_positions if pos.get("symbol")}
+    alpaca_by_symbol = {str(pos.get("symbol")): pos for pos in alpaca_positions if pos.get("symbol")}
+    reconciled: List[Dict[str, Any]] = []
+
+    for symbol, bq_pos in bq_by_symbol.items():
+        if symbol in alpaca_by_symbol:
+            continue
+        exit_px = (latest_prices or {}).get(symbol) or _position_current_price(bq_pos, latest_prices)
+        try:
+            _close_warehouse_position(storage, bq_pos, "startup_reconcile_orphan_bq", exit_px)
+            logger.warning("[RECONCILE] Deleted orphan warehouse position for %s; Alpaca is flat", symbol)
+            append_order_event(
+                order_events_path,
+                "startup_reconcile_orphan_bq_closed",
+                symbol,
+                0,
+                details={"warehouse_position": bq_pos, "exit_price": exit_px},
+            )
+        except Exception as exc:
+            logger.error("[RECONCILE] Failed to close orphan warehouse position for %s: %s", symbol, exc)
+            append_order_event(
+                order_events_path,
+                "startup_reconcile_error",
+                symbol,
+                0,
+                details={"action": "close_orphan_bq", "error": str(exc), "warehouse_position": bq_pos},
+            )
+
+    for symbol, alpaca_pos in alpaca_by_symbol.items():
+        entry_px = _position_entry_price(alpaca_pos)
+        current_px = _position_current_price(alpaca_pos, latest_prices)
+        stale = _entry_price_is_wildly_stale(entry_px, current_px)
+
+        if stale:
+            closed = False
+            if hasattr(order_manager, "close_position"):
+                closed = bool(order_manager.close_position(symbol))
+            if symbol in bq_by_symbol:
+                try:
+                    _close_warehouse_position(storage, bq_by_symbol[symbol], "startup_reconcile_stale_alpaca_flatten", current_px)
+                except Exception as exc:
+                    logger.error("[RECONCILE] Failed to delete stale warehouse position for %s: %s", symbol, exc)
+            logger.warning(
+                "[RECONCILE] Flattened stale Alpaca position for %s (entry=%s current=%s closed=%s)",
+                symbol,
+                entry_px,
+                current_px,
+                closed,
+            )
+            append_order_event(
+                order_events_path,
+                "startup_reconcile_stale_alpaca_flattened",
+                symbol,
+                0,
+                details={
+                    "alpaca_position": alpaca_pos,
+                    "entry_price": entry_px,
+                    "current_price": current_px,
+                    "close_requested": closed,
+                },
+            )
+            continue
+
+        trade_pk: Optional[int] = None
+        if symbol in bq_by_symbol:
+            bq_pos = bq_by_symbol[symbol]
+            trade_pk = _position_trade_pk(bq_pos)
+            if trade_pk is not None:
+                storage.update_position({
+                    "trade_id": trade_pk,
+                    "symbol": symbol,
+                    "side": _position_side(alpaca_pos),
+                    "entry_price": entry_px,
+                    "current_price": current_px,
+                    "stop_loss": bq_pos.get("stop_loss"),
+                    "take_profit": bq_pos.get("take_profit"),
+                    "qty": int(_position_qty(alpaca_pos)),
+                    "unrealized_pnl": _float_or_none(alpaca_pos.get("unrealized_pl")) or 0.0,
+                })
+                append_order_event(
+                    order_events_path,
+                    "startup_reconcile_confirmed_open",
+                    symbol,
+                    0,
+                    details={"alpaca_position": alpaca_pos, "warehouse_position": bq_pos},
+                )
+        else:
+            trade_id = f"reconciled-{symbol}-{datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%SZ')}"
+            trade_pk = storage.save_trade({
+                "trade_id": trade_id,
+                "symbol": symbol,
+                "side": _position_side(alpaca_pos),
+                "entry_price": entry_px,
+                "stop_loss": None,
+                "take_profit": None,
+                "qty": int(_position_qty(alpaca_pos)),
+                "status": "open",
+                "entry_time": datetime.now(timezone.utc),
+                "exit_time": None,
+                "exit_price": None,
+                "pnl": None,
+                "exit_reason": "",
+            })
+            storage.update_position({
+                "trade_id": trade_pk,
+                "symbol": symbol,
+                "side": _position_side(alpaca_pos),
+                "entry_price": entry_px,
+                "current_price": current_px,
+                "stop_loss": None,
+                "take_profit": None,
+                "qty": int(_position_qty(alpaca_pos)),
+                "unrealized_pnl": _float_or_none(alpaca_pos.get("unrealized_pl")) or 0.0,
+            })
+            append_order_event(
+                order_events_path,
+                "startup_reconcile_alpaca_synced_to_bq",
+                symbol,
+                0,
+                details={"alpaca_position": alpaca_pos, "trade_pk": trade_pk, "trade_id": trade_id},
+            )
+
+        if trade_tracker and trade_pk is not None:
+            trade_tracker.register_open_trade(symbol, None, int(trade_pk))
+        reconciled.append({
+            **alpaca_pos,
+            "entry_price": entry_px,
+            "current_price": current_px,
+            "side": _position_side(alpaca_pos),
+            "trade_pk": trade_pk,
+            "stop_loss": bq_by_symbol.get(symbol, {}).get("stop_loss"),
+            "take_profit": bq_by_symbol.get(symbol, {}).get("take_profit"),
+        })
+
+    if not reconciled:
+        logger.info("[RECONCILE] Startup bootstrap complete: Alpaca and warehouse are flat")
+        append_order_event(
+            order_events_path,
+            "startup_reconcile_flat",
+            "ALL",
+            0,
+            details={"warehouse_positions": len(bq_positions), "alpaca_positions": len(alpaca_positions)},
+        )
+    return reconciled
+
+
+def sync_state_with_positions(
+    states: Dict[str, SymbolState],
+    positions: Optional[List[Dict[str, Any]]] = None,
+    storage: Optional[StorageAdapter] = None,
+) -> None:
+    """Sync symbol states with reconciled open positions on startup."""
+    try:
+        open_positions = positions if positions is not None else (storage.get_open_positions() if storage else [])
         if not open_positions:
             return
-        
+
         for pos in open_positions:
             symbol = pos.get("symbol")
             if symbol in states:
                 state = states[symbol]
-                # If we have an open position, mark as triggered to prevent re-entry.
-                # Use mr_triggered as a generic "active" state.
-                state.status = "mr_triggered" 
-                state.side = pos.get("side")
-                
-                # Create a minimal trade plan so the evaluator knows we're in a trade
+                state.status = "mr_triggered"
+                state.side = _position_side(pos)
+
                 from src.live.state_manager import TradePlan
                 state.trade = TradePlan(
                     setup="RECOVERY",
                     side=state.side,
-                    entry_price=float(pos.get("entry_price", 0.0) or 0.0),
+                    entry_price=float(_position_entry_price(pos) or 0.0),
                     sl_price=float(pos.get("stop_loss", 0.0) or 0.0),
                     tp_price=float(pos.get("take_profit", 0.0) or 0.0),
-                    triggered_at=datetime.now()
+                    triggered_at=datetime.now(timezone.utc)
                 )
-                logger.info(f"[RECOVERY] Synced {symbol} state with open position: {state.side} @ {state.trade.entry_price}")
+                logger.info(f"[RECOVERY] Synced {symbol} state with reconciled Alpaca position: {state.side} @ {state.trade.entry_price}")
     except Exception as e:
         logger.error(f"Failed to sync state with positions: {e}")
+
+
+def live_open_position_count(order_manager: Optional[Any]) -> int:
+    if not order_manager or not hasattr(order_manager, "get_open_positions"):
+        return 0
+    try:
+        return len(order_manager.get_open_positions())
+    except Exception as exc:
+        logger.error("Could not list open positions: %s", exc)
+        return 0
 
 
 def main():
@@ -833,10 +1128,12 @@ def main():
         create_minimal_snapshots=is_backtest  # Create minimal snapshots if backtesting and no premarket data
     )
     logger.info(f"Initialized {len(states)} symbol states")
-    
-    # Sync with existing positions from DB if in live mode
-    if not is_backtest and storage:
-        sync_state_with_positions(states, storage)
+
+    latest_seed_prices = {
+        sym: float(bars[-1]["c"])
+        for sym, bars in bars_1m_dict.items()
+        if bars and bars[-1].get("c") is not None
+    }
     
     # Initialize market analyzer
     llm_client = create_llm_client(settings.llm.provider, settings.llm.model)
@@ -867,6 +1164,18 @@ def main():
             logger.info(f"Order manager initialized (paper trading: {paper_trading})")
         except Exception as e:
             logger.warning(f"Order manager initialization failed: {e}. Running in dry-run mode.")
+
+    if not is_backtest and storage:
+        reconciled_positions = reconcile_positions_with_alpaca(
+            states=states,
+            storage=storage,
+            order_manager=order_manager,
+            trade_tracker=trade_tracker,
+            order_events_path=order_events_path,
+            latest_prices=latest_seed_prices,
+        )
+        sync_state_with_positions(states, positions=reconciled_positions)
+        update_positions(trade_tracker)
     
     # Trading window
     run_end_et = et_dt(trading_date, settings.trading.trading_window_end)
@@ -874,7 +1183,8 @@ def main():
     eod_close_et = et_dt(trading_date, settings.trading.end_of_day_close_time)
     eod_close_utc = to_utc(eod_close_et)
     
-    logger.info(f"Trading window: {run_start_et.strftime('%H:%M')} - {run_end_et.strftime('%H:%M')} ET")
+    logger.info(f"Entry window: {run_start_et.strftime('%H:%M')} - {run_end_et.strftime('%H:%M')} ET")
+    logger.info(f"Position monitoring cutoff: {eod_close_et.strftime('%H:%M')} ET")
     
     # Simulated time for backtesting
     sim_time_et = run_start_et if is_backtest else None
@@ -882,6 +1192,7 @@ def main():
     # Main loop
     loop_count = 0
     start_alert_sent = False
+    entry_window_close_logged = False
 
     def finalize_live_session(reason: str) -> None:
         if is_backtest:
@@ -936,17 +1247,25 @@ def main():
             current_utc = current_et.astimezone(timezone.utc)
             
             # Check EOD close for live trading
-            if order_manager and trade_tracker:
+            if current_et >= eod_close_et:
                 from src.execution.eod_position_manager import check_and_close_eod
-                if check_and_close_eod(
+                if not order_manager:
+                    logger.warning("EOD cutoff reached but order manager is unavailable. Exiting without live position close.")
+                    finalize_live_session("eod_cutoff_order_manager_unavailable")
+                    break
+                closed_or_flat = check_and_close_eod(
                     order_manager,
                     trade_tracker,
                     current_et,
                     settings.trading.end_of_day_close_time
-                ):
+                )
+                if closed_or_flat:
                     logger.info("End-of-day positions closed. Exiting.")
                     finalize_live_session("eod_close")
                     break
+                logger.warning("EOD cutoff reached; close attempt did not confirm flat positions. Retrying next loop.")
+                time.sleep(args.fast)
+                continue
         
         # Check if before session start (skip in backtest)
         if not is_backtest and current_et < run_start_et:
@@ -955,11 +1274,39 @@ def main():
             time.sleep(min(wait_s, args.fast))
             continue
         
-        # Check if after session end (skip in backtest, we handle it above)
+        # After the entry window closes, keep monitoring real positions until flat or EOD.
         if not is_backtest and current_et > run_end_et:
-            logger.info("Trading session complete")
-            finalize_live_session("session_complete")
-            break
+            update_positions(trade_tracker)
+            open_n = live_open_position_count(order_manager)
+            if open_n <= 0:
+                logger.info("Entry window closed and Alpaca is flat. Trading session complete.")
+                append_order_event(
+                    order_events_path,
+                    "entry_window_closed_flat",
+                    "ALL",
+                    loop_count,
+                    details={"entry_window_end": settings.trading.trading_window_end},
+                )
+                finalize_live_session("entry_window_closed_flat")
+                break
+            if not entry_window_close_logged:
+                logger.info(
+                    "Entry window closed; monitoring %s open position(s) until flat or %s ET cutoff",
+                    open_n,
+                    settings.trading.end_of_day_close_time,
+                )
+                append_order_event(
+                    order_events_path,
+                    "entry_window_closed_monitoring_positions",
+                    "ALL",
+                    loop_count,
+                    details={
+                        "entry_window_end": settings.trading.trading_window_end,
+                        "open_positions": open_n,
+                        "hard_cutoff": settings.trading.end_of_day_close_time,
+                    },
+                )
+                entry_window_close_logged = True
 
         if (
             not is_backtest
@@ -977,7 +1324,7 @@ def main():
             start_alert_sent = True
         
         # Check if market is open (skip time check in backtest)
-        if not is_backtest and not market_is_open(current_et, settings.trading.trading_window_start, settings.trading.trading_window_end):
+        if not is_backtest and not market_is_open(current_et, settings.trading.trading_window_start, settings.trading.end_of_day_close_time):
             time.sleep(args.fast)
             continue
         
@@ -1128,8 +1475,11 @@ def main():
                 logger.debug("Skipping market analysis (no premarket context in backtest mode)")
             
             # Evaluate thresholds and collect signals
+            entry_window_open = is_backtest or current_et <= run_end_et
             signals: List[SignalEvent] = []
             for symbol in symbols:
+                if not entry_window_open:
+                    continue
                 if symbol not in states:
                     continue
                 

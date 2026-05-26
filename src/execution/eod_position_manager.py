@@ -1,4 +1,5 @@
 """End-of-day position management for live trading."""
+import time
 from typing import List, Dict, Any, Optional
 from datetime import datetime
 from src.execution.order_manager import StockOrderManager
@@ -33,7 +34,11 @@ def close_all_positions_at_eod(
                 closed_symbols.append(symbol)
         
         if trade_tracker:
-            trade_tracker.update_positions()
+            for _ in range(3):
+                remaining = trade_tracker.update_positions()
+                if not remaining:
+                    break
+                time.sleep(2)
         
         return closed_symbols
         
@@ -81,5 +86,7 @@ def check_and_close_eod(
     closed = close_all_positions_at_eod(order_manager, trade_tracker)
     if closed:
         print(f"  ✓ EOD: Closed {len(closed)} positions")
-    return len(closed) > 0
-
+    try:
+        return len(order_manager.get_open_positions()) == 0
+    except Exception:
+        return False

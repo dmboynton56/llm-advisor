@@ -5,8 +5,10 @@ This runbook defines a successful LLM Advisor paper-trading day.
 ## Daily Flow
 
 1. `Premarket` completes and uploads `premarket-context`.
-2. `Live Trading Loop` downloads the same-day premarket artifact, runs during
-   the configured trading window, and uploads `llm-advisor-daily-news-*`.
+2. `Live Trading Loop` downloads the same-day premarket artifact, reconciles
+   warehouse positions against Alpaca, runs during the configured entry window,
+   monitors any open positions until flat or the hard cutoff, and uploads
+   `llm-advisor-daily-news-*`.
 3. The telemetry artifact should include:
    - `processed/premarket_context.json`
    - `processed/live_loop_log.jsonl`
@@ -72,6 +74,19 @@ are expected only on days where a paper order is actually submitted.
 
 ## Current Reliability Rules
 
+- Alpaca is the source of truth for open live positions at startup. Warehouse
+  `positions` rows that Alpaca does not confirm are closed/deleted before
+  strategy recovery runs, and the action is written to `order_events.jsonl`.
+- `TRADING_WINDOW_END` is the last time the loop may open a new trade, not the
+  process shutdown time. After that boundary, the loop keeps running only to
+  monitor real open positions until they hit bracket exits or the
+  `END_OF_DAY_CLOSE_TIME` hard cutoff.
+- If Alpaca is flat after the entry window closes, the live loop exits with an
+  `entry_window_closed_flat` summary reason. If positions remain open, the loop
+  keeps calling `TradeTracker.update_positions()` so warehouse rows are deleted
+  when Alpaca reports the position closed.
+- At the hard cutoff, the loop requests market closes for any remaining Alpaca
+  positions and polls `TradeTracker` before writing the final summary.
 - BigQuery trade retrieval must not compare `TIMESTAMP` columns to `DATE`
   parameters directly.
 - LLM validation parse errors are not approvals.

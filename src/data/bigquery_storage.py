@@ -717,6 +717,36 @@ class BigQueryStorage(StorageAdapter):
             ]
         )
         self.client.query(q, job_config=job_config).result()
+
+    def close_trade_by_pk(
+        self,
+        trade_pk: int,
+        exit_time: datetime,
+        exit_price: Optional[float] = None,
+        pnl: Optional[float] = None,
+        exit_reason: str = "",
+    ) -> None:
+        table_id = f"{self.project_id}.{self.dataset_id}.trades"
+        q = f"""
+        UPDATE `{table_id}`
+        SET status = @status,
+            exit_time = @exit_time,
+            exit_price = @exit_price,
+            pnl = @pnl,
+            exit_reason = @exit_reason
+        WHERE id = @trade_pk
+        """
+        job_config = bigquery.QueryJobConfig(
+            query_parameters=[
+                bigquery.ScalarQueryParameter("trade_pk", "INT64", int(trade_pk)),
+                bigquery.ScalarQueryParameter("status", "STRING", "closed"),
+                bigquery.ScalarQueryParameter("exit_time", "TIMESTAMP", exit_time),
+                bigquery.ScalarQueryParameter("exit_price", "NUMERIC", float(exit_price) if exit_price is not None else None),
+                bigquery.ScalarQueryParameter("pnl", "NUMERIC", float(pnl) if pnl is not None else None),
+                bigquery.ScalarQueryParameter("exit_reason", "STRING", exit_reason),
+            ]
+        )
+        self.client.query(q, job_config=job_config).result()
     
     def get_open_positions(self) -> List[Dict[str, Any]]:
         """Get all open positions."""
