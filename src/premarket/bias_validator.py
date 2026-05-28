@@ -38,6 +38,10 @@ def validate_biases_with_llm(
     Returns:
         Dict mapping symbol -> LLMBiasValidation
     """
+    if not any(_has_available_ml_bias(bias) for bias in premarket_context.symbols.values()):
+        print("LLM bias validation skipped: no symbols have available ML bias.")
+        return {}
+
     if llm_client is None:
         if settings is None:
             settings = Settings.load()
@@ -80,6 +84,8 @@ def _build_validation_prompt(premarket_context: PremarketContext) -> str:
     # Build ML predictions summary
     ml_summary = []
     for sym, bias in premarket_context.symbols.items():
+        if not _has_available_ml_bias(bias):
+            continue
         ml_summary.append({
             "symbol": sym,
             "ml_bias": bias.daily_bias,
@@ -102,6 +108,8 @@ def _build_validation_prompt(premarket_context: PremarketContext) -> str:
     # Build per-symbol news summaries
     symbol_news = {}
     for sym, bias in premarket_context.symbols.items():
+        if not _has_available_ml_bias(bias):
+            continue
         if bias.news_summary:
             symbol_news[sym] = bias.news_summary
     
@@ -161,6 +169,8 @@ def _parse_validation_response(
     symbols_data = content.get("symbols", {})
     
     for symbol, bias_data in premarket_context.symbols.items():
+        if not _has_available_ml_bias(bias_data):
+            continue
         llm_data = symbols_data.get(symbol, {})
         
         if not llm_data:
@@ -210,6 +220,8 @@ def _create_neutral_validations(premarket_context: PremarketContext) -> Dict[str
     """Create neutral validations that agree with ML when LLM call fails."""
     validations = {}
     for symbol, bias_data in premarket_context.symbols.items():
+        if not _has_available_ml_bias(bias_data):
+            continue
         validations[symbol] = LLMBiasValidation(
             symbol=symbol,
             llm_bias=bias_data.daily_bias,
@@ -257,7 +269,10 @@ def enhance_premarket_context_with_llm_validation(
                 },
                 news_summary=bias_data.news_summary,
                 premarket_price=bias_data.premarket_price,
-                premarket_context=f"LLM Opinion: {validation.llm_bias} ({validation.llm_confidence}% confidence). {validation.reasoning}"
+                premarket_context=f"LLM Opinion: {validation.llm_bias} ({validation.llm_confidence}% confidence). {validation.reasoning}",
+                needs_bias=bias_data.needs_bias,
+                bias_available=bias_data.bias_available,
+                bias_error=bias_data.bias_error,
             )
         else:
             enhanced_bias = bias_data
@@ -271,3 +286,13 @@ def enhance_premarket_context_with_llm_validation(
         market_context=premarket_context.market_context
     )
 
+
+def _has_available_ml_bias(bias: PremarketBias) -> bool:
+    if not getattr(bias, "bias_available", True):
+        return False
+    if not getattr(bias, "needs_bias", True):
+        return False
+    return not (
+        isinstance(bias.model_output, dict)
+        and bool(bias.model_output.get("error"))
+    )

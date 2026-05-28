@@ -92,6 +92,19 @@ class MarketAnalyzer:
         # Build premarket context summary with ML and LLM opinions
         bias_summary = []
         for sym, bias in premarket_context.symbols.items():
+            if (
+                not getattr(bias, "bias_available", True)
+                or not getattr(bias, "needs_bias", True)
+                or (isinstance(bias.model_output, dict) and bias.model_output.get("error"))
+            ):
+                err = getattr(bias, "bias_error", None)
+                if isinstance(bias.model_output, dict):
+                    err = err or bias.model_output.get("error")
+                bias_summary.append(
+                    f"- {sym}: ML bias unavailable ({err}); use news and technical context only"
+                )
+                continue
+
             ml_bias = bias.daily_bias
             ml_conf = bias.confidence
             
@@ -189,4 +202,3 @@ Return JSON with market_assessment, opportunities, confidence, threshold_multipl
             confidence=confidence,
             reasoning=reasoning,
         )
-

@@ -15,6 +15,7 @@ jobs:
     env:
       ALPACA_API_KEY: ${{ secrets.ALPACA_API_KEY }}
       ALPACA_SECRET_KEY: ${{ secrets.ALPACA_SECRET_KEY }}
+      ALPACA_DATA_FEED: ${{ vars.ALPACA_DATA_FEED || 'iex' }}
       OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
       ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
       GOOGLE_API_KEY: ${{ secrets.GOOGLE_API_KEY }}
@@ -67,6 +68,7 @@ jobs:
 
       - name: Run Premarket Pipeline
         run: |
+          echo "Using Alpaca data feed: ${ALPACA_DATA_FEED}"
           SYMBOLS="${{ github.event.inputs.symbols || 'SPY,QQQ,IWM' }}"
           SYMBOLS_SPACE=$(echo $SYMBOLS | tr ',' ' ')
           python scripts/run_premarket.py --symbols $SYMBOLS_SPACE --use-db

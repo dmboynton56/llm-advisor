@@ -25,6 +25,9 @@ class PremarketBias:
     news_summary: str  # Summarized news context
     premarket_price: float
     premarket_context: str = ""  # LLM-generated context (optional)
+    needs_bias: bool = True
+    bias_available: bool = True
+    bias_error: Optional[str] = None
 
 
 @dataclass
@@ -164,7 +167,7 @@ def gather_premarket_bias(
             bias_data = json.load(f)
     
     # Check if date in bias_data matches requested date
-    bias_date = bias_data.get("et_date", bias_data.get("date_et", ""))
+    bias_date = bias_data.get("et_date", bias_data.get("date_et", bias_data.get("generated_for_date_et", "")))
     if bias_date and bias_date != date_str:
         print(f"  ! Note: Bias data is for {bias_date}, requested {date_str} (scripts use current date)")
         # For historical dates, we'd need to modify daily_bias_computing.py
@@ -184,7 +187,17 @@ def gather_premarket_bias(
             for symbol, symbol_info in symbols_dict.items():
                 if not symbol or not isinstance(symbol_info, dict):
                     continue
-                
+
+                if symbol_info.get("error") or "bias" not in symbol_info:
+                    reason = symbol_info.get("error") or "missing_bias"
+                    symbol_biases[symbol] = _create_unavailable_bias(
+                        symbol=symbol,
+                        reason=reason,
+                        raw=symbol_info,
+                        news_data=news_data,
+                    )
+                    continue
+
                 # Extract bias (normalize to lowercase)
                 bias_str = symbol_info.get("bias", "choppy")
                 if isinstance(bias_str, str):
@@ -204,6 +217,9 @@ def gather_premarket_bias(
                     news_summary=_extract_news_summary(symbol, news_data),
                     premarket_price=float(symbol_info.get("premarket_price", symbol_info.get("asof_open_meta", {}).get("open_0930", 0.0))),
                     premarket_context=symbol_info.get("premarket_context", ""),
+                    needs_bias=True,
+                    bias_available=True,
+                    bias_error=None,
                 )
         elif isinstance(symbols_dict, list):
             # Old format: [{"symbol": "SPY", ...}, ...]
@@ -212,6 +228,16 @@ def gather_premarket_bias(
                     continue
                 symbol = symbol_info.get("symbol", "")
                 if not symbol:
+                    continue
+
+                if symbol_info.get("error") or "bias" not in symbol_info:
+                    reason = symbol_info.get("error") or "missing_bias"
+                    symbol_biases[symbol] = _create_unavailable_bias(
+                        symbol=symbol,
+                        reason=reason,
+                        raw=symbol_info,
+                        news_data=news_data,
+                    )
                     continue
                 
                 bias_str = symbol_info.get("bias", "choppy").lower()
@@ -228,28 +254,46 @@ def gather_premarket_bias(
                     news_summary=_extract_news_summary(symbol, news_data),
                     premarket_price=float(symbol_info.get("premarket_price", 0.0)),
                     premarket_context=symbol_info.get("premarket_context", ""),
+                    needs_bias=True,
+                    bias_available=True,
+                    bias_error=None,
                 )
         
         # Filter to only requested symbols if provided
         if symbols:
             symbol_biases = {sym: bias for sym, bias in symbol_biases.items() if sym in symbols}
     
-    if symbols and "symbols" in bias_data:
-        symbols_dict = bias_data["symbols"]
-        if isinstance(symbols_dict, dict):
-            for sym in symbols:
-                raw = symbols_dict.get(sym)
-                if not isinstance(raw, dict):
-                    raise RuntimeError(
-                        f"No bias dict for {sym} in daily_bias.json (got {raw!r}). "
-                        "Check DAILY_BIAS_SYMBOLS / model artifacts."
-                    )
-                if raw.get("error"):
-                    raise RuntimeError(f"Daily bias failed for {sym}: {raw.get('error')}")
-                if "bias" not in raw:
-                    raise RuntimeError(
-                        f"Daily bias output for {sym} missing 'bias' (ML inference did not run successfully)."
-                    )
+    if symbols:
+        symbols_dict = bias_data.get("symbols", {})
+        if not isinstance(symbols_dict, dict):
+            symbols_dict = {}
+        for sym in symbols:
+            if sym in symbol_biases:
+                continue
+            raw = symbols_dict.get(sym)
+            reason = "missing_daily_bias_output"
+            if isinstance(raw, dict) and raw.get("error"):
+                reason = raw["error"]
+            elif raw is not None:
+                reason = "invalid_daily_bias_output"
+            symbol_biases[sym] = _create_unavailable_bias(
+                symbol=sym,
+                reason=reason,
+                raw=raw,
+                news_data=news_data,
+            )
+
+    unavailable = [
+        f"{sym}: {bias.bias_error}"
+        for sym, bias in symbol_biases.items()
+        if not bias.bias_available
+    ]
+    if unavailable:
+        print(
+            "  ! Premarket bias degraded: "
+            f"{len(unavailable)}/{len(symbol_biases)} symbols without ML bias "
+            f"({'; '.join(unavailable)})"
+        )
     
     # Extract market context
     market_context = {
@@ -307,6 +351,44 @@ def _extract_news_summary(symbol: str, news_data: Dict[str, Any]) -> str:
     # Summarize top articles
     headlines = [article.get("headline", "") for article in symbol_articles[:5]]
     return " | ".join(headlines)
+
+
+def _create_unavailable_bias(
+    symbol: str,
+    reason: Any,
+    raw: Any,
+    news_data: Dict[str, Any],
+) -> PremarketBias:
+    """Represent a per-symbol ML bias failure without failing the pipeline."""
+    if isinstance(reason, dict):
+        reason_text = reason.get("error") or json.dumps(reason, default=str)
+    else:
+        reason_text = str(reason)
+    model_output = {
+        "error": reason_text,
+        "bias_available": False,
+        "needs_bias": False,
+        "degraded_mode": True,
+    }
+    if isinstance(reason, (dict, list)):
+        model_output["error_detail"] = reason
+    if raw is not None:
+        model_output["raw_daily_bias"] = raw
+    return PremarketBias(
+        symbol=symbol,
+        daily_bias="choppy",
+        confidence=0,
+        model_output=model_output,
+        news_summary=_extract_news_summary(symbol, news_data),
+        premarket_price=0.0,
+        premarket_context=(
+            "ML daily bias unavailable; live loop should rely on news, "
+            "technical context, LLM trade validation, and execution rules."
+        ),
+        needs_bias=False,
+        bias_available=False,
+        bias_error=reason_text,
+    )
 
 
 def save_premarket_context(context: PremarketContext, output_path: Path, 
@@ -384,4 +466,3 @@ def load_premarket_context(date_str: str, base_dir: Optional[Path] = None) -> Pr
         symbols=symbols,
         market_context=premarket_data.get("market_context", {}),
     )
-

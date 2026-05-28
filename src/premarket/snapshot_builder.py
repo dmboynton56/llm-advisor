@@ -6,6 +6,7 @@ Computes HTF stats (EMA slopes, HH/LL tags, ATR percentile) and 5m bands (mu, si
 from __future__ import annotations
 
 import json
+import os
 from dataclasses import dataclass, asdict
 from datetime import datetime, timezone, timedelta, date
 from typing import Dict, Iterable, List, Optional
@@ -221,7 +222,8 @@ def build_premarket_snapshots(symbols: List[str],
         dict compatible with src/live/loop.py seed_states_from_snapshots function.
     """
     cfg = config or {}
-    feed_enum = DataFeed(feed.upper()) if feed else DataFeed.IEX
+    feed_env = (feed or os.getenv("ALPACA_DATA_FEED") or "iex").lower()
+    feed_enum = DataFeed.SIP if feed_env == "sip" else DataFeed.IEX
     
     # Use provided client or create one with proper credentials
     if client is None:
@@ -255,4 +257,3 @@ def build_premarket_snapshots(symbols: List[str],
     # Note: assemble_snapshot can optionally save to database if storage is provided
     # For now, just return the dict (caller can save to DB separately)
     return assemble_snapshot(snapshots, storage=None, trading_date=None)
-

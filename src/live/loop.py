@@ -1412,6 +1412,20 @@ def main():
                         for sym in symbols:
                             if sym in states and sym in premarket_context.symbols:
                                 bias = premarket_context.symbols[sym]
+                                if (
+                                    not getattr(bias, "bias_available", True)
+                                    or not getattr(bias, "needs_bias", True)
+                                    or (isinstance(bias.model_output, dict) and bias.model_output.get("error"))
+                                ):
+                                    err = getattr(bias, "bias_error", None)
+                                    if isinstance(bias.model_output, dict):
+                                        err = err or bias.model_output.get("error")
+                                    logger.info(
+                                        "LLM market analysis for %s running without ML bias (%s); using news/technical context",
+                                        sym,
+                                        err,
+                                    )
+                                    continue
                                 ml_bias = bias.daily_bias
                                 ml_conf = bias.confidence
                                 llm_validation = bias.model_output.get("llm_validation", {})

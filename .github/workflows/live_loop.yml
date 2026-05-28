@@ -180,7 +180,7 @@ jobs:
           path: |
             data/daily_news/
             .telemetry-artifact-anchor
-          if-no-files-found: error
+          if-no-files-found: warn
 
       - name: Notify Discord on Failure
         if: failure() && env.DISCORD_WEBHOOK_URL != ''

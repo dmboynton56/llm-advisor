@@ -80,7 +80,33 @@ def main():
             symbols=symbols,
             output_dir=output_dir
         )
-        print(f"[OK] Gathered bias for {len(premarket_context.symbols)} symbols")
+        unavailable_bias = [
+            (
+                sym,
+                bias.bias_error
+                or (bias.model_output.get("error") if isinstance(bias.model_output, dict) else None)
+                or "unknown",
+            )
+            for sym, bias in premarket_context.symbols.items()
+            if (
+                not getattr(bias, "bias_available", True)
+                or not getattr(bias, "needs_bias", True)
+                or (isinstance(bias.model_output, dict) and bias.model_output.get("error"))
+            )
+        ]
+        available_count = len(premarket_context.symbols) - len(unavailable_bias)
+        print(
+            f"[OK] Gathered premarket context for {len(premarket_context.symbols)} symbols "
+            f"({available_count} with ML bias, {len(unavailable_bias)} degraded)"
+        )
+        if unavailable_bias:
+            details = "; ".join(f"{sym}: {reason}" for sym, reason in unavailable_bias)
+            print(f"[WARN] Premarket degraded mode: {details}")
+            send_discord_alert(
+                f"Premarket degraded mode for {date_str}: "
+                f"{len(unavailable_bias)}/{len(premarket_context.symbols)} symbols without ML bias. "
+                f"Live loop will continue. {details[:500]}"
+            )
         
         # Step 2: Build STDEV snapshots
         print("\n[2/2] Building STDEV snapshots...")
@@ -112,6 +138,9 @@ def main():
                         "news_summary": bias.news_summary,
                         "premarket_price": bias.premarket_price,
                         "premarket_context": bias.premarket_context,
+                        "needs_bias": bias.needs_bias,
+                        "bias_available": bias.bias_available,
+                        "bias_error": bias.bias_error,
                     }
                     for sym, bias in premarket_context.symbols.items()
                 },
@@ -155,7 +184,10 @@ def main():
         
         print(f"[OK] Saved combined output to {output_path}")
         print("\n" + "=" * 60)
-        print("Premarket pipeline completed successfully!")
+        if unavailable_bias:
+            print("Premarket pipeline completed in degraded mode; artifact is available for live loop.")
+        else:
+            print("Premarket pipeline completed successfully!")
         print("=" * 60)
         
     except Exception as e:
@@ -168,4 +200,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
