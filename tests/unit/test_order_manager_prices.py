@@ -27,7 +27,11 @@ def test_execute_stock_trade_submits_paper_bracket_order() -> None:
     manager = StockOrderManager.__new__(StockOrderManager)
     manager.trading_client = FakeTradingClient()
     manager.settings = SimpleNamespace(
-        risk=SimpleNamespace(min_risk_reward_ratio=1.5, max_risk_per_trade_percent=1.0)
+        risk=SimpleNamespace(
+            min_risk_reward_ratio=1.5,
+            max_risk_per_trade_percent=1.0,
+            max_position_notional_pct=0.95,
+        )
     )
 
     result = manager.execute_stock_trade(
@@ -49,3 +53,49 @@ def test_execute_stock_trade_submits_paper_bracket_order() -> None:
     assert order_data.order_class == OrderClass.BRACKET
     assert order_data.stop_loss.stop_price == 498.33
     assert order_data.take_profit.limit_price == 503.0
+
+
+def test_execute_stock_trade_caps_qty_by_buying_power() -> None:
+    submitted = {}
+
+    class FakeAccount:
+        equity = "100000"
+        buying_power = "200000"
+
+    class FakeTradingClient:
+        def get_account(self):
+            return FakeAccount()
+
+        def submit_order(self, order_data):
+            submitted["order_data"] = order_data
+            return SimpleNamespace(
+                id="paper-order-2",
+                symbol=order_data.symbol,
+                qty=order_data.qty,
+                status="accepted",
+            )
+
+    manager = StockOrderManager.__new__(StockOrderManager)
+    manager.trading_client = FakeTradingClient()
+    manager.settings = SimpleNamespace(
+        risk=SimpleNamespace(
+            min_risk_reward_ratio=1.5,
+            max_risk_per_trade_percent=1.0,
+            max_position_notional_pct=0.95,
+        )
+    )
+
+    entry = 756.54
+    result = manager.execute_stock_trade(
+        symbol="SPY",
+        side="long",
+        entry_price=entry,
+        stop_loss=755.809,
+        take_profit=757.6365,
+    )
+
+    assert result is not None
+    assert result.get("order_id") == "paper-order-2"
+    max_qty = int(200_000 * 0.95 / entry)
+    assert submitted["order_data"].qty <= max_qty
+    assert submitted["order_data"].qty < 1367

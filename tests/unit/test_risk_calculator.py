@@ -71,11 +71,34 @@ def test_calculate_risk_reward_ratio():
 
 def test_validate_risk_reward():
     """Test R:R validation."""
-    # Good R:R (2:1) - should pass with min 1.5
-    assert validate_risk_reward(100.0, 95.0, 110.0, 1.5) == True
-    
-    # Poor R:R (1:1) - should fail with min 1.5
-    assert validate_risk_reward(100.0, 95.0, 100.0, 1.5) == False
-    
-    # Exactly at minimum
-    assert validate_risk_reward(100.0, 95.0, 107.5, 1.5) == True  # R:R = 1.5
+    assert validate_risk_reward(100.0, 95.0, 110.0, 1.5) is True
+    assert validate_risk_reward(100.0, 95.0, 100.0, 1.5) is False
+    assert validate_risk_reward(100.0, 95.0, 107.5, 1.5) is True
+
+
+def test_validate_risk_reward_iwm_jun1_float_edge_case():
+    """Jun 1 IWM plan: exact 1.5 R:R must pass despite IEEE float noise."""
+    assert validate_risk_reward(287.4, 287.8635, 286.70475, 1.5) is True
+
+
+def test_calculate_position_size_capped_by_max_shares():
+    """Jun 1 SPY: risk sizing must respect buying-power cap."""
+    shares = calculate_position_size(
+        account_equity=100_000.0,
+        entry_price=756.54,
+        stop_loss_price=755.809,
+        max_risk_percent=1.0,
+        max_shares=264,
+    )
+    assert shares == 264
+
+
+def test_calculate_position_size_returns_zero_when_cap_is_zero():
+    shares = calculate_position_size(
+        account_equity=100_000.0,
+        entry_price=756.54,
+        stop_loss_price=755.809,
+        max_risk_percent=1.0,
+        max_shares=0,
+    )
+    assert shares == 0

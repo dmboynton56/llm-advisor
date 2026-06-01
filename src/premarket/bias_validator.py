@@ -4,7 +4,7 @@ from typing import Dict, Any, Optional, List
 from pathlib import Path
 import json
 
-from src.analysis.llm_client import LLMClient, create_llm_client
+from src.analysis.llm_client import LLMClient, create_llm_client, normalize_structured_content
 from src.core.config import Settings
 from src.premarket.bias_gatherer import PremarketContext, PremarketBias
 
@@ -72,7 +72,10 @@ def validate_biases_with_llm(
     
     try:
         response = llm_client.call_structured(prompt, schema)
-        return _parse_validation_response(response.content, premarket_context)
+        return _parse_validation_response(
+            normalize_structured_content(response.content),
+            premarket_context,
+        )
     except Exception as e:
         print(f"LLM bias validation failed: {e}")
         # Return neutral validations (agree with ML)

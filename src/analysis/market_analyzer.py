@@ -2,7 +2,7 @@
 from typing import Dict, Any
 from datetime import datetime
 
-from src.analysis.llm_client import LLMClient, create_llm_client
+from src.analysis.llm_client import LLMClient, create_llm_client, normalize_structured_content
 from src.live.state_manager import SymbolState
 from src.premarket.bias_gatherer import PremarketContext
 from config.thresholds import ThresholdMultiplier
@@ -61,7 +61,9 @@ class MarketAnalyzer:
         
         try:
             response = self.llm_client.call_structured(prompt, schema)
-            return self._parse_multiplier_response(response.content)
+            return self._parse_multiplier_response(
+                normalize_structured_content(response.content)
+            )
         except Exception as e:
             # Graceful degradation: return neutral multipliers
             print(f"LLM market analysis failed: {e}")

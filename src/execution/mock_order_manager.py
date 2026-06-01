@@ -45,7 +45,19 @@ class MockOrderManager:
     def get_account_equity(self) -> float:
         """Return current equity (updated by simulated trades)."""
         return self.current_equity
+
+    def get_buying_power(self) -> float:
+        """Simulated buying power for backtests (2x equity, paper-like)."""
+        return self.current_equity * 2.0
     
+    @staticmethod
+    def _round_price(price: float) -> float:
+        return round(float(price), 2)
+
+    @staticmethod
+    def _failure(error: str, **extra: Any) -> Dict[str, Any]:
+        return {"success": False, "error": error, **extra}
+
     def execute_stock_trade(
         self,
         symbol: str,
@@ -69,26 +81,39 @@ class MockOrderManager:
             qty: Optional quantity (if None, calculated from risk)
             
         Returns:
-            Order dict if successful, None otherwise
+            Order dict if successful; failure dict with ``error`` on reject
         """
-        # Validate risk:reward ratio
-        from src.execution.risk_calculator import validate_risk_reward
+        from src.execution.risk_calculator import (
+            validate_risk_reward,
+            calculate_position_size,
+            max_shares_for_buying_power,
+        )
+
+        stop_loss = self._round_price(stop_loss)
+        take_profit = self._round_price(take_profit)
+
         if not validate_risk_reward(entry_price, stop_loss, take_profit, 1.5):
-            return None
+            return self._failure("rr_below_min")
         
-        # Calculate position size if not provided
         if qty is None:
-            from src.execution.risk_calculator import calculate_position_size
+            bp_cap = max_shares_for_buying_power(
+                self.get_buying_power(),
+                entry_price,
+                0.95,
+            )
             qty = calculate_position_size(
                 account_equity=self.current_equity,
                 entry_price=entry_price,
                 stop_loss_price=stop_loss,
-                max_risk_percent=1.0,  # Default 1%
-                atr_5m=atr_5m
+                max_risk_percent=1.0,
+                atr_5m=atr_5m,
+                max_shares=bp_cap,
             )
+            if qty <= 0 and bp_cap <= 0:
+                return self._failure("insufficient_buying_power")
         
         if qty <= 0:
-            return None
+            return self._failure("invalid_qty")
         
         # Don't allow multiple positions in same symbol (simplified)
         if symbol in self.open_positions:

@@ -2,7 +2,7 @@
 from dataclasses import dataclass
 from typing import Optional
 
-from src.analysis.llm_client import LLMClient
+from src.analysis.llm_client import LLMClient, normalize_structured_content
 from src.live.threshold_evaluator import SignalEvent
 from src.live.state_manager import SymbolState
 from src.premarket.bias_gatherer import PremarketContext
@@ -113,11 +113,7 @@ Should we execute this trade? Analyze risk/reward and return JSON with:
     
     try:
         response = llm_client.call_structured(prompt, schema)
-        content = response.content
-        if not isinstance(content, dict):
-            raise TypeError(
-                f"Expected dict from LLM, got {type(content).__name__}"
-            )
+        content = normalize_structured_content(response.content)
         return TradeValidation(
             should_execute=bool(content.get("should_execute", False)),
             confidence=int(content.get("confidence", 0)),

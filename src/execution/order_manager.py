@@ -17,11 +17,26 @@ if str(PROJECT_ROOT) not in sys.path:
 from alpaca.trading.client import TradingClient
 from alpaca.trading.requests import MarketOrderRequest, TakeProfitRequest, StopLossRequest
 from alpaca.trading.enums import OrderSide, TimeInForce, OrderClass
-from src.execution.risk_calculator import calculate_position_size, validate_risk_reward
+from src.execution.risk_calculator import (
+    calculate_position_size,
+    validate_risk_reward,
+    max_shares_for_buying_power,
+)
 from src.core.config import Settings
 from src.utils.env_sanitize import getenv_strip
 
 load_dotenv()
+
+
+def is_execution_success(result: Optional[Dict[str, Any]]) -> bool:
+    """True when order_manager returned a filled/submitted order payload."""
+    return bool(result and result.get("order_id") and not result.get("error"))
+
+
+def execution_failure_reason(result: Optional[Dict[str, Any]]) -> str:
+    if not result:
+        return "order_manager_unavailable"
+    return str(result.get("error") or "unknown")
 
 
 class StockOrderManager:
@@ -53,6 +68,11 @@ class StockOrderManager:
         """Get current account equity."""
         account = self.trading_client.get_account()
         return float(account.equity)
+
+    def get_buying_power(self) -> float:
+        """Get current account buying power."""
+        account = self.trading_client.get_account()
+        return float(account.buying_power)
     
     def close_position(self, symbol: str) -> bool:
         """Close an open position via Alpaca (market close)."""
@@ -68,6 +88,10 @@ class StockOrderManager:
     def _round_price(price: float) -> float:
         """Alpaca equity orders require penny increments."""
         return round(float(price), 2)
+
+    @staticmethod
+    def _failure(error: str, **extra: Any) -> Dict[str, Any]:
+        return {"success": False, "error": error, **extra}
 
     def _normalize_side(self, side: str) -> str:
         """Normalize trade side values (e.g., 'long' -> 'buy')."""
@@ -93,51 +117,53 @@ class StockOrderManager:
         """
         Execute stock trade via bracket order.
         
-        Args:
-            symbol: Stock symbol
-            side: "buy" or "sell"
-            entry_price: Entry price (used for limit orders, but we'll use market)
-            stop_loss: Stop loss price
-            take_profit: Take profit limit price
-            atr_5m: Optional 5-minute ATR for position sizing
-            qty: Optional quantity (if None, calculated from risk)
-            
         Returns:
-            Order dict if successful, None otherwise
+            Order dict on success; failure dict with ``error`` key on reject
         """
-        # Validate risk:reward ratio
+        stop_loss = self._round_price(stop_loss)
+        take_profit = self._round_price(take_profit)
+
         if not validate_risk_reward(
             entry_price=entry_price,
             stop_loss_price=stop_loss,
             take_profit_price=take_profit,
             min_rr_ratio=self.settings.risk.min_risk_reward_ratio
         ):
-            print(f"  ! Trade rejected: Risk:reward ratio below minimum ({self.settings.risk.min_risk_reward_ratio})")
-            return None
-        
-        # Calculate position size if not provided
+            print(
+                f"  ! Trade rejected: Risk:reward ratio below minimum "
+                f"({self.settings.risk.min_risk_reward_ratio})"
+            )
+            return self._failure("rr_below_min")
+
         if qty is None:
             equity = self.get_account_equity()
+            buying_power = self.get_buying_power()
+            bp_cap = max_shares_for_buying_power(
+                buying_power,
+                entry_price,
+                self.settings.risk.max_position_notional_pct,
+            )
             qty = calculate_position_size(
                 account_equity=equity,
                 entry_price=entry_price,
                 stop_loss_price=stop_loss,
                 max_risk_percent=self.settings.risk.max_risk_per_trade_percent,
-                atr_5m=atr_5m
+                atr_5m=atr_5m,
+                max_shares=bp_cap,
             )
+            if qty <= 0 and bp_cap <= 0:
+                print(
+                    "  ! Trade rejected: insufficient buying power for minimum risk-sized position"
+                )
+                return self._failure("insufficient_buying_power")
         
         if qty <= 0:
             print(f"  ! Trade rejected: Invalid position size ({qty})")
-            return None
+            return self._failure("invalid_qty", qty=qty)
         
-        # Normalize and determine order side
         normalized_side = self._normalize_side(side)
         order_side = OrderSide.BUY if normalized_side == "buy" else OrderSide.SELL
-
-        stop_loss = self._round_price(stop_loss)
-        take_profit = self._round_price(take_profit)
         
-        # Construct bracket order using MarketOrderRequest
         bracket_order = MarketOrderRequest(
             symbol=symbol,
             qty=qty,
@@ -148,7 +174,6 @@ class StockOrderManager:
             take_profit=TakeProfitRequest(limit_price=take_profit)
         )
         
-        # Submit order
         try:
             print(f"  > Submitting {normalized_side.upper()} bracket order for {qty} shares of {symbol}...")
             print(f"    Entry: Market (target: ${entry_price:.2f})")
@@ -178,7 +203,10 @@ class StockOrderManager:
         except Exception as e:
             print(f"  --- TRADE FAILED TO EXECUTE ---")
             print(f"  ! ERROR: {e}")
-            return None
+            err_text = str(e).lower()
+            if "insufficient buying power" in err_text:
+                return self._failure("insufficient_buying_power", detail=str(e))
+            return self._failure("alpaca_submit_failed", detail=str(e))
     
     def cancel_order(self, order_id: str) -> bool:
         """Cancel an order."""
@@ -219,17 +247,12 @@ def execute_trade_from_signal(
     """
     Execute trade from signal event and symbol state.
     
-    Args:
-        signal: SignalEvent
-        state: SymbolState with trade plan
-        order_manager: StockOrderManager instance
-        
     Returns:
-        Order dict if successful, None otherwise
+        Order dict on success; failure dict with ``error`` on reject
     """
     if not state.trade:
         print(f"  ! No trade plan in state for {signal.symbol}")
-        return None
+        return StockOrderManager._failure("no_trade_plan")
     
     return order_manager.execute_stock_trade(
         symbol=signal.symbol,

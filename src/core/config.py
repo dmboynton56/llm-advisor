@@ -19,6 +19,7 @@ class TradingSettings(BaseModel):
 class RiskSettings(BaseModel):
     max_risk_per_trade_percent: float = Field(default=1.0, ge=0.1, le=5.0)
     min_risk_reward_ratio: float = Field(default=1.5, ge=1.0)
+    max_position_notional_pct: float = Field(default=0.95, ge=0.1, le=1.0)
 
 
 class LLMSettings(BaseModel):
@@ -48,6 +49,7 @@ class Settings(BaseModel):
             risk=RiskSettings(
                 max_risk_per_trade_percent=float(os.getenv("MAX_RISK_PER_TRADE_PERCENT", "1.0")),
                 min_risk_reward_ratio=float(os.getenv("MIN_RISK_REWARD_RATIO", "1.5")),
+                max_position_notional_pct=float(os.getenv("MAX_POSITION_NOTIONAL_PCT", "0.95")),
             ),
             llm=LLMSettings(
                 provider=os.getenv("LLM_PROVIDER", "google"),

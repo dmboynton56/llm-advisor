@@ -1,12 +1,33 @@
 """LLM client abstraction for OpenAI, Anthropic, and future Bedrock."""
 from dataclasses import dataclass
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, List
 import json
 import os
 import time
 from dotenv import load_dotenv
 
 load_dotenv()
+
+
+def normalize_structured_content(raw: Any) -> Dict[str, Any]:
+    """Coerce provider JSON payloads into a dict for schema-shaped responses.
+
+    Gemini occasionally returns a one-element JSON array (``[{...}]``) even when
+    ``response_mime_type`` is ``application/json`` and the prompt asks for an object.
+    """
+    if isinstance(raw, dict):
+        return raw
+    if isinstance(raw, list):
+        dict_items: List[Dict[str, Any]] = [item for item in raw if isinstance(item, dict)]
+        if not dict_items:
+            raise TypeError(
+                f"Expected dict from LLM, got list with no object elements (len={len(raw)})"
+            )
+        if len(dict_items) > 1:
+            # Prefer the first complete object; callers expect a single schema instance.
+            pass
+        return dict_items[0]
+    raise TypeError(f"Expected dict from LLM, got {type(raw).__name__}")
 
 
 @dataclass
@@ -150,7 +171,7 @@ class GoogleLLMClient(LLMClient):
             )
             
             latency_ms = (time.time() - start_time) * 1000
-            content = json.loads(response.text)
+            content = normalize_structured_content(json.loads(response.text))
             
             # Google's API usage attributes vary, simplified for now
             return LLMResponse(

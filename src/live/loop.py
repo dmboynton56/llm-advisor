@@ -37,6 +37,7 @@ from src.live.threshold_evaluator import evaluate_thresholds, SignalEvent
 from src.analysis.llm_client import create_llm_client
 from src.analysis.market_analyzer import MarketAnalyzer
 from src.analysis.trade_validator import validate_trade_with_llm
+from src.execution.order_manager import is_execution_success, execution_failure_reason
 from config.thresholds import STDEVThresholds
 from src.utils.notifications import send_discord_alert, send_trade_alert
 from src.utils.daily_news_paths import (
@@ -527,13 +528,18 @@ def execute_trade(
 
     if order_manager:
         try:
-            from src.execution.order_manager import execute_trade_from_signal
+            from src.execution.order_manager import (
+                execute_trade_from_signal,
+                is_execution_success,
+                execution_failure_reason,
+            )
 
             result = execute_trade_from_signal(signal, state, order_manager)
-            if result:
+            if is_execution_success(result):
                 logger.info(f"Trade executed: Order ID {result.get('order_id')}")
             else:
-                logger.warning(f"Trade execution failed for {signal.symbol}")
+                reason = execution_failure_reason(result)
+                logger.warning(f"Trade execution failed for {signal.symbol}: {reason}")
             return result
         except Exception as e:
             logger.error(f"Trade execution error: {e}")
@@ -1710,7 +1716,7 @@ def main():
                         )
                         result = execute_trade_from_signal(signal, state, order_manager)
                         
-                        if result:
+                        if is_execution_success(result):
                             logger.info(f"TRADE EXECUTED SUCCESSFULLY for {symbol}: Order ID {result.get('order_id', 'N/A')}")
                             append_order_event(
                                 order_events_path,
@@ -1737,7 +1743,11 @@ def main():
                             state.trade = None
                             state.status = "idle"
                         else:
-                            logger.warning(f"TRADE EXECUTION FAILED for {symbol}: Attempt #{attempt_num} failed (risk/reward check, position sizing, or other reason)")
+                            fail_reason = execution_failure_reason(result)
+                            logger.warning(
+                                f"TRADE EXECUTION FAILED for {symbol}: "
+                                f"Attempt #{attempt_num} failed ({fail_reason})"
+                            )
                             append_order_event(
                                 order_events_path,
                                 "execution_failed",
@@ -1748,7 +1758,7 @@ def main():
                                 details={
                                     "attempt": attempt_num,
                                     "mode": "backtest",
-                                    "reason": "risk_reward_position_sizing_or_order_manager",
+                                    "reason": fail_reason,
                                 },
                             )
                     else:
@@ -1764,7 +1774,7 @@ def main():
                         )
                         result = execute_trade(signal, state, order_manager)
                         
-                        if result:
+                        if is_execution_success(result):
                             logger.info(f"TRADE EXECUTED SUCCESSFULLY for {symbol}: Order ID {result.get('order_id', 'N/A')}")
                             append_order_event(
                                 order_events_path,
@@ -1822,6 +1832,7 @@ def main():
                             state.trade = None
                             state.status = "idle"
                         else:
+                            fail_reason = execution_failure_reason(result)
                             if order_manager and hasattr(order_manager, 'get_open_positions'):
                                 try:
                                     open_positions = order_manager.get_open_positions()
@@ -1840,7 +1851,10 @@ def main():
                                         state.trade = None
                                         state.status = "idle"
                                     else:
-                                        logger.warning(f"TRADE EXECUTION FAILED for {symbol}: Attempt #{attempt_num} failed")
+                                        logger.warning(
+                                            f"TRADE EXECUTION FAILED for {symbol}: "
+                                            f"Attempt #{attempt_num} failed ({fail_reason})"
+                                        )
                                         append_order_event(
                                             order_events_path,
                                             "execution_failed",
@@ -1848,11 +1862,18 @@ def main():
                                             loop_count,
                                             signal=signal,
                                             state=state,
-                                            details={"attempt": attempt_num, "mode": "paper_live"},
+                                            details={
+                                                "attempt": attempt_num,
+                                                "mode": "paper_live",
+                                                "reason": fail_reason,
+                                            },
                                         )
                                 except Exception as e:
                                     logger.error(f"Error checking open positions for {symbol}: {e}")
-                                    logger.warning(f"TRADE EXECUTION FAILED for {symbol}: Attempt #{attempt_num} failed")
+                                    logger.warning(
+                                        f"TRADE EXECUTION FAILED for {symbol}: "
+                                        f"Attempt #{attempt_num} failed ({fail_reason})"
+                                    )
                                     append_order_event(
                                         order_events_path,
                                         "execution_failed",
@@ -1860,10 +1881,18 @@ def main():
                                         loop_count,
                                         signal=signal,
                                         state=state,
-                                        details={"attempt": attempt_num, "mode": "paper_live", "error": str(e)},
+                                        details={
+                                            "attempt": attempt_num,
+                                            "mode": "paper_live",
+                                            "reason": fail_reason,
+                                            "error": str(e),
+                                        },
                                     )
                             else:
-                                logger.warning(f"TRADE EXECUTION FAILED for {symbol}: Attempt #{attempt_num} failed")
+                                logger.warning(
+                                    f"TRADE EXECUTION FAILED for {symbol}: "
+                                    f"Attempt #{attempt_num} failed ({fail_reason})"
+                                )
                                 append_order_event(
                                     order_events_path,
                                     "execution_failed",
@@ -1871,7 +1900,11 @@ def main():
                                     loop_count,
                                     signal=signal,
                                     state=state,
-                                    details={"attempt": attempt_num, "mode": "paper_live", "reason": "order_manager_unavailable"},
+                                    details={
+                                        "attempt": attempt_num,
+                                        "mode": "paper_live",
+                                        "reason": fail_reason,
+                                    },
                                 )
             
             # Check for position exits (stop loss/take profit) - for mock manager
