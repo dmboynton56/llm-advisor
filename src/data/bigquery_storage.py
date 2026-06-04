@@ -181,6 +181,9 @@ class BigQueryStorage(StorageAdapter):
             bigquery.SchemaField("id", "INT64", mode="REQUIRED"),
             bigquery.SchemaField("trade_id", "STRING", mode="NULLABLE"),
             bigquery.SchemaField("symbol", "STRING", mode="REQUIRED"),
+            bigquery.SchemaField("asset_class", "STRING", mode="NULLABLE"),
+            bigquery.SchemaField("underlying_symbol", "STRING", mode="NULLABLE"),
+            bigquery.SchemaField("option_symbol", "STRING", mode="NULLABLE"),
             bigquery.SchemaField("side", "STRING", mode="REQUIRED"),
             bigquery.SchemaField("entry_price", "NUMERIC", mode="NULLABLE"),
             bigquery.SchemaField("stop_loss", "NUMERIC", mode="NULLABLE"),
@@ -192,11 +195,21 @@ class BigQueryStorage(StorageAdapter):
             bigquery.SchemaField("exit_price", "NUMERIC", mode="NULLABLE"),
             bigquery.SchemaField("pnl", "NUMERIC", mode="NULLABLE"),
             bigquery.SchemaField("exit_reason", "STRING", mode="NULLABLE"),
+            bigquery.SchemaField("option_metadata", "STRING", mode="NULLABLE"),
             bigquery.SchemaField("created_at", "TIMESTAMP", mode="REQUIRED"),
         ]
         table = bigquery.Table(table_id, schema=schema)
         table.clustering_fields = ["symbol", "entry_time"]
         self.client.create_table(table, exists_ok=True)
+        self._ensure_table_fields(
+            table_id,
+            [
+                bigquery.SchemaField("asset_class", "STRING", mode="NULLABLE"),
+                bigquery.SchemaField("underlying_symbol", "STRING", mode="NULLABLE"),
+                bigquery.SchemaField("option_symbol", "STRING", mode="NULLABLE"),
+                bigquery.SchemaField("option_metadata", "STRING", mode="NULLABLE"),
+            ],
+        )
     
     def _create_table_positions(self):
         """Create positions table."""
@@ -205,6 +218,9 @@ class BigQueryStorage(StorageAdapter):
             bigquery.SchemaField("id", "INT64", mode="REQUIRED"),
             bigquery.SchemaField("trade_id", "INT64", mode="NULLABLE"),
             bigquery.SchemaField("symbol", "STRING", mode="REQUIRED"),
+            bigquery.SchemaField("asset_class", "STRING", mode="NULLABLE"),
+            bigquery.SchemaField("underlying_symbol", "STRING", mode="NULLABLE"),
+            bigquery.SchemaField("option_symbol", "STRING", mode="NULLABLE"),
             bigquery.SchemaField("side", "STRING", mode="REQUIRED"),
             bigquery.SchemaField("entry_price", "NUMERIC", mode="NULLABLE"),
             bigquery.SchemaField("current_price", "NUMERIC", mode="NULLABLE"),
@@ -217,6 +233,27 @@ class BigQueryStorage(StorageAdapter):
         table = bigquery.Table(table_id, schema=schema)
         table.clustering_fields = ["symbol", "trade_id"]
         self.client.create_table(table, exists_ok=True)
+        self._ensure_table_fields(
+            table_id,
+            [
+                bigquery.SchemaField("asset_class", "STRING", mode="NULLABLE"),
+                bigquery.SchemaField("underlying_symbol", "STRING", mode="NULLABLE"),
+                bigquery.SchemaField("option_symbol", "STRING", mode="NULLABLE"),
+            ],
+        )
+
+    def _ensure_table_fields(self, table_id: str, fields: List[Any]) -> None:
+        """Add nullable fields to existing BigQuery tables."""
+        try:
+            table = self.client.get_table(table_id)
+            existing = {field.name for field in table.schema}
+            missing = [field for field in fields if field.name not in existing]
+            if not missing:
+                return
+            table.schema = list(table.schema) + missing
+            self.client.update_table(table, ["schema"])
+        except Exception as exc:
+            print(f"Warning: failed to ensure BigQuery schema fields for {table_id}: {exc}")
     
     def _get_next_id(self, table_name: str) -> int:
         """Get next ID for a table (BigQuery doesn't support auto-increment)."""
@@ -625,14 +662,22 @@ class BigQueryStorage(StorageAdapter):
         
         insert_query = f"""
         INSERT INTO `{table_id}`
-        (id, trade_id, symbol, side, entry_price, stop_loss, take_profit, qty, status, entry_time, exit_time, exit_price, pnl, exit_reason, created_at)
-        VALUES (@id, @trade_id, @symbol, @side, @entry_price, @stop_loss, @take_profit, @qty, @status, @entry_time, @exit_time, @exit_price, @pnl, @exit_reason, CURRENT_TIMESTAMP())
+        (id, trade_id, symbol, asset_class, underlying_symbol, option_symbol, side,
+         entry_price, stop_loss, take_profit, qty, status, entry_time, exit_time,
+         exit_price, pnl, exit_reason, option_metadata, created_at)
+        VALUES (@id, @trade_id, @symbol, @asset_class, @underlying_symbol, @option_symbol,
+                @side, @entry_price, @stop_loss, @take_profit, @qty, @status,
+                @entry_time, @exit_time, @exit_price, @pnl, @exit_reason,
+                @option_metadata, CURRENT_TIMESTAMP())
         """
         job_config = bigquery.QueryJobConfig(
             query_parameters=[
                 bigquery.ScalarQueryParameter("id", "INT64", next_id),
                 bigquery.ScalarQueryParameter("trade_id", "STRING", trade_id_str),
                 bigquery.ScalarQueryParameter("symbol", "STRING", trade.get("symbol", "")),
+                bigquery.ScalarQueryParameter("asset_class", "STRING", trade.get("asset_class", "stock")),
+                bigquery.ScalarQueryParameter("underlying_symbol", "STRING", trade.get("underlying_symbol")),
+                bigquery.ScalarQueryParameter("option_symbol", "STRING", trade.get("option_symbol")),
                 bigquery.ScalarQueryParameter("side", "STRING", trade.get("side", "")),
                 bigquery.ScalarQueryParameter("entry_price", "NUMERIC", float(trade.get("entry_price")) if trade.get("entry_price") is not None else None),
                 bigquery.ScalarQueryParameter("stop_loss", "NUMERIC", float(trade.get("stop_loss")) if trade.get("stop_loss") is not None else None),
@@ -644,6 +689,7 @@ class BigQueryStorage(StorageAdapter):
                 bigquery.ScalarQueryParameter("exit_price", "NUMERIC", float(trade.get("exit_price")) if trade.get("exit_price") is not None else None),
                 bigquery.ScalarQueryParameter("pnl", "NUMERIC", float(trade.get("pnl")) if trade.get("pnl") is not None else None),
                 bigquery.ScalarQueryParameter("exit_reason", "STRING", trade.get("exit_reason", "")),
+                bigquery.ScalarQueryParameter("option_metadata", "STRING", self._json_dumps(trade.get("option_metadata"))),
             ]
         )
         self.client.query(insert_query, job_config=job_config).result()
@@ -689,14 +735,21 @@ class BigQueryStorage(StorageAdapter):
             next_id = self._get_next_id("positions")
             insert_query = f"""
             INSERT INTO `{table_id}`
-            (id, trade_id, symbol, side, entry_price, current_price, stop_loss, take_profit, qty, unrealized_pnl, last_updated)
-            VALUES (@id, @trade_id, @symbol, @side, @entry_price, @current_price, @stop_loss, @take_profit, @qty, @unrealized_pnl, CURRENT_TIMESTAMP())
+            (id, trade_id, symbol, asset_class, underlying_symbol, option_symbol, side,
+             entry_price, current_price, stop_loss, take_profit, qty, unrealized_pnl,
+             last_updated)
+            VALUES (@id, @trade_id, @symbol, @asset_class, @underlying_symbol, @option_symbol,
+                    @side, @entry_price, @current_price, @stop_loss, @take_profit, @qty,
+                    @unrealized_pnl, CURRENT_TIMESTAMP())
             """
             job_config = bigquery.QueryJobConfig(
                 query_parameters=[
                     bigquery.ScalarQueryParameter("id", "INT64", next_id),
                     bigquery.ScalarQueryParameter("trade_id", "INT64", trade_id),
                     bigquery.ScalarQueryParameter("symbol", "STRING", position.get("symbol", "")),
+                    bigquery.ScalarQueryParameter("asset_class", "STRING", position.get("asset_class", "stock")),
+                    bigquery.ScalarQueryParameter("underlying_symbol", "STRING", position.get("underlying_symbol")),
+                    bigquery.ScalarQueryParameter("option_symbol", "STRING", position.get("option_symbol")),
                     bigquery.ScalarQueryParameter("side", "STRING", position.get("side", "")),
                     bigquery.ScalarQueryParameter("entry_price", "NUMERIC", float(position.get("entry_price")) if position.get("entry_price") is not None else None),
                     bigquery.ScalarQueryParameter("current_price", "NUMERIC", float(position.get("current_price")) if position.get("current_price") is not None else None),

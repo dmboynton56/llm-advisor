@@ -250,6 +250,9 @@ def execute_trade_from_signal(
     Returns:
         Order dict on success; failure dict with ``error`` on reject
     """
+    if hasattr(order_manager, "execute_signal_trade"):
+        return order_manager.execute_signal_trade(signal, state)
+
     if not state.trade:
         print(f"  ! No trade plan in state for {signal.symbol}")
         return StockOrderManager._failure("no_trade_plan")

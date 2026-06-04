@@ -1,0 +1,41 @@
+{
+  "mcp": {
+    "servers": {
+      "alpaca-readonly": {
+        "type": "stdio",
+        "command": "uvx",
+        "args": ["alpaca-mcp-server"],
+        "env": {
+          "ALPACA_API_KEY": "${input:alpacaPaperApiKey}",
+          "ALPACA_SECRET_KEY": "${input:alpacaPaperSecretKey}",
+          "ALPACA_PAPER_TRADE": "true",
+          "ALPACA_TOOLSETS": "account,assets,stock-data,options-data,news,corporate-actions"
+        }
+      },
+      "alpaca-paper-trading": {
+        "type": "stdio",
+        "command": "uvx",
+        "args": ["alpaca-mcp-server"],
+        "env": {
+          "ALPACA_API_KEY": "${input:alpacaPaperApiKey}",
+          "ALPACA_SECRET_KEY": "${input:alpacaPaperSecretKey}",
+          "ALPACA_PAPER_TRADE": "true",
+          "ALPACA_TOOLSETS": "account,assets,stock-data,options-data,news,corporate-actions,trading"
+        }
+      }
+    }
+  },
+  "inputs": [
+    {
+      "id": "alpacaPaperApiKey",
+      "type": "promptString",
+      "description": "Alpaca paper API key"
+    },
+    {
+      "id": "alpacaPaperSecretKey",
+      "type": "promptString",
+      "description": "Alpaca paper secret key",
+      "password": true
+    }
+  ]
+}

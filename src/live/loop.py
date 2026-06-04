@@ -472,10 +472,19 @@ def build_live_session_summary(
 
     trades_out: List[Dict[str, Any]] = []
     for r in rows:
+        option_metadata = r.get("option_metadata")
+        if isinstance(option_metadata, str) and option_metadata:
+            try:
+                option_metadata = json.loads(option_metadata)
+            except json.JSONDecodeError:
+                pass
         trades_out.append(
             {
                 "order_id": r.get("trade_id"),
                 "symbol": r.get("symbol"),
+                "asset_class": r.get("asset_class") or "stock",
+                "underlying_symbol": r.get("underlying_symbol"),
+                "option_symbol": r.get("option_symbol"),
                 "side": r.get("side"),
                 "qty": r.get("qty"),
                 "entry_price": _f(r.get("entry_price")),
@@ -487,6 +496,7 @@ def build_live_session_summary(
                 "exit_reason": r.get("exit_reason"),
                 "pnl": _f(r.get("pnl")),
                 "status": r.get("status"),
+                "option_metadata": option_metadata,
             }
         )
 
@@ -548,11 +558,32 @@ def execute_trade(
     return None
 
 
-def update_positions(trade_tracker: Optional[Any] = None) -> None:
+def update_positions(
+    trade_tracker: Optional[Any] = None,
+    *,
+    current_utc: Optional[datetime] = None,
+    force_close_options: bool = False,
+    force_close_reason: str = "option_forced_exit",
+    order_events_path: Optional[Path] = None,
+    loop_count: int = 0,
+) -> None:
     """Update open positions via trade tracker."""
     if trade_tracker:
         try:
-            positions = trade_tracker.update_positions()
+            positions = trade_tracker.update_positions(
+                now=current_utc,
+                force_close_options=force_close_options,
+                force_close_reason=force_close_reason,
+            )
+            if order_events_path and hasattr(trade_tracker, "pop_exit_events"):
+                for event in trade_tracker.pop_exit_events():
+                    append_order_event(
+                        order_events_path,
+                        event.get("event_type", "option_exit_event"),
+                        event.get("symbol", "UNKNOWN"),
+                        loop_count,
+                        details=event.get("details", {}),
+                    )
             if positions:
                 total_pl = trade_tracker.calculate_total_unrealized_pl()
                 logger.debug(f"Open positions: {len(positions)}, Total unrealized P/L: ${total_pl:.2f}")
@@ -824,7 +855,17 @@ def reconcile_positions_with_alpaca(
             )
 
         if trade_tracker and trade_pk is not None:
-            trade_tracker.register_open_trade(symbol, None, int(trade_pk))
+            trade_tracker.register_open_trade(
+                symbol,
+                None,
+                int(trade_pk),
+                metadata={
+                    "asset_class": alpaca_pos.get("asset_class") or bq_by_symbol.get(symbol, {}).get("asset_class"),
+                    "underlying_symbol": bq_by_symbol.get(symbol, {}).get("underlying_symbol"),
+                    "option_symbol": alpaca_pos.get("option_symbol") or bq_by_symbol.get(symbol, {}).get("option_symbol"),
+                    "opened_at": bq_by_symbol.get(symbol, {}).get("entry_time") or datetime.now(timezone.utc),
+                },
+            )
         reconciled.append({
             **alpaca_pos,
             "entry_price": entry_px,
@@ -1160,14 +1201,39 @@ def main():
         logger.info("Mock order manager initialized for backtesting")
     else:
         # Use real order manager for live trading
+        paper_trading = os.getenv("ALPACA_PAPER_TRADING", "true").lower() == "true"
+        instrument = settings.trading.instrument.lower()
+        if instrument == "options" and settings.options.paper_only and not paper_trading:
+            raise RuntimeError("Options-first engine is paper-only; set ALPACA_PAPER_TRADING=true")
         try:
-            from src.execution.order_manager import StockOrderManager
             from src.execution.trade_tracker import TradeTracker
-            
-            paper_trading = os.getenv("ALPACA_PAPER_TRADING", "true").lower() == "true"
-            order_manager = StockOrderManager(paper=paper_trading)
-            trade_tracker = TradeTracker(order_manager, storage=storage if args.use_db else None)
-            logger.info(f"Order manager initialized (paper trading: {paper_trading})")
+
+            if instrument == "options":
+                from src.execution.options_order_manager import OptionsOrderManager
+
+                order_manager = OptionsOrderManager(paper=paper_trading, settings=settings)
+                logger.info(
+                    "Options order manager initialized (paper trading: %s, strategy: %s)",
+                    paper_trading,
+                    settings.options.strategy_type,
+                )
+            elif instrument in ("stocks", "stock", "equities", "equity"):
+                if not settings.trading.allow_stock_fallback:
+                    raise RuntimeError(
+                        "Stock execution requested but ALLOW_STOCK_FALLBACK=false; "
+                        "set TRADING_INSTRUMENT=options or explicitly allow stock fallback"
+                    )
+                from src.execution.order_manager import StockOrderManager
+
+                order_manager = StockOrderManager(paper=paper_trading)
+                logger.info(f"Stock order manager initialized (paper trading: {paper_trading})")
+            else:
+                raise RuntimeError(f"Unsupported TRADING_INSTRUMENT: {settings.trading.instrument}")
+            trade_tracker = TradeTracker(
+                order_manager,
+                storage=storage if args.use_db else None,
+                options_settings=settings.options if instrument == "options" else None,
+            )
         except Exception as e:
             logger.warning(f"Order manager initialization failed: {e}. Running in dry-run mode.")
 
@@ -1181,7 +1247,12 @@ def main():
             latest_prices=latest_seed_prices,
         )
         sync_state_with_positions(states, positions=reconciled_positions)
-        update_positions(trade_tracker)
+        update_positions(
+            trade_tracker,
+            current_utc=datetime.now(timezone.utc),
+            order_events_path=order_events_path,
+            loop_count=0,
+        )
     
     # Trading window
     run_end_et = et_dt(trading_date, settings.trading.trading_window_end)
@@ -1282,7 +1353,14 @@ def main():
         
         # After the entry window closes, keep monitoring real positions until flat or EOD.
         if not is_backtest and current_et > run_end_et:
-            update_positions(trade_tracker)
+            update_positions(
+                trade_tracker,
+                current_utc=current_utc,
+                force_close_options=settings.options.close_at_entry_window_end,
+                force_close_reason="option_entry_window_close",
+                order_events_path=order_events_path,
+                loop_count=loop_count,
+            )
             open_n = live_open_position_count(order_manager)
             if open_n <= 0:
                 logger.info("Entry window closed and Alpaca is flat. Trading session complete.")
@@ -1792,6 +1870,27 @@ def main():
                                 setup=signal.setup_type
                             )
                             oid = str(result.get("order_id", ""))
+                            execution_symbol = str(
+                                result.get("option_symbol")
+                                or result.get("symbol")
+                                or symbol
+                            )
+                            is_option_order = str(result.get("asset_class", "")).lower() == "option"
+                            try:
+                                persisted_entry_price = (
+                                    float(result.get("limit_price"))
+                                    if is_option_order and result.get("limit_price") is not None
+                                    else float(state.trade.entry_price)
+                                )
+                            except (TypeError, ValueError):
+                                persisted_entry_price = state.trade.entry_price
+                            persisted_current_price = persisted_entry_price if is_option_order else latest_price
+                            persisted_side = str(result.get("side") or state.trade.side)
+                            persisted_stop = None if is_option_order else state.trade.sl_price
+                            persisted_take_profit = None if is_option_order else state.trade.tp_price
+                            option_plan = result.get("option_plan") if is_option_order else None
+                            underlying_symbol = result.get("underlying_symbol") if is_option_order else symbol
+                            option_symbol = result.get("option_symbol") if is_option_order else None
                             qty_raw = result.get("qty", 0)
                             try:
                                 qty_i = int(float(qty_raw))
@@ -1801,11 +1900,14 @@ def main():
                                 try:
                                     trade_pk = storage.save_trade({
                                         "trade_id": oid,
-                                        "symbol": symbol,
-                                        "side": state.trade.side,
-                                        "entry_price": state.trade.entry_price,
-                                        "stop_loss": state.trade.sl_price,
-                                        "take_profit": state.trade.tp_price,
+                                        "symbol": execution_symbol,
+                                        "asset_class": "option" if is_option_order else "stock",
+                                        "underlying_symbol": underlying_symbol,
+                                        "option_symbol": option_symbol,
+                                        "side": persisted_side,
+                                        "entry_price": persisted_entry_price,
+                                        "stop_loss": persisted_stop,
+                                        "take_profit": persisted_take_profit,
                                         "qty": qty_i,
                                         "status": "open",
                                         "entry_time": current_utc,
@@ -1813,20 +1915,36 @@ def main():
                                         "exit_price": None,
                                         "pnl": None,
                                         "exit_reason": "",
+                                        "option_metadata": option_plan,
                                     })
                                     storage.update_position({
                                         "trade_id": trade_pk,
-                                        "symbol": symbol,
-                                        "side": state.trade.side,
-                                        "entry_price": state.trade.entry_price,
-                                        "current_price": latest_price,
-                                        "stop_loss": state.trade.sl_price,
-                                        "take_profit": state.trade.tp_price,
+                                        "symbol": execution_symbol,
+                                        "asset_class": "option" if is_option_order else "stock",
+                                        "underlying_symbol": underlying_symbol,
+                                        "option_symbol": option_symbol,
+                                        "side": persisted_side,
+                                        "entry_price": persisted_entry_price,
+                                        "current_price": persisted_current_price,
+                                        "stop_loss": persisted_stop,
+                                        "take_profit": persisted_take_profit,
                                         "qty": qty_i,
                                         "unrealized_pnl": 0.0,
                                     })
                                     if trade_tracker:
-                                        trade_tracker.register_open_trade(symbol, oid, trade_pk)
+                                        trade_tracker.register_open_trade(
+                                            execution_symbol,
+                                            oid,
+                                            trade_pk,
+                                            metadata={
+                                                "asset_class": "option" if is_option_order else "stock",
+                                                "underlying_symbol": underlying_symbol,
+                                                "option_symbol": option_symbol,
+                                                "opened_at": current_utc,
+                                                "entry_price": persisted_entry_price,
+                                                "option_plan": option_plan,
+                                            },
+                                        )
                                 except Exception as e:
                                     logger.error(f"Failed to persist trade/position: {e}")
                             state.trade = None
@@ -1918,7 +2036,12 @@ def main():
             
             # Monitor positions
             if not is_backtest:
-                update_positions(trade_tracker)
+                update_positions(
+                    trade_tracker,
+                    current_utc=current_utc,
+                    order_events_path=order_events_path,
+                    loop_count=loop_count,
+                )
             
             # Log tick
             label_time = sim_time_et if is_backtest else current_et

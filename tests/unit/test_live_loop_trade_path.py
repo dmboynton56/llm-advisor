@@ -116,6 +116,54 @@ def test_build_live_session_summary_from_sqlite(tmp_path: Path) -> None:
     assert len(summary["trades"]) >= 1
 
 
+def test_build_live_session_summary_includes_option_metadata(tmp_path: Path) -> None:
+    db_path = tmp_path / "options.db"
+    storage = Storage.create(env="dev", db_path=str(db_path))
+    now = datetime(2026, 5, 20, 14, 30, tzinfo=timezone.utc)
+    option_plan = {
+        "underlying_symbol": "SPY",
+        "option_symbol": "SPY260116C00500000",
+        "contract_type": "call",
+        "delta": 0.45,
+        "bid_ask_spread_pct": 0.05,
+    }
+    storage.save_trade(
+        {
+            "trade_id": "opt-1",
+            "symbol": "SPY260116C00500000",
+            "asset_class": "option",
+            "underlying_symbol": "SPY",
+            "option_symbol": "SPY260116C00500000",
+            "side": "buy",
+            "entry_price": 2.05,
+            "stop_loss": None,
+            "take_profit": None,
+            "qty": 1,
+            "status": "open",
+            "entry_time": now,
+            "exit_time": None,
+            "exit_price": None,
+            "pnl": None,
+            "exit_reason": "",
+            "option_metadata": option_plan,
+        }
+    )
+
+    summary = build_live_session_summary(
+        storage=storage,
+        date_str="2026-05-20",
+        loop_count=10,
+        session_end_reason="session_complete",
+        order_manager=None,
+    )
+
+    trade = next(t for t in summary["trades"] if t["order_id"] == "opt-1")
+    assert trade["asset_class"] == "option"
+    assert trade["underlying_symbol"] == "SPY"
+    assert trade["option_symbol"] == "SPY260116C00500000"
+    assert trade["option_metadata"]["delta"] == 0.45
+
+
 def test_write_live_session_summary_degrades_when_storage_query_fails(tmp_path: Path) -> None:
     class BrokenStorage:
         def get_trades(self, *args, **kwargs):

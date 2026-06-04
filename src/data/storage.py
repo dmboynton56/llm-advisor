@@ -219,10 +219,36 @@ class SQLiteStorage(StorageAdapter):
                         print(f"Error executing index statement {i+1}/{len(index_statements)}")
                         print(f"Statement: {statement[:150]}...")
                         raise
+
+            self._ensure_sqlite_option_columns(conn)
             
             conn.commit()
         finally:
             conn.close()
+
+    def _ensure_sqlite_option_columns(self, conn) -> None:
+        """Add option telemetry columns for existing local databases."""
+        expected = {
+            "trades": {
+                "asset_class": "TEXT",
+                "underlying_symbol": "TEXT",
+                "option_symbol": "TEXT",
+                "option_metadata": "JSON",
+            },
+            "positions": {
+                "asset_class": "TEXT",
+                "underlying_symbol": "TEXT",
+                "option_symbol": "TEXT",
+            },
+        }
+        for table, columns in expected.items():
+            existing = {
+                row[1]
+                for row in conn.execute(f"PRAGMA table_info({table})").fetchall()
+            }
+            for column, column_type in columns.items():
+                if column not in existing:
+                    conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {column_type}")
     
     def _json_dumps(self, data: Any) -> str:
         """Convert data to JSON string."""
@@ -439,13 +465,17 @@ class SQLiteStorage(StorageAdapter):
             cursor = conn.execute(
                 """
                 INSERT INTO trades 
-                (trade_id, symbol, side, entry_price, stop_loss, take_profit, qty, status, 
-                 entry_time, exit_time, exit_price, pnl, exit_reason)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                (trade_id, symbol, asset_class, underlying_symbol, option_symbol, side,
+                 entry_price, stop_loss, take_profit, qty, status, entry_time, exit_time,
+                 exit_price, pnl, exit_reason, option_metadata)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     trade.get("trade_id"),
                     trade.get("symbol", ""),
+                    trade.get("asset_class", "stock"),
+                    trade.get("underlying_symbol"),
+                    trade.get("option_symbol"),
                     trade.get("side", ""),
                     trade.get("entry_price"),
                     trade.get("stop_loss"),
@@ -461,6 +491,7 @@ class SQLiteStorage(StorageAdapter):
                     trade.get("exit_price"),
                     trade.get("pnl"),
                     trade.get("exit_reason", ""),
+                    self._json_dumps(trade.get("option_metadata")),
                 ),
             )
             conn.commit()
@@ -474,11 +505,15 @@ class SQLiteStorage(StorageAdapter):
         try:
             conn.execute("""
                 INSERT OR REPLACE INTO positions 
-                (trade_id, symbol, side, entry_price, current_price, stop_loss, take_profit, qty, unrealized_pnl)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                (trade_id, symbol, asset_class, underlying_symbol, option_symbol, side,
+                 entry_price, current_price, stop_loss, take_profit, qty, unrealized_pnl)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """, (
                 position.get("trade_id"),
                 position.get("symbol", ""),
+                position.get("asset_class", "stock"),
+                position.get("underlying_symbol"),
+                position.get("option_symbol"),
                 position.get("side", ""),
                 position.get("entry_price"),
                 position.get("current_price"),
@@ -793,9 +828,10 @@ class PostgreSQLStorage(StorageAdapter):
                 
                 cur.execute("""
                     INSERT INTO trades 
-                    (trade_id, symbol, side, entry_price, stop_loss, take_profit, qty, status, 
-                     entry_time, exit_time, exit_price, pnl, exit_reason)
-                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                    (trade_id, symbol, asset_class, underlying_symbol, option_symbol, side,
+                     entry_price, stop_loss, take_profit, qty, status, entry_time, exit_time,
+                     exit_price, pnl, exit_reason, option_metadata)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                     ON CONFLICT (trade_id) DO UPDATE SET
                         status = EXCLUDED.status,
                         exit_time = EXCLUDED.exit_time,
@@ -806,6 +842,9 @@ class PostgreSQLStorage(StorageAdapter):
                 """, (
                     trade.get("trade_id"),
                     trade.get("symbol", ""),
+                    trade.get("asset_class", "stock"),
+                    trade.get("underlying_symbol"),
+                    trade.get("option_symbol"),
                     trade.get("side", ""),
                     trade.get("entry_price"),
                     trade.get("stop_loss"),
@@ -816,7 +855,8 @@ class PostgreSQLStorage(StorageAdapter):
                     exit_time,
                     trade.get("exit_price"),
                     trade.get("pnl"),
-                    trade.get("exit_reason", "")
+                    trade.get("exit_reason", ""),
+                    json.dumps(trade.get("option_metadata")) if trade.get("option_metadata") is not None else None,
                 ))
                 return cur.fetchone()[0]
     
@@ -826,8 +866,9 @@ class PostgreSQLStorage(StorageAdapter):
             with conn.cursor() as cur:
                 cur.execute("""
                     INSERT INTO positions 
-                    (trade_id, symbol, side, entry_price, current_price, stop_loss, take_profit, qty, unrealized_pnl)
-                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+                    (trade_id, symbol, asset_class, underlying_symbol, option_symbol, side,
+                     entry_price, current_price, stop_loss, take_profit, qty, unrealized_pnl)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                     ON CONFLICT (trade_id) DO UPDATE SET
                         current_price = EXCLUDED.current_price,
                         unrealized_pnl = EXCLUDED.unrealized_pnl,
@@ -835,6 +876,9 @@ class PostgreSQLStorage(StorageAdapter):
                 """, (
                     position.get("trade_id"),
                     position.get("symbol", ""),
+                    position.get("asset_class", "stock"),
+                    position.get("underlying_symbol"),
+                    position.get("option_symbol"),
                     position.get("side", ""),
                     position.get("entry_price"),
                     position.get("current_price"),

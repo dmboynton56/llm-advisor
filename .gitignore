@@ -1,4 +1,5 @@
 .env
+.vscode/mcp.json
 LLM-ADVISOR.txt
 data/daily_news/
 

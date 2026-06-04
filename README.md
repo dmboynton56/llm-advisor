@@ -9,7 +9,9 @@ This project implements a hybrid trading approach focused on Standard Deviation 
 1. Premarket Analysis: Gathers daily bias and news context using ML models and news scrapers to establish market sentiment.
 2. Technical Execution: Uses a live loop to compute real-time technical features, including z-scores, mu, and sigma, to identify Mean Reversion (MR) and Trend Continuation (TC) opportunities.
 3. LLM-Powered Intelligence: Integrates Google Gemini 3 Flash to perform periodic market analysis every 15 minutes, adjusting technical thresholds via multipliers based on qualitative market context.
-4. Automated Risk Management: Executes bracket orders via Alpaca API with autonomously calculated risk parameters, stop losses, and take profit levels.
+4. Automated Risk Management: Converts stock-derived STDEV signals into
+   paper-only options trades by default, with stock bracket orders available
+   only when explicitly enabled.
 
 ## Infrastructure
 
@@ -21,7 +23,8 @@ The system is built for reliable, automated daily execution:
 - Scheduler: Google Cloud Scheduler dispatches the Premarket and Live Loop
   workflows via `workflow_dispatch`.
 - AI Engine: Google Gemini 3 Flash (via Google Generative AI API).
-- Broker: Alpaca Markets (supports paper and live trading).
+- Broker: Alpaca Markets (options-first paper trading by default; stock
+  execution remains opt-in).
 - Notifications: Discord Webhook integration for real-time trade alerts and heartbeat monitoring.
 
 ## Current public state
@@ -76,6 +79,22 @@ Set up your environment variables in a .env file:
 ALPACA_API_KEY=your_key
 ALPACA_SECRET_KEY=your_secret
 ALPACA_PAPER_TRADING=true
+TRADING_INSTRUMENT=options
+OPTIONS_PAPER_ONLY=true
+ALLOW_STOCK_FALLBACK=false
+OPTIONS_STRATEGY_TYPE=single_long
+OPTION_DTE_MIN=7
+OPTION_DTE_MAX=14
+OPTION_DELTA_MIN=0.35
+OPTION_DELTA_MAX=0.55
+MAX_OPTION_PREMIUM_PER_TRADE=200
+MAX_OPTION_BID_ASK_SPREAD_PCT=0.15
+MIN_OPTION_OPEN_INTEREST=100
+OPTION_STRIKE_WINDOW_PCT=0.10
+OPTION_PROFIT_TARGET_PCT=0.25
+OPTION_STOP_LOSS_PCT=0.35
+OPTION_MAX_HOLD_MINUTES=30
+OPTION_CLOSE_AT_ENTRY_WINDOW_END=true
 GOOGLE_API_KEY=your_gemini_key
 GCP_PROJECT_ID=your_gcp_project
 GCP_DATASET_ID=trading_signals
@@ -120,10 +139,28 @@ To refresh the portfolio artifact (`personal-portfolio/public/data/llm_advisor_b
 ### Execution Modes
 
 - **Dry Run**: Default behavior when credentials are missing or not explicitly set to trade. Signals are logged but no orders are placed.
-- **Paper Trading**: Set `ALPACA_PAPER_TRADING=true` in your environment.
-- **Live Trading**: Set `ALPACA_PAPER_TRADING=false`. Use with extreme caution.
+- **Options Paper Trading**: Default live-loop execution path. Set
+  `TRADING_INSTRUMENT=options`, `OPTIONS_PAPER_ONLY=true`, and
+  `ALPACA_PAPER_TRADING=true`. STDEV stock signals are mapped to 7-14 DTE long
+  calls or long puts after delta, bid/ask spread, open interest, and premium
+  checks. The default profile simulates a small account with one position at a
+  time, a $200 max premium, 25% profit target, 35% stop, 30 minute time stop,
+  and a forced option close when the entry window ends.
+- **Stock Paper Trading**: Set `TRADING_INSTRUMENT=stocks` and
+  `ALLOW_STOCK_FALLBACK=true` to use the legacy stock bracket order manager.
+- **Live Trading**: The options engine refuses live mode while
+  `OPTIONS_PAPER_ONLY=true`. Use with extreme caution and only after adding
+  explicit live-options approval controls.
 
-Successful Alpaca bracket submits are persisted when `--use-db` is set: `trade_signals`, optional `llm_validations`, `trades`, `positions`, and `live_loop_log.jsonl` / `session_summary.json` in the telemetry artifact for EOD.
+Successful Alpaca submits are persisted when `--use-db` is set:
+`trade_signals`, optional `llm_validations`, `trades`, `positions`, and
+`live_loop_log.jsonl` / `session_summary.json` in the telemetry artifact for
+EOD. Option-specific order metadata is written to `order_events.jsonl`.
+
+For Alpaca MCP setup and daily operator prompts, see
+[`docs/alpaca_mcp_workflow.md`](docs/alpaca_mcp_workflow.md). For the
+options-first paper runbook, see
+[`docs/options_paper_runbook.md`](docs/options_paper_runbook.md).
 
 For next-day operational checks and artifact expectations, see
 [`LIVE_LOOP_RUNBOOK.md`](LIVE_LOOP_RUNBOOK.md).

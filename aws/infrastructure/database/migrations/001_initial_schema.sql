@@ -6,7 +6,7 @@
 CREATE TABLE IF NOT EXISTS daily_bias (
     id SERIAL PRIMARY KEY,
     date DATE NOT NULL,
-    symbol VARCHAR(10) NOT NULL,
+    symbol VARCHAR(32) NOT NULL,
     bias VARCHAR(20) NOT NULL,  -- 'bullish', 'bearish', 'choppy'
     confidence INTEGER NOT NULL,  -- 0-100
     model_output JSONB,
@@ -24,7 +24,7 @@ CREATE INDEX IF NOT EXISTS idx_daily_bias_symbol ON daily_bias(symbol);
 CREATE TABLE IF NOT EXISTS premarket_snapshots (
     id SERIAL PRIMARY KEY,
     date DATE NOT NULL,
-    symbol VARCHAR(10) NOT NULL,
+    symbol VARCHAR(32) NOT NULL,
     htf_stats JSONB,  -- {ema_slope_daily, ema_slope_hourly, hh_ll_tag, atr_percentile_daily}
     bands_5m JSONB,   -- {mu, sigma, atr_5m, k}
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -53,7 +53,7 @@ CREATE INDEX IF NOT EXISTS idx_market_analysis_timestamp ON market_analysis(time
 CREATE TABLE IF NOT EXISTS live_loop_logs (
     id SERIAL PRIMARY KEY,
     timestamp TIMESTAMP NOT NULL,
-    symbol VARCHAR(10) NOT NULL,
+    symbol VARCHAR(32) NOT NULL,
     z_score DECIMAL(10, 4),
     mu DECIMAL(10, 4),
     sigma DECIMAL(10, 4),
@@ -73,7 +73,7 @@ CREATE INDEX IF NOT EXISTS idx_live_loop_symbol_date ON live_loop_logs(symbol, t
 CREATE TABLE IF NOT EXISTS trade_signals (
     id SERIAL PRIMARY KEY,
     timestamp TIMESTAMP NOT NULL,
-    symbol VARCHAR(10) NOT NULL,
+    symbol VARCHAR(32) NOT NULL,
     setup_type VARCHAR(10) NOT NULL,  -- 'MR', 'TC'
     side VARCHAR(10) NOT NULL,
     entry_price DECIMAL(10, 2),
@@ -106,7 +106,10 @@ CREATE INDEX IF NOT EXISTS idx_llm_validations_signal_id ON llm_validations(sign
 CREATE TABLE IF NOT EXISTS trades (
     id SERIAL PRIMARY KEY,
     trade_id VARCHAR(50) UNIQUE,  -- Alpaca order ID
-    symbol VARCHAR(10) NOT NULL,
+    symbol VARCHAR(32) NOT NULL,
+    asset_class VARCHAR(20),
+    underlying_symbol VARCHAR(32),
+    option_symbol VARCHAR(32),
     side VARCHAR(10) NOT NULL,
     entry_price DECIMAL(10, 2),
     stop_loss DECIMAL(10, 2),
@@ -118,6 +121,7 @@ CREATE TABLE IF NOT EXISTS trades (
     exit_price DECIMAL(10, 2),
     pnl DECIMAL(10, 2),
     exit_reason VARCHAR(50),  -- 'stop_loss', 'take_profit', 'eod', 'manual'
+    option_metadata JSONB,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
@@ -130,7 +134,10 @@ CREATE INDEX IF NOT EXISTS idx_trades_status ON trades(status);
 CREATE TABLE IF NOT EXISTS positions (
     id SERIAL PRIMARY KEY,
     trade_id INTEGER REFERENCES trades(id),
-    symbol VARCHAR(10) NOT NULL,
+    symbol VARCHAR(32) NOT NULL,
+    asset_class VARCHAR(20),
+    underlying_symbol VARCHAR(32),
+    option_symbol VARCHAR(32),
     side VARCHAR(10) NOT NULL,
     entry_price DECIMAL(10, 2),
     current_price DECIMAL(10, 2),
@@ -144,4 +151,3 @@ CREATE TABLE IF NOT EXISTS positions (
 
 CREATE INDEX IF NOT EXISTS idx_positions_symbol ON positions(symbol);
 CREATE INDEX IF NOT EXISTS idx_positions_trade_id ON positions(trade_id);
-
