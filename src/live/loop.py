@@ -26,7 +26,7 @@ if str(PROJECT_ROOT) not in sys.path:
 
 from src.core.config import Settings
 from src.core.logging import setup_logging
-from src.data.alpaca_client import AlpacaDataClient
+from src.data.alpaca_client import AlpacaDataClient, AlpacaDataUnavailable
 from src.data.storage import Storage, StorageAdapter
 from src.premarket.bias_gatherer import load_premarket_context, PremarketContext
 from src.premarket.snapshot_builder import SymbolSnapshot
@@ -556,6 +556,34 @@ def execute_trade(
             return None
     logger.info("Order manager not initialized - trade not executed (dry run)")
     return None
+
+
+def build_execution_failure_details(
+    result: Optional[Dict[str, Any]],
+    attempt: int,
+    mode: str,
+    reason: Optional[str] = None,
+    **extra: Any,
+) -> Dict[str, Any]:
+    """Keep structured failure context in order_events without changing reason strings."""
+    details: Dict[str, Any] = {
+        "attempt": attempt,
+        "mode": mode,
+        "reason": reason or execution_failure_reason(result),
+    }
+    if isinstance(result, dict):
+        for key in (
+            "detail",
+            "diagnostics",
+            "option_plan",
+            "required",
+            "available",
+            "qty",
+        ):
+            if result.get(key) is not None:
+                details[key] = result[key]
+    details.update({k: v for k, v in extra.items() if v is not None})
+    return details
 
 
 def update_positions(
@@ -1833,11 +1861,12 @@ def main():
                                 loop_count,
                                 signal=signal,
                                 state=state,
-                                details={
-                                    "attempt": attempt_num,
-                                    "mode": "backtest",
-                                    "reason": fail_reason,
-                                },
+                                details=build_execution_failure_details(
+                                    result,
+                                    attempt_num,
+                                    "backtest",
+                                    fail_reason,
+                                ),
                             )
                     else:
                         logger.info(f"ENTERING {symbol} TRADE: {signal.side.upper()} {signal.setup_type} @ ${signal.entry_price:.2f} (attempt #{attempt_num})")
@@ -1980,11 +2009,12 @@ def main():
                                             loop_count,
                                             signal=signal,
                                             state=state,
-                                            details={
-                                                "attempt": attempt_num,
-                                                "mode": "paper_live",
-                                                "reason": fail_reason,
-                                            },
+                                            details=build_execution_failure_details(
+                                                result,
+                                                attempt_num,
+                                                "paper_live",
+                                                fail_reason,
+                                            ),
                                         )
                                 except Exception as e:
                                     logger.error(f"Error checking open positions for {symbol}: {e}")
@@ -1999,12 +2029,13 @@ def main():
                                         loop_count,
                                         signal=signal,
                                         state=state,
-                                        details={
-                                            "attempt": attempt_num,
-                                            "mode": "paper_live",
-                                            "reason": fail_reason,
-                                            "error": str(e),
-                                        },
+                                        details=build_execution_failure_details(
+                                            result,
+                                            attempt_num,
+                                            "paper_live",
+                                            fail_reason,
+                                            error=str(e),
+                                        ),
                                     )
                             else:
                                 logger.warning(
@@ -2018,11 +2049,12 @@ def main():
                                     loop_count,
                                     signal=signal,
                                     state=state,
-                                    details={
-                                        "attempt": attempt_num,
-                                        "mode": "paper_live",
-                                        "reason": fail_reason,
-                                    },
+                                    details=build_execution_failure_details(
+                                        result,
+                                        attempt_num,
+                                        "paper_live",
+                                        fail_reason,
+                                    ),
                                 )
             
             # Check for position exits (stop loss/take profit) - for mock manager
@@ -2074,6 +2106,30 @@ def main():
                 except Exception as e:
                     logger.error(f"Failed to save live loop log to database: {e}")
             
+        except AlpacaDataUnavailable as e:
+            logger.warning("Market data temporarily unavailable: %s", e)
+            try:
+                append_order_event(
+                    order_events_path,
+                    "market_data_unavailable",
+                    "ALL",
+                    loop_count,
+                    details={"error": str(e)},
+                )
+                label_time = sim_time_et if is_backtest else current_et
+                log_tick(
+                    log_path=log_path,
+                    states=states,
+                    signals=[],
+                    extra={
+                        "label": label_time.strftime("%H:%M:%S ET"),
+                        "loop_count": loop_count,
+                        "backtest": is_backtest,
+                        "data_error": str(e),
+                    },
+                )
+            except Exception as log_exc:
+                logger.error("Failed to record market data outage telemetry: %s", log_exc)
         except Exception as e:
             logger.error(f"Error in main loop: {e}", exc_info=True)
             send_discord_alert(f"⚠️ Error in main loop: {str(e)[:200]}")

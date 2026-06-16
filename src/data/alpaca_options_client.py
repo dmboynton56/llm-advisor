@@ -76,6 +76,9 @@ class OptionSnapshot:
 class AlpacaOptionsClient:
     """Small wrapper around Alpaca option contracts and option snapshots."""
 
+    CONTRACT_PAGE_LIMIT = 100
+    SNAPSHOT_SYMBOL_LIMIT = 100
+
     def __init__(
         self,
         api_key: Optional[str] = None,
@@ -92,6 +95,7 @@ class AlpacaOptionsClient:
         self.trading_client = TradingClient(api_key=api_key, secret_key=api_secret, paper=paper)
         self.data_client = OptionHistoricalDataClient(api_key, api_secret)
         self.feed = OptionsFeed.OPRA if str(feed).lower() == "opra" else OptionsFeed.INDICATIVE
+        self.last_candidate_diagnostics: Dict[str, Any] = {}
 
     def fetch_contracts(
         self,
@@ -105,18 +109,27 @@ class AlpacaOptionsClient:
     ) -> List[OptionContract]:
         """Fetch active option contracts for one underlying and normalize them."""
         ctype = ContractType.CALL if contract_type.lower() == "call" else ContractType.PUT
-        request = GetOptionContractsRequest(
-            underlying_symbols=[underlying_symbol],
-            status=AssetStatus.ACTIVE,
-            expiration_date_gte=expiration_date_gte,
-            expiration_date_lte=expiration_date_lte,
-            type=ctype,
-            strike_price_gte=str(strike_price_gte) if strike_price_gte is not None else None,
-            strike_price_lte=str(strike_price_lte) if strike_price_lte is not None else None,
-            limit=limit,
-        )
-        response = self.trading_client.get_option_contracts(request)
-        return [self._normalize_contract(c) for c in self._contracts_from_response(response)]
+        contracts: List[OptionContract] = []
+        page_token = None
+        while len(contracts) < limit:
+            request = GetOptionContractsRequest(
+                underlying_symbols=[underlying_symbol],
+                status=AssetStatus.ACTIVE,
+                expiration_date_gte=expiration_date_gte,
+                expiration_date_lte=expiration_date_lte,
+                type=ctype,
+                strike_price_gte=str(strike_price_gte) if strike_price_gte is not None else None,
+                strike_price_lte=str(strike_price_lte) if strike_price_lte is not None else None,
+                limit=min(self.CONTRACT_PAGE_LIMIT, limit - len(contracts)),
+                page_token=page_token,
+            )
+            response = self.trading_client.get_option_contracts(request)
+            page_contracts = [self._normalize_contract(c) for c in self._contracts_from_response(response)]
+            contracts.extend(page_contracts)
+            page_token = self._next_page_token(response)
+            if not page_token or not page_contracts:
+                break
+        return contracts[:limit]
 
     def fetch_snapshots(self, contracts: Iterable[OptionContract]) -> List[OptionSnapshot]:
         """Fetch option snapshots for contracts and pair them with contract metadata."""
@@ -124,20 +137,22 @@ class AlpacaOptionsClient:
         if not contract_list:
             return []
 
-        by_symbol = {contract.symbol: contract for contract in contract_list}
-        request = OptionSnapshotRequest(
-            symbol_or_symbols=list(by_symbol.keys()),
-            feed=self.feed,
-        )
-        response = self.data_client.get_option_snapshot(request)
         snapshots = []
-        for symbol, raw_snapshot in self._items(response):
-            contract = by_symbol.get(symbol)
-            if contract is None:
-                continue
-            normalized = self._normalize_snapshot(contract, raw_snapshot)
-            if normalized is not None:
-                snapshots.append(normalized)
+        for start in range(0, len(contract_list), self.SNAPSHOT_SYMBOL_LIMIT):
+            contract_batch = contract_list[start : start + self.SNAPSHOT_SYMBOL_LIMIT]
+            by_symbol = {contract.symbol: contract for contract in contract_batch}
+            request = OptionSnapshotRequest(
+                symbol_or_symbols=list(by_symbol.keys()),
+                feed=self.feed,
+            )
+            response = self.data_client.get_option_snapshot(request)
+            for symbol, raw_snapshot in self._items(response):
+                contract = by_symbol.get(symbol)
+                if contract is None:
+                    continue
+                normalized = self._normalize_snapshot(contract, raw_snapshot)
+                if normalized is not None:
+                    snapshots.append(normalized)
         return snapshots
 
     def find_candidates(
@@ -153,6 +168,17 @@ class AlpacaOptionsClient:
         """Fetch contracts near the current underlying price and return usable snapshots."""
         strike_min = underlying_price * (1.0 - strike_window_pct)
         strike_max = underlying_price * (1.0 + strike_window_pct)
+        self.last_candidate_diagnostics = {
+            "underlying_symbol": underlying_symbol,
+            "contract_type": contract_type,
+            "underlying_price": underlying_price,
+            "expiration_date_gte": expiration_date_gte.isoformat(),
+            "expiration_date_lte": expiration_date_lte.isoformat(),
+            "strike_price_gte": strike_min,
+            "strike_price_lte": strike_max,
+            "requested_limit": limit,
+            "per_request_limit": min(self.CONTRACT_PAGE_LIMIT, limit),
+        }
         contracts = self.fetch_contracts(
             underlying_symbol=underlying_symbol,
             contract_type=contract_type,
@@ -162,7 +188,16 @@ class AlpacaOptionsClient:
             strike_price_lte=strike_max,
             limit=limit,
         )
-        return self.fetch_snapshots([contract for contract in contracts if contract.tradable])
+        tradable_contracts = [contract for contract in contracts if contract.tradable]
+        snapshots = self.fetch_snapshots(tradable_contracts)
+        self.last_candidate_diagnostics.update(
+            {
+                "contracts_returned": len(contracts),
+                "tradable_contracts": len(tradable_contracts),
+                "snapshots_returned": len(snapshots),
+            }
+        )
+        return snapshots
 
     @staticmethod
     def _contracts_from_response(response: Any) -> List[Any]:
@@ -177,6 +212,19 @@ class AlpacaOptionsClient:
         if isinstance(response, dict):
             return list(response.get("option_contracts") or response.get("contracts") or [])
         return []
+
+    @staticmethod
+    def _next_page_token(response: Any) -> Optional[str]:
+        if response is None:
+            return None
+        value = getattr(response, "next_page_token", None)
+        if value:
+            return str(value)
+        if isinstance(response, dict):
+            value = response.get("next_page_token")
+            if value:
+                return str(value)
+        return None
 
     @staticmethod
     def _items(response: Any) -> Iterable[tuple[str, Any]]:

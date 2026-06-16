@@ -118,3 +118,27 @@ def test_position_to_dict_does_not_scale_non_option_positions() -> None:
     assert out["asset_class"] == "us_equity"
     assert out["entry_price"] == 450.0
     assert out["current_price"] == 500.0
+
+
+def test_execute_signal_trade_returns_option_candidate_diagnostics() -> None:
+    diagnostics = {"reason": "all_candidates_filtered", "filter_rejections": {"spread_too_wide": 1}}
+
+    class FakeMapper:
+        last_rejection = diagnostics
+
+        def build_trade_plan(self, **kwargs):
+            return None
+
+    manager = OptionsOrderManager.__new__(OptionsOrderManager)
+    manager.mapper = FakeMapper()
+    manager.options_client = object()
+    manager.get_account_equity = lambda: 100000.0
+
+    state = SimpleNamespace(trade=object())
+    signal = SimpleNamespace(symbol="SPY", side="long", entry_price=500.0)
+
+    result = manager.execute_signal_trade(signal, state)
+
+    assert result["success"] is False
+    assert result["error"] == "no_option_candidate"
+    assert result["diagnostics"] == diagnostics

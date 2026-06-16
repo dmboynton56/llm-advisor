@@ -9,6 +9,7 @@ import pytest
 
 from src.live.loop import (
     append_order_event,
+    build_execution_failure_details,
     build_live_session_summary,
     execute_trade,
     reconcile_positions_with_alpaca,
@@ -215,6 +216,23 @@ def test_append_order_event_writes_lifecycle_jsonl(tmp_path: Path) -> None:
     assert payload["signal"]["setup_type"] == "MR"
     assert payload["trade_plan"]["stop_loss"] == 99.0
     assert payload["details"]["reason"] == "risk_reward"
+
+
+def test_execution_failure_details_preserve_diagnostics() -> None:
+    result = {
+        "error": "no_option_candidate",
+        "diagnostics": {
+            "reason": "all_candidates_filtered",
+            "filter_rejections": {"open_interest_too_low": 3},
+        },
+    }
+
+    details = build_execution_failure_details(result, 2, "paper_live")
+
+    assert details["attempt"] == 2
+    assert details["mode"] == "paper_live"
+    assert details["reason"] == "no_option_candidate"
+    assert details["diagnostics"]["filter_rejections"]["open_interest_too_low"] == 3
 
 
 def test_startup_reconcile_deletes_bq_orphan_without_recovery(tmp_path: Path) -> None:

@@ -93,10 +93,17 @@ class OptionsOrderManager:
                 account_equity=account_equity,
             )
         except Exception as exc:
-            return self._failure("option_plan_failed", detail=str(exc))
+            return self._failure(
+                "option_plan_failed",
+                detail=str(exc),
+                diagnostics=getattr(self.mapper, "last_rejection", None),
+            )
 
         if plan is None:
-            return self._failure("no_option_candidate")
+            return self._failure(
+                "no_option_candidate",
+                diagnostics=getattr(self.mapper, "last_rejection", None),
+            )
 
         buying_power = self.get_buying_power()
         if plan.max_loss > buying_power:

@@ -35,6 +35,17 @@ class OptionsSettings(BaseModel):
     max_bid_ask_spread_pct: float = Field(default=0.15, ge=0.0, le=1.0)
     min_open_interest: int = Field(default=100, ge=0)
     strike_window_pct: float = Field(default=0.10, ge=0.0, le=1.0)
+    contract_limit: int = Field(default=100, ge=1, le=500)
+    fallback_enabled: bool = False
+    fallback_min_dte: int = Field(default=3, ge=0)
+    fallback_max_dte: int = Field(default=21, ge=1)
+    fallback_min_delta: float = Field(default=0.25, ge=0.0, le=1.0)
+    fallback_max_delta: float = Field(default=0.65, ge=0.0, le=1.0)
+    fallback_max_premium_per_trade: float = Field(default=300.0, ge=1.0)
+    fallback_max_bid_ask_spread_pct: float = Field(default=0.25, ge=0.0, le=1.0)
+    fallback_min_open_interest: int = Field(default=25, ge=0)
+    fallback_strike_window_pct: float = Field(default=0.15, ge=0.0, le=1.0)
+    fallback_contract_limit: int = Field(default=250, ge=1, le=500)
     max_spread_width: float = Field(default=5.0, ge=0.01)
     order_price_buffer_pct: float = Field(default=0.02, ge=0.0, le=0.25)
     profit_target_pct: float = Field(default=0.25, ge=0.01, le=5.0)
@@ -87,6 +98,21 @@ class Settings(BaseModel):
                 max_bid_ask_spread_pct=float(os.getenv("MAX_OPTION_BID_ASK_SPREAD_PCT", "0.15")),
                 min_open_interest=int(os.getenv("MIN_OPTION_OPEN_INTEREST", "100")),
                 strike_window_pct=float(os.getenv("OPTION_STRIKE_WINDOW_PCT", "0.10")),
+                contract_limit=int(os.getenv("OPTION_CONTRACT_LIMIT", "100")),
+                fallback_enabled=os.getenv("OPTION_FALLBACK_ENABLED", "false").lower() == "true",
+                fallback_min_dte=int(os.getenv("OPTION_FALLBACK_DTE_MIN", "3")),
+                fallback_max_dte=int(os.getenv("OPTION_FALLBACK_DTE_MAX", "21")),
+                fallback_min_delta=float(os.getenv("OPTION_FALLBACK_DELTA_MIN", "0.25")),
+                fallback_max_delta=float(os.getenv("OPTION_FALLBACK_DELTA_MAX", "0.65")),
+                fallback_max_premium_per_trade=float(
+                    os.getenv("OPTION_FALLBACK_MAX_PREMIUM_PER_TRADE", "300")
+                ),
+                fallback_max_bid_ask_spread_pct=float(
+                    os.getenv("OPTION_FALLBACK_MAX_BID_ASK_SPREAD_PCT", "0.25")
+                ),
+                fallback_min_open_interest=int(os.getenv("OPTION_FALLBACK_MIN_OPEN_INTEREST", "25")),
+                fallback_strike_window_pct=float(os.getenv("OPTION_FALLBACK_STRIKE_WINDOW_PCT", "0.15")),
+                fallback_contract_limit=int(os.getenv("OPTION_FALLBACK_CONTRACT_LIMIT", "250")),
                 max_spread_width=float(os.getenv("MAX_OPTION_SPREAD_WIDTH", "5.0")),
                 order_price_buffer_pct=float(os.getenv("OPTION_ORDER_PRICE_BUFFER_PCT", "0.02")),
                 profit_target_pct=float(os.getenv("OPTION_PROFIT_TARGET_PCT", "0.25")),
