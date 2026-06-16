@@ -1,4 +1,5 @@
 """Alpaca API wrapper for data and trading."""
+import inspect
 import logging
 import os
 import time
@@ -37,12 +38,16 @@ class AlpacaDataClient:
         self.timeout_seconds = self._env_float("ALPACA_DATA_TIMEOUT_SECONDS", 20.0)
         self.max_attempts = max(1, self._env_int("ALPACA_DATA_MAX_ATTEMPTS", 2))
         self.retry_wait_seconds = max(0.0, self._env_float("ALPACA_DATA_RETRY_WAIT_SECONDS", 2.0))
-        self.client = StockHistoricalDataClient(
-            api_key=api_key,
-            secret_key=api_secret,
-            retry_attempts=self._env_int("ALPACA_SDK_RETRY_ATTEMPTS", 2),
-            retry_wait_seconds=self._env_int("ALPACA_SDK_RETRY_WAIT_SECONDS", 2),
-        )
+        client_kwargs = {
+            "api_key": api_key,
+            "secret_key": api_secret,
+        }
+        sdk_params = inspect.signature(StockHistoricalDataClient.__init__).parameters
+        if "retry_attempts" in sdk_params:
+            client_kwargs["retry_attempts"] = self._env_int("ALPACA_SDK_RETRY_ATTEMPTS", 2)
+        if "retry_wait_seconds" in sdk_params:
+            client_kwargs["retry_wait_seconds"] = self._env_int("ALPACA_SDK_RETRY_WAIT_SECONDS", 2)
+        self.client = StockHistoricalDataClient(**client_kwargs)
         self._install_request_timeout()
         feed_env = (feed or os.getenv("ALPACA_DATA_FEED") or "iex").lower()
         self.feed = DataFeed.SIP if feed_env == "sip" else DataFeed.IEX
