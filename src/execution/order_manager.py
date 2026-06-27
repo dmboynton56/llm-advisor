@@ -229,6 +229,8 @@ class StockOrderManager:
                     "side": pos.side,
                     "market_value": float(pos.market_value),
                     "cost_basis": float(pos.cost_basis),
+                    "current_price": float(pos.current_price),
+                    "avg_entry_price": float(pos.avg_entry_price),
                     "unrealized_pl": float(pos.unrealized_pl),
                     "unrealized_plpc": float(pos.unrealized_plpc),
                 }

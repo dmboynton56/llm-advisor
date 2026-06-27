@@ -209,28 +209,42 @@ def parse_daily_run_payload(run_date: str, processed: Path) -> tuple[RunRow | No
     return None, []
 
 
+def _run_row_rank(row: RunRow) -> tuple:
+    """Higher is better when merging artifact + BigQuery run summaries."""
+    artifact = 0 if str(row.source_file).startswith("bq://") else 1
+    return (
+        row.closed_trades or 0,
+        row.total_trades or 0,
+        1 if row.final_equity is not None else 0,
+        artifact,
+        float(row.total_pnl or 0),
+    )
+
+
 def dedupe_runs(rows: list[RunRow]) -> list[RunRow]:
     by_date: dict[str, RunRow] = {}
     for r in rows:
         prev = by_date.get(r.run_date)
-        if prev is None:
-            by_date[r.run_date] = r
-            continue
-        if r.total_trades > prev.total_trades or r.closed_trades > prev.closed_trades:
-            by_date[r.run_date] = r
-        elif r.total_trades == prev.total_trades and (r.total_pnl or 0) >= (prev.total_pnl or 0):
+        if prev is None or _run_row_rank(r) > _run_row_rank(prev):
             by_date[r.run_date] = r
     return sorted(by_date.values(), key=lambda x: x.run_date)
+
+
+def _trade_row_rank(row: TradeRow) -> tuple:
+    artifact = 0 if str(row.source_file).startswith("bq://") else 1
+    return (
+        1 if row.exit_price is not None else 0,
+        1 if row.exit_time is not None else 0,
+        artifact,
+        float(row.pnl or 0),
+    )
 
 
 def dedupe_trades(rows: list[TradeRow]) -> list[TradeRow]:
     by_uid: dict[str, TradeRow] = {}
     for r in rows:
         prev = by_uid.get(r.trade_uid)
-        if prev is None:
-            by_uid[r.trade_uid] = r
-            continue
-        if "bq://" in r.source_file and "bq://" not in prev.source_file:
+        if prev is None or _trade_row_rank(r) > _trade_row_rank(prev):
             by_uid[r.trade_uid] = r
     return list(by_uid.values())
 

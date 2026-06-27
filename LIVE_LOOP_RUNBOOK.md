@@ -72,6 +72,13 @@ python3 scripts/run_eod_aggregate.py \
 The dry run should report at least one run row and one heartbeat row. Trade rows
 are expected only on days where a paper order is actually submitted.
 
+## Telemetry completeness (portfolio / Supabase)
+
+- `session_summary.json` is built from warehouse trades via `build_live_session_summary`; `exit_price` is only set when storage rows have it.
+- On Alpaca paper fills, `TradeTracker` closes DB rows when the position disappears from `get_open_positions`. **`current_price` and `avg_entry_price` must be present** on those position dicts or `exit_price` stays null while `pnl` is still populated from `unrealized_pl`.
+- EOD merges artifact rows with BigQuery aggregates. **Do not let BQ run rows without `final_equity` replace artifact rows** that include equity from `get_account_equity()` — dedupe prefers richer artifact summaries.
+- `execution_failed` events should always include `details.reason` (and `details.error` when applicable). Historical days before `f83ecbd` may lack `reason` in synced Supabase rows.
+
 ## Current Reliability Rules
 
 - Alpaca is the source of truth for open live positions at startup. Warehouse

@@ -5,6 +5,10 @@ import sys
 
 from scripts import run_eod_aggregate
 from scripts.run_eod_aggregate import (
+    RunRow,
+    TradeRow,
+    dedupe_runs,
+    dedupe_trades,
     parse_heartbeat,
     parse_order_events,
     run_row_from_heartbeat,
@@ -164,3 +168,82 @@ def test_order_events_can_create_zero_trade_run_row(tmp_path) -> None:
     assert run.run_date == "2026-05-22"
     assert run.total_trades == 0
     assert run.source_file == str(events_path)
+
+
+def test_dedupe_runs_prefers_artifact_final_equity_over_bq() -> None:
+    artifact = RunRow(
+        run_date="2026-06-02",
+        total_trades=1,
+        closed_trades=1,
+        winning_trades=1,
+        losing_trades=0,
+        total_pnl=160.43,
+        average_win=160.43,
+        average_loss=0.0,
+        final_equity=100002.92,
+        return_pct=None,
+        daily_return_pct=None,
+        win_rate=1.0,
+        source_file="session_summary.json",
+    )
+    bq = RunRow(
+        run_date="2026-06-02",
+        total_trades=1,
+        closed_trades=1,
+        winning_trades=1,
+        losing_trades=0,
+        total_pnl=160.43,
+        average_win=160.43,
+        average_loss=0.0,
+        final_equity=None,
+        return_pct=None,
+        daily_return_pct=None,
+        win_rate=1.0,
+        source_file="bq://proj.trading_signals.trades",
+    )
+    merged = dedupe_runs([bq, artifact])
+    assert len(merged) == 1
+    assert merged[0].final_equity == 100002.92
+    assert "session_summary" in merged[0].source_file
+
+
+def test_dedupe_trades_prefers_row_with_exit_price() -> None:
+    artifact = TradeRow(
+        trade_uid="2026-06-02:abc",
+        run_date="2026-06-02",
+        order_id="abc",
+        symbol="IWM",
+        side="short",
+        qty=655,
+        entry_price=290.06,
+        stop_loss=290.34,
+        take_profit=289.64,
+        entry_time="2026-06-02T14:05:25+00:00",
+        exit_time="2026-06-02T14:10:00+00:00",
+        exit_price=289.81,
+        exit_reason="position_closed",
+        pnl=160.43,
+        status="closed",
+        source_file="session_summary.json",
+    )
+    bq = TradeRow(
+        trade_uid="2026-06-02:abc",
+        run_date="2026-06-02",
+        order_id="abc",
+        symbol="IWM",
+        side="short",
+        qty=655,
+        entry_price=290.06,
+        stop_loss=290.34,
+        take_profit=289.64,
+        entry_time="2026-06-02T14:05:25+00:00",
+        exit_time="2026-06-02T14:10:00+00:00",
+        exit_price=None,
+        exit_reason="position_closed",
+        pnl=160.43,
+        status="closed",
+        source_file="bq://proj.trading_signals.trades",
+    )
+    merged = dedupe_trades([bq, artifact])
+    assert len(merged) == 1
+    assert merged[0].exit_price == 289.81

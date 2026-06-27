@@ -94,6 +94,19 @@ class TradeTracker:
                             exit_px = float(exit_px)
                         except (TypeError, ValueError):
                             exit_px = None
+                    if exit_px is None and u_pnl:
+                        qty = abs(float(old_pos.get("qty", 0) or 0))
+                        entry = old_pos.get("avg_entry_price") or old_pos.get("entry_price")
+                        try:
+                            entry_f = float(entry) if entry is not None else None
+                        except (TypeError, ValueError):
+                            entry_f = None
+                        side = str(old_pos.get("side", "")).lower()
+                        if qty > 0 and entry_f is not None:
+                            if side in ("long", "buy"):
+                                exit_px = entry_f + (u_pnl / qty)
+                            elif side in ("short", "sell"):
+                                exit_px = entry_f - (u_pnl / qty)
                     if meta.get("trade_pk") is not None:
                         trade_pk = int(meta["trade_pk"])
                         if hasattr(self.storage, "close_trade_by_pk"):
