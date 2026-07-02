@@ -7,6 +7,16 @@ export function supabaseConfigured(): boolean {
   return Boolean(SUPABASE_URL && SUPABASE_ANON_KEY);
 }
 
+function buildSupabaseHeaders(apiKey: string): HeadersInit {
+  const headers: Record<string, string> = { apikey: apiKey };
+  // Legacy JWT anon keys use Bearer; sb_publishable_ keys must not — PostgREST
+  // tries to parse Bearer as JWT and returns 401 Invalid JWT.
+  if (apiKey.startsWith("eyJ")) {
+    headers.Authorization = `Bearer ${apiKey}`;
+  }
+  return headers;
+}
+
 /**
  * Read-only PostgREST select. Returns null when Supabase isn't configured or
  * the request fails, so pages can render graceful empty states.
@@ -18,10 +28,7 @@ export async function supabaseSelect<T>(
   if (!SUPABASE_URL || !SUPABASE_ANON_KEY) return null;
   try {
     const res = await fetch(`${SUPABASE_URL}/rest/v1/${table}?${query}`, {
-      headers: {
-        apikey: SUPABASE_ANON_KEY,
-        Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
-      },
+      headers: buildSupabaseHeaders(SUPABASE_ANON_KEY),
       next: { revalidate: 300 },
     });
     if (!res.ok) return null;
