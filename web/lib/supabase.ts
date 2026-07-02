@@ -1,10 +1,15 @@
-const SUPABASE_URL =
-  process.env.NEXT_PUBLIC_SUPABASE_URL ?? process.env.SUPABASE_URL;
+const SUPABASE_URL = normalizeSupabaseUrl(
+  process.env.NEXT_PUBLIC_SUPABASE_URL ?? process.env.SUPABASE_URL ?? "",
+);
 // Server components only — service role is never NEXT_PUBLIC_*.
 const SUPABASE_API_KEY =
   process.env.SUPABASE_SERVICE_ROLE_KEY ??
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ??
   process.env.SUPABASE_ANON_KEY;
+
+function normalizeSupabaseUrl(url: string): string {
+  return url.replace(/\/rest\/v1\/?$/i, "").replace(/\/$/, "");
+}
 
 export function supabaseConfigured(): boolean {
   return Boolean(SUPABASE_URL && SUPABASE_API_KEY);
