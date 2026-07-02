@@ -218,6 +218,23 @@ jobs:
         if: ${{ steps.live_artifact.outputs.skip_remaining_steps != 'true' && steps.telemetry_content.outputs.has_content == 'true' && env.GCP_PROJECT_ID != '' }}
         run: python scripts/sync_bq_to_supabase.py --days 14
 
+      - name: Compute ops metrics rollup
+        if: steps.live_artifact.outputs.skip_remaining_steps != 'true' && steps.telemetry_content.outputs.has_content == 'true'
+        run: |
+          if [ -n "${{ github.event.inputs.date }}" ]; then
+            python scripts/compute_ops_metrics.py --days 30 --end "${{ github.event.inputs.date }}" --metric-date "${{ github.event.inputs.date }}" --output ops_metrics.json --upsert
+          else
+            python scripts/compute_ops_metrics.py --days 30 --output ops_metrics.json --upsert
+          fi
+
+      - name: Upload ops metrics artifact
+        if: steps.live_artifact.outputs.skip_remaining_steps != 'true' && steps.telemetry_content.outputs.has_content == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: llm-advisor-ops-metrics-${{ github.run_id }}
+          path: ops_metrics.json
+          if-no-files-found: warn
+
       - name: Telemetry layout on EOD failure
         if: failure() && steps.live_artifact.outputs.skip_remaining_steps != 'true' && steps.telemetry_content.outputs.has_content == 'true'
         run: |

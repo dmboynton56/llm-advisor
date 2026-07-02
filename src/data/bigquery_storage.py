@@ -185,6 +185,7 @@ class BigQueryStorage(StorageAdapter):
             bigquery.SchemaField("underlying_symbol", "STRING", mode="NULLABLE"),
             bigquery.SchemaField("option_symbol", "STRING", mode="NULLABLE"),
             bigquery.SchemaField("side", "STRING", mode="REQUIRED"),
+            bigquery.SchemaField("setup_type", "STRING", mode="NULLABLE"),
             bigquery.SchemaField("entry_price", "NUMERIC", mode="NULLABLE"),
             bigquery.SchemaField("stop_loss", "NUMERIC", mode="NULLABLE"),
             bigquery.SchemaField("take_profit", "NUMERIC", mode="NULLABLE"),
@@ -208,6 +209,7 @@ class BigQueryStorage(StorageAdapter):
                 bigquery.SchemaField("underlying_symbol", "STRING", mode="NULLABLE"),
                 bigquery.SchemaField("option_symbol", "STRING", mode="NULLABLE"),
                 bigquery.SchemaField("option_metadata", "STRING", mode="NULLABLE"),
+                bigquery.SchemaField("setup_type", "STRING", mode="NULLABLE"),
             ],
         )
     
@@ -662,11 +664,11 @@ class BigQueryStorage(StorageAdapter):
         
         insert_query = f"""
         INSERT INTO `{table_id}`
-        (id, trade_id, symbol, asset_class, underlying_symbol, option_symbol, side,
+        (id, trade_id, symbol, asset_class, underlying_symbol, option_symbol, side, setup_type,
          entry_price, stop_loss, take_profit, qty, status, entry_time, exit_time,
          exit_price, pnl, exit_reason, option_metadata, created_at)
         VALUES (@id, @trade_id, @symbol, @asset_class, @underlying_symbol, @option_symbol,
-                @side, @entry_price, @stop_loss, @take_profit, @qty, @status,
+                @side, @setup_type, @entry_price, @stop_loss, @take_profit, @qty, @status,
                 @entry_time, @exit_time, @exit_price, @pnl, @exit_reason,
                 @option_metadata, CURRENT_TIMESTAMP())
         """
@@ -679,6 +681,7 @@ class BigQueryStorage(StorageAdapter):
                 bigquery.ScalarQueryParameter("underlying_symbol", "STRING", trade.get("underlying_symbol")),
                 bigquery.ScalarQueryParameter("option_symbol", "STRING", trade.get("option_symbol")),
                 bigquery.ScalarQueryParameter("side", "STRING", trade.get("side", "")),
+                bigquery.ScalarQueryParameter("setup_type", "STRING", trade.get("setup_type")),
                 bigquery.ScalarQueryParameter("entry_price", "NUMERIC", float(trade.get("entry_price")) if trade.get("entry_price") is not None else None),
                 bigquery.ScalarQueryParameter("stop_loss", "NUMERIC", float(trade.get("stop_loss")) if trade.get("stop_loss") is not None else None),
                 bigquery.ScalarQueryParameter("take_profit", "NUMERIC", float(trade.get("take_profit")) if trade.get("take_profit") is not None else None),

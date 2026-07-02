@@ -340,6 +340,30 @@ def append_order_event(
         f.write(json.dumps(record, default=json_default) + "\n")
 
 
+def capture_account_snapshot(output_dir: Path, is_backtest: bool) -> None:
+    """Persist a safe equity/PnL snapshot into processed/ for EOD Supabase ingest."""
+    if is_backtest:
+        return
+    try:
+        from src.api_clients.account_snapshot import (
+            append_snapshot_artifact,
+            capture_snapshot_row,
+        )
+
+        row = capture_snapshot_row()
+        if row is None:
+            logger.info("Account snapshot skipped (Alpaca credentials unavailable)")
+            return
+        append_snapshot_artifact(output_dir, row)
+        logger.info(
+            "Account snapshot captured (equity=%.2f, daily_pnl=%s)",
+            row.get("equity") or 0.0,
+            row.get("daily_pnl"),
+        )
+    except Exception as exc:
+        logger.error("Failed to capture account snapshot: %s", exc)
+
+
 def append_shutdown_heartbeat(
     log_path: Path,
     symbols: List[str],
@@ -486,6 +510,7 @@ def build_live_session_summary(
                 "underlying_symbol": r.get("underlying_symbol"),
                 "option_symbol": r.get("option_symbol"),
                 "side": r.get("side"),
+                "setup_type": r.get("setup_type"),
                 "qty": r.get("qty"),
                 "entry_price": _f(r.get("entry_price")),
                 "stop_loss": _f(r.get("stop_loss")),
@@ -1282,6 +1307,8 @@ def main():
             loop_count=0,
         )
     
+    capture_account_snapshot(output_dir, is_backtest)
+
     # Trading window
     run_end_et = et_dt(trading_date, settings.trading.trading_window_end)
     run_end_utc = to_utc(run_end_et)
@@ -1303,6 +1330,7 @@ def main():
         if is_backtest:
             return
         append_shutdown_heartbeat(log_path, symbols, loop_count, False)
+        capture_account_snapshot(output_dir, is_backtest)
         write_live_session_summary(
             output_dir,
             date_str,
@@ -1934,6 +1962,7 @@ def main():
                                         "underlying_symbol": underlying_symbol,
                                         "option_symbol": option_symbol,
                                         "side": persisted_side,
+                                        "setup_type": signal.setup_type,
                                         "entry_price": persisted_entry_price,
                                         "stop_loss": persisted_stop,
                                         "take_profit": persisted_take_profit,

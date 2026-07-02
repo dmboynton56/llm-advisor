@@ -65,6 +65,23 @@ class TradeRow:
     pnl: float | None
     status: str | None
     source_file: str
+    underlying_symbol: str | None = None
+    asset_class: str | None = None
+    setup_type: str | None = None
+    option_dte: int | None = None
+    option_metadata: dict[str, Any] | None = None
+
+
+@dataclass
+class AccountSnapshotRow:
+    snapshot_date: str
+    captured_at: str
+    equity: float | None
+    last_equity: float | None
+    buying_power: float | None
+    daily_pnl: float | None
+    daily_pnl_pct: float | None
+    source: str
 
 
 @dataclass
@@ -170,6 +187,71 @@ def _as_iso(value: Any) -> str | None:
         return None
 
 
+_OCC_SUFFIX_LEN = 15  # OCC option symbols end with YYMMDD[C|P]<8-digit strike>
+
+
+def _underlying_from_occ(symbol: str) -> str | None:
+    """SPY260620C00500000 -> SPY. Returns None when symbol isn't OCC-shaped."""
+    text = str(symbol or "").strip().upper()
+    if len(text) <= _OCC_SUFFIX_LEN:
+        return None
+    root, suffix = text[:-_OCC_SUFFIX_LEN], text[-_OCC_SUFFIX_LEN:]
+    if not root.isalpha():
+        return None
+    if not (suffix[:6].isdigit() and suffix[6] in ("C", "P") and suffix[7:].isdigit()):
+        return None
+    return root
+
+
+def _parse_option_metadata(raw: Any) -> dict[str, Any] | None:
+    if isinstance(raw, dict):
+        return raw
+    if isinstance(raw, str) and raw.strip():
+        try:
+            parsed = json.loads(raw)
+            return parsed if isinstance(parsed, dict) else None
+        except json.JSONDecodeError:
+            return None
+    return None
+
+
+def derive_trade_enrichment(
+    symbol: str,
+    asset_class: Any,
+    underlying_symbol: Any,
+    setup_type: Any,
+    option_metadata: Any,
+) -> dict[str, Any]:
+    """Normalize breakdown columns, falling back to option_metadata / OCC parsing."""
+    meta = _parse_option_metadata(option_metadata)
+    occ_underlying = _underlying_from_occ(symbol)
+
+    asset = str(asset_class).strip().lower() if asset_class else None
+    if not asset:
+        asset = "option" if (meta or occ_underlying) else "stock"
+
+    underlying = str(underlying_symbol).strip().upper() if underlying_symbol else None
+    if not underlying and meta:
+        meta_underlying = meta.get("underlying_symbol") or meta.get("underlying")
+        underlying = str(meta_underlying).strip().upper() if meta_underlying else None
+    if not underlying:
+        underlying = occ_underlying if asset == "option" else str(symbol or "").strip().upper() or None
+
+    dte = None
+    if meta:
+        dte = _as_int(meta.get("dte"))
+
+    setup = str(setup_type).strip().upper() if setup_type else None
+
+    return {
+        "underlying_symbol": underlying,
+        "asset_class": asset,
+        "setup_type": setup,
+        "option_dte": dte,
+        "option_metadata": meta,
+    }
+
+
 def resolve_data_dir(explicit: str | None) -> Path:
     if explicit:
         return Path(explicit).expanduser().resolve()
@@ -235,6 +317,8 @@ def _trade_row_rank(row: TradeRow) -> tuple:
     return (
         1 if row.exit_price is not None else 0,
         1 if row.exit_time is not None else 0,
+        1 if row.setup_type is not None else 0,
+        1 if row.option_metadata is not None else 0,
         artifact,
         float(row.pnl or 0),
     )
@@ -256,6 +340,13 @@ def dedupe_heartbeats(rows: list[HeartbeatRow]) -> list[HeartbeatRow]:
         if prev is None or r.heartbeat_ts > prev.heartbeat_ts:
             by_day[r.source_date] = r
     return sorted(by_day.values(), key=lambda x: x.source_date)
+
+
+def dedupe_account_snapshots(rows: list[AccountSnapshotRow]) -> list[AccountSnapshotRow]:
+    by_key: dict[tuple[str, str], AccountSnapshotRow] = {}
+    for row in rows:
+        by_key[(row.snapshot_date, row.captured_at)] = row
+    return sorted(by_key.values(), key=lambda x: (x.snapshot_date, x.captured_at))
 
 
 def dedupe_order_events(rows: list[OrderEventRow]) -> list[OrderEventRow]:
@@ -289,6 +380,12 @@ def fetch_bq_ingest_for_dates(
     fq = f"`{project_id}.{dataset_id}.trades`"
     fq_logs = f"`{project_id}.{dataset_id}.live_loop_logs`"
 
+    # Enrichment columns may predate the live-loop deploy that stamps them.
+    try:
+        client.query(f"ALTER TABLE {fq} ADD COLUMN IF NOT EXISTS setup_type STRING").result()
+    except Exception as exc:
+        LOGGER.warning("Could not ensure trades.setup_type column exists: %s", exc)
+
     job_config = bigquery.QueryJobConfig(
         query_parameters=[bigquery.ArrayQueryParameter("dates", "STRING", run_dates)]
     )
@@ -313,7 +410,30 @@ def fetch_bq_ingest_for_dates(
     GROUP BY run_date
     """
 
+    fq_signals = f"`{project_id}.{dataset_id}.trade_signals`"
+    # setup_type is stamped at execution time going forward; backfill older rows
+    # from the nearest preceding trade_signal on the same underlying (<=15 min).
     trades_sql = f"""
+    WITH filtered AS (
+      SELECT *
+      FROM {fq}
+      WHERE entry_time IS NOT NULL
+        AND FORMAT_DATE('%Y-%m-%d', DATE(entry_time, 'America/New_York')) IN UNNEST(@dates)
+    ),
+    joined AS (
+      SELECT
+        t.*,
+        s.setup_type AS signal_setup_type,
+        ROW_NUMBER() OVER (
+          PARTITION BY t.id
+          ORDER BY s.timestamp DESC
+        ) AS signal_rank
+      FROM filtered t
+      LEFT JOIN {fq_signals} s
+        ON s.symbol = COALESCE(t.underlying_symbol, t.symbol)
+       AND s.timestamp <= t.entry_time
+       AND s.timestamp >= TIMESTAMP_SUB(t.entry_time, INTERVAL 15 MINUTE)
+    )
     SELECT
       id,
       trade_id,
@@ -329,10 +449,13 @@ def fetch_bq_ingest_for_dates(
       exit_price,
       pnl,
       exit_reason,
+      asset_class,
+      underlying_symbol,
+      option_metadata,
+      COALESCE(SAFE_CAST(setup_type AS STRING), signal_setup_type) AS setup_type,
       FORMAT_DATE('%Y-%m-%d', DATE(entry_time, 'America/New_York')) AS run_date
-    FROM {fq}
-    WHERE entry_time IS NOT NULL
-      AND FORMAT_DATE('%Y-%m-%d', DATE(entry_time, 'America/New_York')) IN UNNEST(@dates)
+    FROM joined
+    WHERE signal_rank = 1
     """
 
     hb_sql = f"""
@@ -372,12 +495,20 @@ def fetch_bq_ingest_for_dates(
         rd = row.run_date.isoformat() if hasattr(row.run_date, "isoformat") else str(row.run_date)
         tid = str(row.trade_id).strip() if row.trade_id else str(row.id)
         trade_uid = f"{rd}:{tid}"
+        symbol = str(row.symbol or "").strip()
+        enrichment = derive_trade_enrichment(
+            symbol=symbol,
+            asset_class=row.asset_class,
+            underlying_symbol=row.underlying_symbol,
+            setup_type=row.setup_type,
+            option_metadata=row.option_metadata,
+        )
         trades_out.append(
             TradeRow(
                 trade_uid=trade_uid,
                 run_date=rd,
                 order_id=str(row.trade_id).strip() if row.trade_id else None,
-                symbol=str(row.symbol or "").strip(),
+                symbol=symbol,
                 side=str(row.side) if row.side else None,
                 qty=_as_int(row.qty),
                 entry_price=float(row.entry_price) if row.entry_price is not None else None,
@@ -390,6 +521,7 @@ def fetch_bq_ingest_for_dates(
                 pnl=float(row.pnl) if row.pnl is not None else None,
                 status=str(row.status) if row.status else None,
                 source_file=f"bq://{project_id}.{dataset_id}.trades",
+                **enrichment,
             )
         )
 
@@ -443,6 +575,13 @@ def parse_backtest(run_date: str, backtest_path: Path) -> tuple[RunRow | None, l
             continue
         order_id = str(trade.get("order_id")).strip() if trade.get("order_id") else None
         trade_uid = f"{run_date}:{order_id or f'idx-{idx}'}"
+        enrichment = derive_trade_enrichment(
+            symbol=symbol,
+            asset_class=trade.get("asset_class"),
+            underlying_symbol=trade.get("underlying_symbol"),
+            setup_type=trade.get("setup_type"),
+            option_metadata=trade.get("option_metadata"),
+        )
         trade_rows.append(
             TradeRow(
                 trade_uid=trade_uid,
@@ -461,6 +600,7 @@ def parse_backtest(run_date: str, backtest_path: Path) -> tuple[RunRow | None, l
                 pnl=_as_float(trade.get("pnl")),
                 status=trade.get("status"),
                 source_file=str(backtest_path),
+                **enrichment,
             )
         )
     return run, trade_rows
@@ -495,6 +635,42 @@ def parse_heartbeat(run_date: str, log_path: Path) -> HeartbeatRow | None:
         backtest=bool(latest.get("backtest")),
         source_file=str(log_path),
     )
+
+
+def parse_account_snapshots(run_date: str, snapshot_path: Path) -> list[AccountSnapshotRow]:
+    """Read processed/account_snapshot.json (written by the live loop) into rows."""
+    if not snapshot_path.exists():
+        return []
+    try:
+        with snapshot_path.open("r", encoding="utf-8") as f:
+            payload = json.load(f)
+    except (json.JSONDecodeError, OSError):
+        return []
+
+    raw_rows = payload.get("snapshots") if isinstance(payload, dict) else None
+    if not isinstance(raw_rows, list):
+        return []
+
+    rows: list[AccountSnapshotRow] = []
+    for raw in raw_rows:
+        if not isinstance(raw, dict):
+            continue
+        captured_at = _as_iso(raw.get("captured_at"))
+        if not captured_at:
+            continue
+        rows.append(
+            AccountSnapshotRow(
+                snapshot_date=run_date,
+                captured_at=captured_at,
+                equity=_as_float(raw.get("equity")),
+                last_equity=_as_float(raw.get("last_equity")),
+                buying_power=_as_float(raw.get("buying_power")),
+                daily_pnl=_as_float(raw.get("daily_pnl")),
+                daily_pnl_pct=_as_float(raw.get("daily_pnl_pct")),
+                source=str(raw.get("source") or "alpaca_paper"),
+            )
+        )
+    return rows
 
 
 def parse_order_events(run_date: str, events_path: Path) -> list[OrderEventRow]:
@@ -691,6 +867,11 @@ def upsert_trades(cur, rows: list[TradeRow], now_iso: str) -> int:
             row.exit_reason,
             row.pnl,
             row.status,
+            row.underlying_symbol,
+            row.asset_class,
+            row.setup_type,
+            row.option_dte,
+            json.dumps(row.option_metadata, sort_keys=True) if row.option_metadata is not None else None,
             row.source_file,
             now_iso,
         )
@@ -700,7 +881,7 @@ def upsert_trades(cur, rows: list[TradeRow], now_iso: str) -> int:
         cur,
         """
         INSERT INTO llm_advisor_backtest_trades
-        (trade_uid,run_date,order_id,symbol,side,qty,entry_price,stop_loss,take_profit,entry_time,exit_time,exit_price,exit_reason,pnl,status,source_file,updated_at)
+        (trade_uid,run_date,order_id,symbol,side,qty,entry_price,stop_loss,take_profit,entry_time,exit_time,exit_price,exit_reason,pnl,status,underlying_symbol,asset_class,setup_type,option_dte,option_metadata,source_file,updated_at)
         VALUES %s
         ON CONFLICT (trade_uid) DO UPDATE SET
           run_date = EXCLUDED.run_date,
@@ -717,6 +898,11 @@ def upsert_trades(cur, rows: list[TradeRow], now_iso: str) -> int:
           exit_reason = EXCLUDED.exit_reason,
           pnl = EXCLUDED.pnl,
           status = EXCLUDED.status,
+          underlying_symbol = COALESCE(EXCLUDED.underlying_symbol, llm_advisor_backtest_trades.underlying_symbol),
+          asset_class = COALESCE(EXCLUDED.asset_class, llm_advisor_backtest_trades.asset_class),
+          setup_type = COALESCE(EXCLUDED.setup_type, llm_advisor_backtest_trades.setup_type),
+          option_dte = COALESCE(EXCLUDED.option_dte, llm_advisor_backtest_trades.option_dte),
+          option_metadata = COALESCE(EXCLUDED.option_metadata, llm_advisor_backtest_trades.option_metadata),
           source_file = EXCLUDED.source_file,
           updated_at = EXCLUDED.updated_at
         """,
@@ -753,6 +939,45 @@ def upsert_heartbeats(cur, rows: list[HeartbeatRow], now_iso: str) -> int:
           symbols_tracked = EXCLUDED.symbols_tracked,
           backtest = EXCLUDED.backtest,
           source_file = EXCLUDED.source_file,
+          updated_at = EXCLUDED.updated_at
+        """,
+        values,
+    )
+    return len(rows)
+
+
+def upsert_account_snapshots(cur, rows: list[AccountSnapshotRow], now_iso: str) -> int:
+    if not rows:
+        return 0
+    if execute_values is None:
+        raise SystemExit("Missing psycopg2. Install requirements before running EOD Supabase sync.")
+    values = [
+        (
+            row.snapshot_date,
+            row.captured_at,
+            row.equity,
+            row.last_equity,
+            row.buying_power,
+            row.daily_pnl,
+            row.daily_pnl_pct,
+            row.source,
+            now_iso,
+        )
+        for row in rows
+    ]
+    execute_values(
+        cur,
+        """
+        INSERT INTO llm_advisor_account_snapshots
+        (snapshot_date,captured_at,equity,last_equity,buying_power,daily_pnl,daily_pnl_pct,source,updated_at)
+        VALUES %s
+        ON CONFLICT (snapshot_date, captured_at) DO UPDATE SET
+          equity = EXCLUDED.equity,
+          last_equity = EXCLUDED.last_equity,
+          buying_power = EXCLUDED.buying_power,
+          daily_pnl = EXCLUDED.daily_pnl,
+          daily_pnl_pct = EXCLUDED.daily_pnl_pct,
+          source = EXCLUDED.source,
           updated_at = EXCLUDED.updated_at
         """,
         values,
@@ -845,11 +1070,13 @@ def main() -> None:
     trades: list[TradeRow] = []
     heartbeats: list[HeartbeatRow] = []
     order_events: list[OrderEventRow] = []
+    account_snapshots: list[AccountSnapshotRow] = []
     for run_date, run_dir in run_dirs:
         processed = run_dir / "processed"
         run_row, trade_rows = parse_daily_run_payload(run_date, processed)
         heartbeat_row = parse_heartbeat(run_date, processed / "live_loop_log.jsonl")
         event_rows = parse_order_events(run_date, processed / "order_events.jsonl")
+        snapshot_rows = parse_account_snapshots(run_date, processed / "account_snapshot.json")
         if run_row:
             runs.append(run_row)
         elif heartbeat_row:
@@ -860,6 +1087,7 @@ def main() -> None:
         if heartbeat_row:
             heartbeats.append(heartbeat_row)
         order_events.extend(event_rows)
+        account_snapshots.extend(snapshot_rows)
 
     use_bq = args.use_bigquery
     if use_bq is None:
@@ -892,15 +1120,17 @@ def main() -> None:
     trades = dedupe_trades(trades)
     heartbeats = dedupe_heartbeats(heartbeats)
     order_events = dedupe_order_events(order_events)
+    account_snapshots = dedupe_account_snapshots(account_snapshots)
 
     LOGGER.info(
-        "Prepared aggregate rows | runs=%d trades=%d heartbeats=%d order_events=%d",
+        "Prepared aggregate rows | runs=%d trades=%d heartbeats=%d order_events=%d account_snapshots=%d",
         len(runs),
         len(trades),
         len(heartbeats),
         len(order_events),
+        len(account_snapshots),
     )
-    if not (runs or trades or heartbeats or order_events):
+    if not (runs or trades or heartbeats or order_events or account_snapshots):
         message = "No ingestable rows were parsed from located run directories"
         if args.allow_empty:
             LOGGER.warning("%s (allow-empty enabled)", message)
@@ -919,6 +1149,7 @@ def main() -> None:
             upsert_trades(cur, trades, now_iso)
             upsert_heartbeats(cur, heartbeats, now_iso)
             upsert_order_events(cur, order_events, now_iso)
+            upsert_account_snapshots(cur, account_snapshots, now_iso)
             if args.validate:
                 checks = validate(cur)
                 LOGGER.info("Validation checks: %s", json.dumps(checks, sort_keys=True))
@@ -931,11 +1162,12 @@ def main() -> None:
                         raise SystemExit(msg)
                     LOGGER.warning("%s (set EOD_STRICT_TELEMETRY=1 to fail on this)", msg)
             LOGGER.info(
-                "EOD ingest complete | runs=%d trades=%d heartbeats=%d order_events=%d",
+                "EOD ingest complete | runs=%d trades=%d heartbeats=%d order_events=%d account_snapshots=%d",
                 len(runs),
                 len(trades),
                 len(heartbeats),
                 len(order_events),
+                len(account_snapshots),
             )
     finally:
         conn.close()

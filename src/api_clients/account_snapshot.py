@@ -51,6 +51,59 @@ def get_account(base_url: str, headers: dict) -> dict:
     return api_get(base_url, "/v2/account", headers)
 
 
+def build_snapshot_row(account: dict, now_utc: datetime, paper: bool) -> dict:
+    """Reduce the /v2/account payload to safe equity/PnL fields for telemetry.
+
+    Deliberately excludes account numbers and other identifying fields.
+    """
+    equity = safe_float(account.get("equity"))
+    last_equity = safe_float(account.get("last_equity"))
+    daily_pnl = (equity - last_equity) if (equity is not None and last_equity is not None) else None
+    daily_pnl_pct = (daily_pnl / last_equity) if (daily_pnl is not None and last_equity) else None
+    return {
+        "captured_at": now_utc.isoformat(),
+        "equity": equity,
+        "last_equity": last_equity,
+        "buying_power": safe_float(account.get("buying_power")),
+        "daily_pnl": daily_pnl,
+        "daily_pnl_pct": daily_pnl_pct,
+        "source": "alpaca_paper" if paper else "alpaca_live",
+    }
+
+
+def capture_snapshot_row() -> dict | None:
+    """Fetch the account from Alpaca using env credentials and return a safe snapshot row."""
+    api_key = os.getenv("ALPACA_API_KEY")
+    api_secret = os.getenv("ALPACA_SECRET_KEY")
+    if not api_key or not api_secret:
+        return None
+    paper = parse_bool(os.getenv("ALPACA_PAPER_TRADING", "true"))
+    base_url = base_url_for_env(paper)
+    headers = {
+        "APCA-API-KEY-ID": api_key,
+        "APCA-API-SECRET-KEY": api_secret,
+    }
+    account = get_account(base_url, headers)
+    return build_snapshot_row(account, datetime.now(timezone.utc), paper)
+
+
+def append_snapshot_artifact(output_dir: Path, row: dict) -> Path:
+    """Append a snapshot row to processed/account_snapshot.json for EOD ingest."""
+    path = Path(output_dir) / "account_snapshot.json"
+    payload: dict = {"snapshots": []}
+    if path.exists():
+        try:
+            existing = json.loads(path.read_text(encoding="utf-8"))
+            if isinstance(existing, dict) and isinstance(existing.get("snapshots"), list):
+                payload = existing
+        except (json.JSONDecodeError, OSError):
+            pass
+    payload["snapshots"].append(row)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+    return path
+
+
 def get_portfolio_history(base_url: str, headers: dict, **params) -> dict:
     # Only include non-None params
     q = {k: v for k, v in params.items() if v is not None}

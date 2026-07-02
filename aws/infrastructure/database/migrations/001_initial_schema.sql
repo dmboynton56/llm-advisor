@@ -111,6 +111,7 @@ CREATE TABLE IF NOT EXISTS trades (
     underlying_symbol VARCHAR(32),
     option_symbol VARCHAR(32),
     side VARCHAR(10) NOT NULL,
+    setup_type VARCHAR(10),  -- 'MR', 'TC' (from originating signal)
     entry_price DECIMAL(10, 2),
     stop_loss DECIMAL(10, 2),
     take_profit DECIMAL(10, 2),
