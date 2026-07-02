@@ -6,7 +6,7 @@ import {
   getLatestHeartbeat,
   getRuns,
 } from "@/lib/data";
-import { supabaseConfigured } from "@/lib/supabase";
+import { supabaseConfigured, checkSupabaseAccess } from "@/lib/supabase";
 import {
   fmtDateTime,
   fmtPct,
@@ -38,6 +38,11 @@ export default async function OverviewPage() {
     getLatestHeartbeat(),
   ]);
 
+  const access =
+    supabaseConfigured() && runs.length === 0 && !heartbeat
+      ? await checkSupabaseAccess()
+      : null;
+
   const latestSnapshot = snapshots.at(-1) ?? null;
   const latestRun = runs.at(-1) ?? null;
   const hb = heartbeatStatus(heartbeat?.heartbeat_ts ?? null);
@@ -66,6 +71,12 @@ export default async function OverviewPage() {
 
       {!supabaseConfigured() ? (
         <EmptyState message="Supabase is not configured. Set NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY." />
+      ) : null}
+
+      {access && !access.ok ? (
+        <EmptyState
+          message={`Supabase query failed (HTTP ${access.status}). On Vercel, verify NEXT_PUBLIC_SUPABASE_URL matches the shared project and NEXT_PUBLIC_SUPABASE_ANON_KEY is the full publishable key (sb_publishable_...) or legacy anon JWT — not a truncated value.`}
+        />
       ) : null}
 
       <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">

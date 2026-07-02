@@ -20,6 +20,22 @@ function buildSupabaseHeaders(apiKey: string): HeadersInit {
   return headers;
 }
 
+/** Cheap probe when pages render empty but env vars are set. */
+export async function checkSupabaseAccess(): Promise<
+  { ok: true } | { ok: false; status: number } | null
+> {
+  if (!SUPABASE_URL || !SUPABASE_API_KEY) return null;
+  try {
+    const res = await fetch(
+      `${SUPABASE_URL}/rest/v1/llm_advisor_backtest_runs?select=run_date&limit=1`,
+      { headers: buildSupabaseHeaders(SUPABASE_API_KEY), cache: "no-store" },
+    );
+    return res.ok ? { ok: true } : { ok: false, status: res.status };
+  } catch {
+    return { ok: false, status: 0 };
+  }
+}
+
 /**
  * Read-only PostgREST select. Returns null when Supabase isn't configured or
  * the request fails, so pages can render graceful empty states.
