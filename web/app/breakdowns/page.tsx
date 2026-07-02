@@ -4,7 +4,7 @@ import { getLatestOpsMetrics } from "@/lib/data";
 import { supabaseConfigured } from "@/lib/supabase";
 import { fmtNum, fmtPct, fmtSignedUsd, fmtUsd } from "@/lib/format";
 
-export const revalidate = 300;
+export const dynamic = "force-dynamic";
 
 export default async function BreakdownsPage() {
   const opsMetrics = await getLatestOpsMetrics();

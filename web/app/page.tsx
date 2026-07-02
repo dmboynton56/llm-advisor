@@ -16,7 +16,7 @@ import {
   relativeTime,
 } from "@/lib/format";
 
-export const revalidate = 300;
+export const dynamic = "force-dynamic";
 
 function heartbeatStatus(heartbeatTs: string | null): {
   label: string;

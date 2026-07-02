@@ -5,7 +5,7 @@ import { getLatestOpsMetrics, getValidationEvents } from "@/lib/data";
 import { supabaseConfigured } from "@/lib/supabase";
 import { fmtPct } from "@/lib/format";
 
-export const revalidate = 300;
+export const dynamic = "force-dynamic";
 
 const STAGE_LABELS: Record<string, string> = {
   signals: "Signals detected",

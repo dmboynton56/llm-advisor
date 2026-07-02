@@ -4,7 +4,7 @@ import { getLatestOpsMetrics, getTrades } from "@/lib/data";
 import { supabaseConfigured } from "@/lib/supabase";
 import { fmtSignedUsd } from "@/lib/format";
 
-export const revalidate = 300;
+export const dynamic = "force-dynamic";
 
 export default async function TradesPage() {
   const [trades, opsMetrics] = await Promise.all([
