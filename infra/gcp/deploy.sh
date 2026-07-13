@@ -97,7 +97,13 @@ create_or_update_job() {
       --uri="${uri}" \
       --http-method=GET \
       --oidc-service-account-email="${SCHEDULER_SA}" \
-      --oidc-token-audience="${FUNCTION_URL}"
+      --oidc-token-audience="${FUNCTION_URL}" \
+      --attempt-deadline=180s \
+      --max-retry-attempts=5 \
+      --max-retry-duration=300s \
+      --min-backoff=30s \
+      --max-backoff=120s \
+      --max-doublings=3
   else
     echo "==> Creating scheduler job ${job_name}..."
     gcloud scheduler jobs create http "${job_name}" \
@@ -108,7 +114,12 @@ create_or_update_job() {
       --http-method=GET \
       --oidc-service-account-email="${SCHEDULER_SA}" \
       --oidc-token-audience="${FUNCTION_URL}" \
-      --attempt-deadline=180s
+      --attempt-deadline=180s \
+      --max-retry-attempts=5 \
+      --max-retry-duration=300s \
+      --min-backoff=30s \
+      --max-backoff=120s \
+      --max-doublings=3
   fi
 }
 

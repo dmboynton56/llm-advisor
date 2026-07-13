@@ -3,11 +3,17 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
+import time
 import urllib.error
 import urllib.request
 
 import functions_framework
+
+logger = logging.getLogger(__name__)
+
+MAX_ERROR_BODY_LENGTH = 4096
 
 REPO = os.environ.get("GITHUB_REPO", "dmboynton56/llm-advisor")
 SYMBOLS = os.environ.get("GITHUB_SYMBOLS", "SPY,QQQ,IWM")
@@ -46,12 +52,38 @@ def _dispatch(workflow_key: str) -> tuple[int, str]:
         },
         method="POST",
     )
+    started_at = time.monotonic()
     try:
         with urllib.request.urlopen(req, timeout=30) as resp:
-            return resp.status, f"Triggered {workflow_key} ({WORKFLOWS[workflow_key]})"
+            latency_ms = (time.monotonic() - started_at) * 1000
+            logger.info(
+                "GitHub dispatch workflow=%s status=%s latency_ms=%.1f",
+                workflow_key,
+                resp.status,
+                latency_ms,
+            )
+            return 204, f"Triggered {workflow_key} ({WORKFLOWS[workflow_key]})"
     except urllib.error.HTTPError as exc:
         detail = exc.read().decode("utf-8", errors="replace")
-        return exc.code, f"GitHub API error: {detail}"
+        detail = detail[:MAX_ERROR_BODY_LENGTH]
+        latency_ms = (time.monotonic() - started_at) * 1000
+        logger.error(
+            "GitHub dispatch workflow=%s status=%s latency_ms=%.1f body=%s",
+            workflow_key,
+            exc.code,
+            latency_ms,
+            detail,
+        )
+        status = 502 if exc.code >= 500 else exc.code
+        return status, f"GitHub API error: {detail}"
+    except Exception:
+        latency_ms = (time.monotonic() - started_at) * 1000
+        logger.exception(
+            "GitHub dispatch workflow=%s status=unavailable latency_ms=%.1f",
+            workflow_key,
+            latency_ms,
+        )
+        return 502, "GitHub API request failed."
 
 
 @functions_framework.http
