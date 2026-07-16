@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import type { ReactNode } from "react";
-import { Activity, BarChart3, Filter, LineChart, Table2 } from "lucide-react";
+import { Activity, BarChart3, Command, Filter, LineChart, Table2 } from "lucide-react";
 import clsx from "clsx";
 
 const navItems = [
@@ -11,6 +11,9 @@ const navItems = [
   { href: "/trades", label: "Trades", icon: Table2 },
   { href: "/breakdowns", label: "Breakdowns", icon: BarChart3 },
   { href: "/funnel", label: "Funnel", icon: Filter },
+  ...(process.env.NEXT_PUBLIC_COMMAND_CENTER_ENABLED === "true"
+    ? [{ href: "/command-center", label: "Command Center", icon: Command }]
+    : []),
 ];
 
 export function AppShell({ children }: { children: ReactNode }) {

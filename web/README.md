@@ -12,6 +12,7 @@ modeled on the sports-edge ops dashboard. Intended deploy: Vercel at
 | `/trades` | Filterable trade table (date / underlying / side / setup / DTE) + biggest losers with LLM validation reasoning |
 | `/breakdowns` | Win rate / PnL / RR grids per underlying, long vs short, MR vs TC, DTE buckets (cells with n < 10 greyed out) |
 | `/funnel` | Signal → validation → execution funnel, rejection-reason histogram, LLM approval rate over time |
+| `/command-center` | Env-gated private watchlist, mock opportunity feed, and Robinhood MCP status |
 
 ## Data access
 
@@ -40,6 +41,24 @@ npm run dev
 
 Pages render graceful empty states when Supabase env vars are missing or
 tables are empty (weekends, fresh deploys).
+
+## Private command center
+
+Set both server-only values and the public navigation flag:
+
+```bash
+COMMAND_CENTER_ENABLED=true
+COMMAND_CENTER_PASSWORD=replace-with-a-long-random-password
+NEXT_PUBLIC_COMMAND_CENTER_ENABLED=true
+```
+
+Manual gate check:
+
+1. Leave the flags unset: `/command-center` returns 404 and no nav item appears.
+2. Enable the flags: unauthenticated visits redirect to `/command-center/login`.
+3. A wrong password remains blocked; the configured password sets an 8-hour HttpOnly cookie and renders mock data.
+
+This shared-password gate is only a private scaffold. Replace it with identity-backed auth before enabling Robinhood connectivity. Watchlist edits currently persist only in browser `localStorage`.
 
 ## Deploy (Vercel)
 
