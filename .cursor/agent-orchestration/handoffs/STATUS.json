@@ -1,0 +1,6 @@
+{
+  "phase": "fable_review",
+  "goal_done": false,
+  "next_actor": "fable",
+  "notes": "Codex implementation pass complete; overall goal remains open for Fable review. See CODEX_DONE.md. Core changes: 2%/$2k/3-slot sizing, unified 15:30 entry cutoff, DTE-aware overnight option policy, option reconcile drift exemption, funnel reporter and three-date rerun, gated mock command center, and tested Robinhood plan/result plumbing. Verification: 127 unit tests passed; Next production build passed; command-center runtime smoke checks passed. npm lint unavailable because eslint is not installed."
+}
