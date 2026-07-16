@@ -67,6 +67,11 @@ def to_utc(dt_et: datetime) -> datetime:
     return dt_et.astimezone(timezone.utc)
 
 
+def entry_window_is_open(current_et: datetime, run_end_et: datetime) -> bool:
+    """Use the same inclusive entry cutoff in live and backtest modes."""
+    return current_et <= run_end_et
+
+
 def _create_minimal_snapshot_from_bars(
     symbol: str,
     bars_1m: List[Dict[str, Any]],
@@ -410,12 +415,14 @@ def write_live_session_summary(
                 session_end_reason=session_end_reason,
                 summary_status="degraded",
                 summary_error=str(exc),
+                open_positions=live_open_position_count(order_manager),
             )
     else:
         summary = empty_live_session_summary(
             date_str=date_str,
             loop_count=loop_count,
             session_end_reason=session_end_reason,
+            open_positions=live_open_position_count(order_manager),
         )
     path = output_dir / "session_summary.json"
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -430,6 +437,7 @@ def empty_live_session_summary(
     session_end_reason: str,
     summary_status: str = "ok",
     summary_error: Optional[str] = None,
+    open_positions: int = 0,
 ) -> Dict[str, Any]:
     summary: Dict[str, Any] = {
         "date": date_str,
@@ -438,7 +446,7 @@ def empty_live_session_summary(
         "loop_iterations": loop_count,
         "total_trades": 0,
         "closed_trades": 0,
-        "open_positions": 0,
+        "open_positions": open_positions,
         "winning_trades": 0,
         "losing_trades": 0,
         "total_pnl": 0.0,
@@ -470,10 +478,16 @@ def build_live_session_summary(
         r
         for r in rows
         if r.get("entry_time") is not None
-        and date_str in str(r.get("entry_time", ""))
+        and (
+            date_str in str(r.get("entry_time", ""))
+            or str(r.get("status", "")).lower() in ("open", "filled", "pending")
+        )
     ]
     closed = [r for r in rows if str(r.get("status", "")).lower() == "closed"]
     open_ct = len([r for r in rows if str(r.get("status", "")).lower() in ("open", "filled", "pending")])
+    if order_manager:
+        # Broker state is authoritative and includes positions opened on prior days.
+        open_ct = max(open_ct, live_open_position_count(order_manager))
 
     def _f(x: Any) -> float:
         try:
@@ -704,7 +718,16 @@ def _position_side(pos: Dict[str, Any]) -> str:
     return side
 
 
-def _entry_price_is_wildly_stale(entry_price: Optional[float], current_price: Optional[float]) -> bool:
+def _entry_price_is_wildly_stale(
+    entry_price: Optional[float],
+    current_price: Optional[float],
+    position: Optional[Dict[str, Any]] = None,
+) -> bool:
+    if position and (
+        str(position.get("asset_class") or "").lower() in ("option", "us_option")
+        or bool(position.get("option_symbol"))
+    ):
+        return False
     if entry_price is None or current_price is None or entry_price <= 0 or current_price <= 0:
         return False
     max_drift = float(os.getenv("RECONCILE_MAX_ENTRY_DRIFT_PCT", "0.25"))
@@ -816,7 +839,7 @@ def reconcile_positions_with_alpaca(
     for symbol, alpaca_pos in alpaca_by_symbol.items():
         entry_px = _position_entry_price(alpaca_pos)
         current_px = _position_current_price(alpaca_pos, latest_prices)
-        stale = _entry_price_is_wildly_stale(entry_px, current_px)
+        stale = _entry_price_is_wildly_stale(entry_px, current_px, alpaca_pos)
 
         if stale:
             closed = False
@@ -1390,11 +1413,18 @@ def main():
                     order_manager,
                     trade_tracker,
                     current_et,
-                    settings.trading.end_of_day_close_time
+                    settings.trading.end_of_day_close_time,
+                    allow_overnight=settings.options.allow_overnight,
+                    eod_flatten_max_dte=settings.options.eod_flatten_max_dte,
                 )
                 if closed_or_flat:
-                    logger.info("End-of-day positions closed. Exiting.")
-                    finalize_live_session("eod_close")
+                    overnight_n = live_open_position_count(order_manager)
+                    if overnight_n:
+                        logger.info("End-of-day policy complete; holding %s option position(s) overnight.", overnight_n)
+                        finalize_live_session("eod_overnight_hold")
+                    else:
+                        logger.info("End-of-day positions closed. Exiting.")
+                        finalize_live_session("eod_close")
                     break
                 logger.warning("EOD cutoff reached; close attempt did not confirm flat positions. Retrying next loop.")
                 time.sleep(args.fast)
@@ -1629,7 +1659,7 @@ def main():
                 logger.debug("Skipping market analysis (no premarket context in backtest mode)")
             
             # Evaluate thresholds and collect signals
-            entry_window_open = is_backtest or current_et <= run_end_et
+            entry_window_open = entry_window_is_open(current_et, run_end_et)
             signals: List[SignalEvent] = []
             for symbol in symbols:
                 if not entry_window_open:

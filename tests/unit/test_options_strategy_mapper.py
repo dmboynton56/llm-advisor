@@ -238,3 +238,57 @@ def test_mapper_records_candidate_fetch_error_diagnostics() -> None:
     assert mapper.last_rejection is not None
     assert mapper.last_rejection["reason"] == "candidate_fetch_error"
     assert mapper.last_rejection["candidate_source"]["contracts_returned"] == 0
+
+
+def test_mapper_sizes_spy_like_contract_to_effective_two_percent_budget() -> None:
+    class FakeOptionsClient:
+        def find_candidates(self, **kwargs):
+            return [_snapshot("SPY260116C00740000", delta=0.45, bid=7.90, ask=8.10)]
+
+    mapper = OptionsStrategyMapper(OptionsSettings(), RiskSettings())
+    signal = SimpleNamespace(
+        symbol="SPY", side="long", setup_type="MR", entry_price=739.0, z_score=-2.0
+    )
+
+    plan = mapper.build_trade_plan(signal, object(), FakeOptionsClient(), 100000)
+
+    assert plan is not None
+    assert plan.qty == 2
+    assert plan.limit_price == 8.16
+    assert plan.estimated_premium == 1632.0
+
+
+def test_mapper_filters_contract_that_exceeds_effective_budget() -> None:
+    class FakeOptionsClient:
+        def find_candidates(self, **kwargs):
+            return [_snapshot("SPY260116C00740000", delta=0.45, bid=20.90, ask=21.10)]
+
+    mapper = OptionsStrategyMapper(OptionsSettings(), RiskSettings())
+    signal = SimpleNamespace(
+        symbol="SPY", side="long", setup_type="MR", entry_price=739.0, z_score=-2.0
+    )
+
+    assert mapper.build_trade_plan(signal, object(), FakeOptionsClient(), 100000) is None
+    assert mapper.last_rejection is not None
+    assert mapper.last_rejection["reason"] == "all_candidates_filtered"
+    assert mapper.last_rejection["filter_rejections"]["premium_too_high"] == 1
+
+
+def test_mapper_preserves_explicit_legacy_two_hundred_dollar_cap() -> None:
+    class FakeOptionsClient:
+        def find_candidates(self, **kwargs):
+            return [_snapshot("SPY260116C00740000", delta=0.45, bid=1.80, ask=1.90)]
+
+    mapper = OptionsStrategyMapper(
+        OptionsSettings(max_premium_per_trade=200.0),
+        RiskSettings(max_risk_per_trade_percent=1.0),
+    )
+    signal = SimpleNamespace(
+        symbol="SPY", side="long", setup_type="MR", entry_price=739.0, z_score=-2.0
+    )
+
+    plan = mapper.build_trade_plan(signal, object(), FakeOptionsClient(), 100000)
+
+    assert plan is not None
+    assert plan.qty == 1
+    assert plan.estimated_premium <= 200.0

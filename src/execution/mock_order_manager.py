@@ -18,7 +18,7 @@ class SimulatedTrade:
     entry_time: datetime
     exit_time: Optional[datetime] = None
     exit_price: Optional[float] = None
-    exit_reason: Optional[str] = None  # "stop_loss", "take_profit", "end_of_day"
+    exit_reason: Optional[str] = None  # "stop_loss", "take_profit", "backtest_eod"
     pnl: Optional[float] = None
     status: str = "filled"  # filled, closed
 
@@ -201,7 +201,7 @@ class MockOrderManager:
         closed_count = 0
         for symbol, trade in list(self.open_positions.items()):
             exit_price = current_prices.get(symbol, trade.entry_price)  # Use current price or entry as fallback
-            self._close_trade(trade, exit_price, "end_of_day", current_time)
+            self._close_trade(trade, exit_price, "backtest_eod", current_time)
             closed_count += 1
         return closed_count
     
@@ -304,4 +304,3 @@ def execute_trade_from_signal(
         take_profit=state.trade.tp_price,
         atr_5m=state.atr_5m,
     )
-

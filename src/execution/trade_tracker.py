@@ -2,8 +2,9 @@
 from __future__ import annotations
 
 import logging
+import re
 from typing import TYPE_CHECKING, Any, Dict, List, Optional
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 
 from src.core.config import OptionsSettings
 from src.execution.order_manager import StockOrderManager
@@ -12,6 +13,24 @@ if TYPE_CHECKING:
     from src.data.storage import StorageAdapter
 
 logger = logging.getLogger(__name__)
+
+_OCC_OPTION_RE = re.compile(r"^[A-Z0-9.]{1,10}(?P<expiry>\d{6})[CP]\d{8}$")
+
+
+def option_expiration_date(symbol: str) -> Optional[date]:
+    """Extract the YYMMDD expiration encoded in an OCC option symbol."""
+    match = _OCC_OPTION_RE.fullmatch(str(symbol).upper().replace(" ", ""))
+    if not match:
+        return None
+    try:
+        return datetime.strptime(match.group("expiry"), "%y%m%d").date()
+    except ValueError:
+        return None
+
+
+def option_dte(symbol: str, on_date: date) -> Optional[int]:
+    expiry = option_expiration_date(symbol)
+    return (expiry - on_date).days if expiry else None
 
 
 class TradeTracker:
@@ -251,7 +270,15 @@ class TradeTracker:
             return "option_stop_loss"
 
         hold_minutes = self._hold_minutes(symbol, now)
-        if hold_minutes is not None and hold_minutes >= self.options_settings.max_hold_minutes:
+        dte = option_dte(symbol, now.date())
+        time_stop_applies = not self.options_settings.allow_overnight or (
+            dte is not None and dte <= 0
+        )
+        if (
+            time_stop_applies
+            and hold_minutes is not None
+            and hold_minutes >= self.options_settings.max_hold_minutes
+        ):
             return "option_time_stop"
         return None
 
@@ -295,7 +322,7 @@ class TradeTracker:
     @staticmethod
     def _is_option_position(pos: Dict[str, Any]) -> bool:
         asset_class = str(pos.get("asset_class", "")).lower()
-        return asset_class == "option" or bool(pos.get("option_symbol"))
+        return asset_class in ("option", "us_option") or bool(pos.get("option_symbol"))
 
     @staticmethod
     def _normalized_pct(value: Any) -> float:

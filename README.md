@@ -87,14 +87,18 @@ OPTION_DTE_MIN=7
 OPTION_DTE_MAX=14
 OPTION_DELTA_MIN=0.35
 OPTION_DELTA_MAX=0.55
-MAX_OPTION_PREMIUM_PER_TRADE=200
+MAX_RISK_PER_TRADE_PERCENT=2.0
+MAX_CONCURRENT_TRADES=3
+MAX_OPTION_PREMIUM_PER_TRADE=2000
 MAX_OPTION_BID_ASK_SPREAD_PCT=0.15
 MIN_OPTION_OPEN_INTEREST=100
 OPTION_STRIKE_WINDOW_PCT=0.10
 OPTION_PROFIT_TARGET_PCT=0.25
 OPTION_STOP_LOSS_PCT=0.35
-OPTION_MAX_HOLD_MINUTES=30
-OPTION_CLOSE_AT_ENTRY_WINDOW_END=true
+OPTION_MAX_HOLD_MINUTES=2880
+OPTION_CLOSE_AT_ENTRY_WINDOW_END=false
+OPTION_ALLOW_OVERNIGHT=true
+OPTION_EOD_FLATTEN_MAX_DTE=0
 GOOGLE_API_KEY=your_gemini_key
 GCP_PROJECT_ID=your_gcp_project
 GCP_DATASET_ID=trading_signals
@@ -143,9 +147,10 @@ To refresh the portfolio artifact (`personal-portfolio/public/data/llm_advisor_b
   `TRADING_INSTRUMENT=options`, `OPTIONS_PAPER_ONLY=true`, and
   `ALPACA_PAPER_TRADING=true`. STDEV stock signals are mapped to 7-14 DTE long
   calls or long puts after delta, bid/ask spread, open interest, and premium
-  checks. The default profile simulates a small account with one position at a
-  time, a $200 max premium, 25% profit target, 35% stop, 30 minute time stop,
-  and a forced option close when the entry window ends.
+  checks. The $100k paper profile risks at most 2% ($2,000) of equity premium
+  per trade and permits three concurrent positions: about 6% worst-case total
+  premium at risk. This makes results strategy-sized while retaining a clear
+  per-trade and portfolio cap.
 - **Stock Paper Trading**: Set `TRADING_INSTRUMENT=stocks` and
   `ALLOW_STOCK_FALLBACK=true` to use the legacy stock bracket order manager.
 - **Live Trading**: The options engine refuses live mode while
@@ -163,11 +168,13 @@ options-first paper runbook, see
 [`docs/options_paper_runbook.md`](docs/options_paper_runbook.md).
 
 For next-day operational checks and artifact expectations, see
-[`LIVE_LOOP_RUNBOOK.md`](LIVE_LOOP_RUNBOOK.md).
+[`LIVE_LOOP_RUNBOOK.md`](LIVE_LOOP_RUNBOOK.md). For the proposed Robinhood
+Agentic Trading (MCP) execution rollout, see
+[`docs/robinhood_mcp_execution_plan.md`](docs/robinhood_mcp_execution_plan.md).
 
 ### Optional
 
-- `MAX_CONCURRENT_TRADES` (default `1`) caps simultaneous open positions before new entries are sent.
+- `MAX_CONCURRENT_TRADES` (default `3`) caps simultaneous open positions before new entries are sent.
 
 ## Testing
 

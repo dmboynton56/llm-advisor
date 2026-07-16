@@ -149,7 +149,13 @@ class OptionsStrategyMapper:
             }
             raise
 
-        filtered, filter_rejections = self._filter_candidates_with_diagnostics(candidates, profile)
+        risk_budget = min(
+            float(profile.max_premium_per_trade),
+            float(account_equity) * (float(self.risk.max_risk_per_trade_percent) / 100.0),
+        )
+        filtered, filter_rejections = self._filter_candidates_with_diagnostics(
+            candidates, profile, risk_budget
+        )
         if not filtered:
             self.last_rejection = {
                 "reason": "no_candidate_snapshots" if not candidates else "all_candidates_filtered",
@@ -171,10 +177,6 @@ class OptionsStrategyMapper:
         best = self._rank_candidates(filtered, profile)[0]
         mid = best.quote.mid_price
         limit_price = self._round_price(mid * (1.0 + self.options.order_price_buffer_pct))
-        risk_budget = min(
-            float(profile.max_premium_per_trade),
-            float(account_equity) * (float(self.risk.max_risk_per_trade_percent) / 100.0),
-        )
         contract_cost = limit_price * 100.0
         qty = int(risk_budget // contract_cost)
         if qty <= 0:
@@ -227,13 +229,17 @@ class OptionsStrategyMapper:
         )
 
     def _filter_candidates(self, candidates: List[OptionSnapshot]) -> List[OptionSnapshot]:
-        filtered, _ = self._filter_candidates_with_diagnostics(candidates, self._primary_profile())
+        profile = self._primary_profile()
+        filtered, _ = self._filter_candidates_with_diagnostics(
+            candidates, profile, float(profile.max_premium_per_trade)
+        )
         return filtered
 
     def _filter_candidates_with_diagnostics(
         self,
         candidates: List[OptionSnapshot],
         profile: OptionSelectionProfile,
+        risk_budget: float,
     ) -> Tuple[List[OptionSnapshot], Dict[str, int]]:
         rejections = {
             "missing_delta": 0,
@@ -258,7 +264,7 @@ class OptionsStrategyMapper:
             if candidate.contract.open_interest < profile.min_open_interest:
                 rejections["open_interest_too_low"] += 1
                 continue
-            if candidate.quote.mid_price * 100.0 > profile.max_premium_per_trade:
+            if candidate.quote.mid_price * 100.0 > risk_budget:
                 rejections["premium_too_high"] += 1
                 continue
             filtered.append(candidate)

@@ -5,6 +5,7 @@ from datetime import datetime, timedelta, timezone
 
 from src.core.config import OptionsSettings
 from src.execution.trade_tracker import TradeTracker
+from src.execution.eod_position_manager import check_and_close_eod
 
 
 class FakeStorage:
@@ -89,7 +90,7 @@ def test_trade_tracker_closes_option_at_time_stop() -> None:
     tracker = TradeTracker(
         manager,
         storage=storage,
-        options_settings=OptionsSettings(max_hold_minutes=30),
+        options_settings=OptionsSettings(max_hold_minutes=30, allow_overnight=False),
     )
     tracker.register_open_trade(
         "SPY260116C00500000",
@@ -129,3 +130,62 @@ def test_trade_tracker_force_closes_option_on_entry_window_end() -> None:
     assert positions == []
     assert manager.closed == ["SPY260116C00500000"]
     assert storage.closed[0]["exit_reason"] == "option_entry_window_close"
+
+
+def test_entry_window_setting_does_not_force_close_by_default() -> None:
+    manager = FakeOrderManager([_option_position(plpc=0.01)])
+    settings = OptionsSettings(close_at_entry_window_end=False)
+    tracker = TradeTracker(manager, options_settings=settings)
+
+    positions = tracker.update_positions(
+        now=datetime(2026, 5, 21, 19, 31, tzinfo=timezone.utc),
+        force_close_options=settings.close_at_entry_window_end,
+        force_close_reason="option_entry_window_close",
+    )
+
+    assert len(positions) == 1
+    assert manager.closed == []
+
+
+def test_eod_holds_seven_dte_option_and_closes_zero_dte_option() -> None:
+    manager = FakeOrderManager(
+        [
+            _option_position("SPY260521C00740000", plpc=0.01),
+            _option_position("SPY260528C00740000", plpc=0.01),
+        ]
+    )
+    now = datetime(2026, 5, 21, 15, 50, tzinfo=timezone(timedelta(hours=-4)))
+
+    policy_complete = check_and_close_eod(
+        manager,
+        None,
+        now,
+        "15:50",
+        allow_overnight=True,
+        eod_flatten_max_dte=0,
+    )
+
+    assert policy_complete
+    assert manager.closed == ["SPY260521C00740000"]
+    assert [pos["symbol"] for pos in manager.positions] == ["SPY260528C00740000"]
+
+
+def test_time_stop_is_inert_for_future_expiry_when_overnight_allowed() -> None:
+    now = datetime(2026, 5, 21, 19, 0, tzinfo=timezone.utc)
+    symbol = "SPY260528C00740000"
+    manager = FakeOrderManager([_option_position(symbol, plpc=0.01)])
+    tracker = TradeTracker(
+        manager,
+        options_settings=OptionsSettings(max_hold_minutes=30, allow_overnight=True),
+    )
+    tracker.register_open_trade(
+        symbol,
+        "order-1",
+        42,
+        metadata={"asset_class": "option", "opened_at": now - timedelta(hours=4)},
+    )
+
+    positions = tracker.update_positions(now=now)
+
+    assert len(positions) == 1
+    assert manager.closed == []

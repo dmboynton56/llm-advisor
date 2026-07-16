@@ -12,10 +12,13 @@ from src.live.loop import (
     build_execution_failure_details,
     build_live_session_summary,
     execute_trade,
+    entry_window_is_open,
+    et_dt,
     reconcile_positions_with_alpaca,
     sync_state_with_positions,
     write_live_session_summary,
 )
+from src.core.config import TradingSettings
 from src.live.state_manager import SymbolState, TradePlan
 from src.live.threshold_evaluator import SignalEvent
 from src.features.stdev_features import RollingStats
@@ -44,6 +47,16 @@ def _minimal_state(symbol: str = "SPY") -> SymbolState:
         triggered_at=datetime.now(timezone.utc),
     )
     return st
+
+
+def test_default_entry_window_allows_afternoon_but_blocks_after_1530() -> None:
+    settings = TradingSettings()
+    trading_day = datetime(2026, 5, 21).date()
+    run_end = et_dt(trading_day, settings.trading_window_end)
+
+    assert settings.trading_window_end == "15:30"
+    assert entry_window_is_open(et_dt(trading_day, "14:00"), run_end)
+    assert not entry_window_is_open(et_dt(trading_day, "15:35"), run_end)
 
 
 def test_execute_trade_returns_order_dict(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -163,6 +176,30 @@ def test_build_live_session_summary_includes_option_metadata(tmp_path: Path) -> 
     assert trade["underlying_symbol"] == "SPY"
     assert trade["option_symbol"] == "SPY260116C00500000"
     assert trade["option_metadata"]["delta"] == 0.45
+
+
+def test_build_live_session_summary_counts_broker_overnight_position() -> None:
+    class NoCurrentDayTrades:
+        def get_trades(self, *args, **kwargs):
+            return []
+
+    class OvernightBroker:
+        def get_open_positions(self):
+            return [{"symbol": "SPY260529C00740000", "asset_class": "option"}]
+
+        def get_account_equity(self):
+            return 100_000
+
+    summary = build_live_session_summary(
+        storage=NoCurrentDayTrades(),
+        date_str="2026-05-22",
+        loop_count=380,
+        session_end_reason="eod_overnight_hold",
+        order_manager=OvernightBroker(),
+    )
+
+    assert summary["session_end_reason"] == "eod_overnight_hold"
+    assert summary["open_positions"] == 1
 
 
 def test_write_live_session_summary_degrades_when_storage_query_fails(tmp_path: Path) -> None:
@@ -293,3 +330,64 @@ def test_startup_reconcile_deletes_bq_orphan_without_recovery(tmp_path: Path) ->
         "startup_reconcile_orphan_bq_closed",
         "startup_reconcile_flat",
     }
+
+
+def test_startup_reconcile_does_not_flatten_option_with_large_price_drift(tmp_path: Path) -> None:
+    symbol = "SPY260529C00740000"
+
+    class FakeStorage:
+        def __init__(self):
+            self.updated = []
+
+        def get_open_positions(self):
+            return [
+                {
+                    "trade_id": 42,
+                    "symbol": symbol,
+                    "asset_class": "option",
+                    "option_symbol": symbol,
+                    "entry_price": 10.0,
+                    "entry_time": datetime(2026, 5, 20, tzinfo=timezone.utc),
+                    "qty": 1,
+                }
+            ]
+
+        def update_position(self, position):
+            self.updated.append(position)
+
+    class OptionOrderManager:
+        def __init__(self):
+            self.closed = []
+
+        def get_open_positions(self):
+            return [
+                {
+                    "symbol": symbol,
+                    "asset_class": "option",
+                    "option_symbol": symbol,
+                    "avg_entry_price": 10.0,
+                    "current_price": 14.0,
+                    "qty": 1,
+                    "side": "long",
+                    "unrealized_pl": 400.0,
+                }
+            ]
+
+        def close_position(self, option_symbol):
+            self.closed.append(option_symbol)
+            return True
+
+    storage = FakeStorage()
+    manager = OptionOrderManager()
+
+    reconciled = reconcile_positions_with_alpaca(
+        states={},
+        storage=storage,
+        order_manager=manager,
+        trade_tracker=None,
+        order_events_path=tmp_path / "order_events.jsonl",
+    )
+
+    assert len(reconciled) == 1
+    assert manager.closed == []
+    assert storage.updated
