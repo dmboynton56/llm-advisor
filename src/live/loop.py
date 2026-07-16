@@ -369,6 +369,42 @@ def capture_account_snapshot(output_dir: Path, is_backtest: bool) -> None:
         logger.error("Failed to capture account snapshot: %s", exc)
 
 
+def maybe_publish_live_state(
+    *,
+    is_backtest: bool,
+    trade_tracker: Any,
+    order_manager: Any,
+    settings: Any,
+    trading_date: Any,
+    loop_count: int,
+    session_end_reason: Optional[str] = None,
+    force: bool = False,
+) -> None:
+    """Upsert llm_advisor_live_state. Live-mode only; never raises into the trade loop."""
+    if is_backtest or not trade_tracker or not order_manager:
+        return
+    try:
+        from src.telemetry.live_state import (
+            build_live_state_row,
+            publish_live_state,
+            should_publish_this_tick,
+        )
+
+        if not force and not should_publish_this_tick(loop_count):
+            return
+        row = build_live_state_row(
+            trade_tracker,
+            order_manager,
+            settings,
+            session_date=trading_date,
+            loop_count=loop_count,
+            session_end_reason=session_end_reason,
+        )
+        publish_live_state(row)
+    except Exception as exc:
+        logger.warning("live_state publish skipped: %s", exc)
+
+
 def append_shutdown_heartbeat(
     log_path: Path,
     symbols: List[str],
@@ -1354,6 +1390,16 @@ def main():
             return
         append_shutdown_heartbeat(log_path, symbols, loop_count, False)
         capture_account_snapshot(output_dir, is_backtest)
+        maybe_publish_live_state(
+            is_backtest=is_backtest,
+            trade_tracker=trade_tracker,
+            order_manager=order_manager,
+            settings=settings,
+            trading_date=trading_date,
+            loop_count=loop_count,
+            session_end_reason=reason,
+            force=True,
+        )
         write_live_session_summary(
             output_dir,
             date_str,
@@ -1445,6 +1491,14 @@ def main():
                 force_close_options=settings.options.close_at_entry_window_end,
                 force_close_reason="option_entry_window_close",
                 order_events_path=order_events_path,
+                loop_count=loop_count,
+            )
+            maybe_publish_live_state(
+                is_backtest=is_backtest,
+                trade_tracker=trade_tracker,
+                order_manager=order_manager,
+                settings=settings,
+                trading_date=trading_date,
                 loop_count=loop_count,
             )
             open_n = live_open_position_count(order_manager)
@@ -2131,6 +2185,14 @@ def main():
                     trade_tracker,
                     current_utc=current_utc,
                     order_events_path=order_events_path,
+                    loop_count=loop_count,
+                )
+                maybe_publish_live_state(
+                    is_backtest=is_backtest,
+                    trade_tracker=trade_tracker,
+                    order_manager=order_manager,
+                    settings=settings,
+                    trading_date=trading_date,
                     loop_count=loop_count,
                 )
             

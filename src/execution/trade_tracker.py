@@ -49,6 +49,7 @@ class TradeTracker:
         self._order_meta: Dict[str, Dict[str, Any]] = {}
         self._closing_symbols: set[str] = set()
         self._exit_events: List[Dict[str, Any]] = []
+        self.session_closed: List[Dict[str, Any]] = []
 
     def register_open_trade(
         self,
@@ -104,6 +105,11 @@ class TradeTracker:
             meta = self._order_meta.pop(symbol, {})
             u_pnl = float(old_pos.get("unrealized_pl", 0) or 0)
             logger.info("Position closed: %s (last unrealized P/L: $%.2f)", symbol, u_pnl)
+            self._record_session_closed(
+                symbol=symbol,
+                pnl=u_pnl,
+                exit_reason="position_closed",
+            )
 
             if self.storage and meta:
                 try:
@@ -243,6 +249,11 @@ class TradeTracker:
             )
 
             if closed:
+                self._record_session_closed(
+                    symbol=symbol,
+                    pnl=self._float_or_zero(pos.get("unrealized_pl")),
+                    exit_reason=reason,
+                )
                 self._persist_closed_position(symbol, pos, reason)
                 self.tracked_positions.pop(symbol, None)
                 self._order_meta.pop(symbol, None)
@@ -251,6 +262,20 @@ class TradeTracker:
                 remaining.append(pos)
 
         return remaining
+
+    def get_session_closed(self) -> List[Dict[str, Any]]:
+        """Closed trades accrued during this process lifetime (for live-state telemetry)."""
+        return list(self.session_closed)
+
+    def _record_session_closed(self, symbol: str, pnl: float, exit_reason: str) -> None:
+        self.session_closed.append(
+            {
+                "symbol": symbol,
+                "pnl": float(pnl),
+                "exit_reason": exit_reason,
+                "closed_at": datetime.now(timezone.utc).isoformat(),
+            }
+        )
 
     def _option_exit_reason(
         self,

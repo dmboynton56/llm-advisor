@@ -62,3 +62,75 @@ export function pnlColor(value: number | null | undefined): string {
   if (value === null || value === undefined || value === 0) return "text-zinc-400";
   return value > 0 ? "text-emerald-400" : "text-rose-400";
 }
+
+/** OCC option symbol: ROOT + YYMMDD + C/P + strike*1000 (8 digits). */
+const OCC_RE = /^([A-Z0-9.]{1,10})(\d{6})([CP])(\d{8})$/;
+
+export type ParsedOcc = {
+  underlying: string;
+  expiry: string; // YYYY-MM-DD
+  right: "C" | "P";
+  strike: number;
+  dte: number | null;
+};
+
+export function parseOccSymbol(
+  symbol: string,
+  onDate: Date = new Date(),
+): ParsedOcc | null {
+  const cleaned = symbol.toUpperCase().replace(/\s+/g, "");
+  const match = OCC_RE.exec(cleaned);
+  if (!match) return null;
+  const [, underlying, yymmdd, right, strikeRaw] = match;
+  const yy = Number(yymmdd.slice(0, 2));
+  const mm = Number(yymmdd.slice(2, 4));
+  const dd = Number(yymmdd.slice(4, 6));
+  const year = 2000 + yy;
+  const expiry = `${year.toString().padStart(4, "0")}-${mm
+    .toString()
+    .padStart(2, "0")}-${dd.toString().padStart(2, "0")}`;
+  const strike = Number(strikeRaw) / 1000;
+  const expiryUtc = Date.UTC(year, mm - 1, dd);
+  const todayUtc = Date.UTC(
+    onDate.getUTCFullYear(),
+    onDate.getUTCMonth(),
+    onDate.getUTCDate(),
+  );
+  const dte = Math.round((expiryUtc - todayUtc) / 86_400_000);
+  return {
+    underlying,
+    expiry,
+    right: right as "C" | "P",
+    strike,
+    dte: Number.isFinite(dte) ? dte : null,
+  };
+}
+
+export function formatOccLabel(symbol: string): string {
+  const parsed = parseOccSymbol(symbol);
+  if (!parsed) return symbol;
+  const right = parsed.right === "C" ? "Call" : "Put";
+  return `${parsed.underlying} ${parsed.expiry} ${parsed.strike} ${right}`;
+}
+
+/** Weekday 09:30–16:00 America/New_York. */
+export function isRegularSessionEt(now: Date = new Date()): boolean {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: "America/New_York",
+    weekday: "short",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  }).formatToParts(now);
+  const weekday = parts.find((p) => p.type === "weekday")?.value ?? "";
+  if (weekday === "Sat" || weekday === "Sun") return false;
+  const hour = Number(parts.find((p) => p.type === "hour")?.value ?? "0");
+  const minute = Number(parts.find((p) => p.type === "minute")?.value ?? "0");
+  const mins = hour * 60 + minute;
+  return mins >= 9 * 60 + 30 && mins <= 16 * 60;
+}
+
+export function normalizePlpc(raw: number | null | undefined): number {
+  if (raw === null || raw === undefined || Number.isNaN(raw)) return 0;
+  return Math.abs(raw) > 5 ? raw / 100 : raw;
+}

@@ -41,6 +41,9 @@ Current serving contract:
 - EOD aggregation upserts into Supabase tables:
   `llm_advisor_backtest_runs`, `llm_advisor_backtest_trades`,
   `llm_advisor_runtime_heartbeats`, and `llm_advisor_order_events`.
+- Intraday: the live loop upserts a single `llm_advisor_live_state` row
+  (`sql/005_live_state.sql`) for open PnL / loop liveness; the ops dashboard
+  command-center blotter also polls Alpaca paper directly (see `web/README.md`).
 - The portfolio reads those Supabase tables through
   `/api/llm-advisor/metrics` and uses docs under
   `personal-portfolio/docs/project-knowledge/llm-advisor/` for scoped chat.

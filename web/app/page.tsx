@@ -4,6 +4,7 @@ import { DailyPnlBars } from "@/components/charts/DailyPnlBars";
 import {
   getAccountSnapshots,
   getLatestHeartbeat,
+  getLiveState,
   getRuns,
 } from "@/lib/data";
 import { supabaseConfigured, checkSupabaseAccess } from "@/lib/supabase";
@@ -12,11 +13,16 @@ import {
   fmtPct,
   fmtSignedUsd,
   fmtUsd,
+  formatOccLabel,
+  isRegularSessionEt,
   pnlColor,
   relativeTime,
 } from "@/lib/format";
+import type { LiveStateRow } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
+
+const LIVE_FRESH_MS = 3 * 60_000;
 
 function heartbeatStatus(heartbeatTs: string | null): {
   label: string;
@@ -31,11 +37,18 @@ function heartbeatStatus(heartbeatTs: string | null): {
   return { label: "Stale", tone: "negative" };
 }
 
+function liveStateFresh(row: LiveStateRow | null): boolean {
+  if (!row?.heartbeat_ts) return false;
+  const age = Date.now() - new Date(row.heartbeat_ts).getTime();
+  return !Number.isNaN(age) && age <= LIVE_FRESH_MS;
+}
+
 export default async function OverviewPage() {
-  const [snapshots, runs, heartbeat] = await Promise.all([
+  const [snapshots, runs, heartbeat, liveState] = await Promise.all([
     getAccountSnapshots(90),
     getRuns(30),
     getLatestHeartbeat(),
+    getLiveState("paper"),
   ]);
 
   const access =
@@ -58,6 +71,9 @@ export default async function OverviewPage() {
   }));
 
   const totalPnl30d = runs.reduce((acc, r) => acc + Number(r.total_pnl ?? 0), 0);
+  const liveFresh = liveStateFresh(liveState);
+  const inSession = isRegularSessionEt();
+  const sessionEnded = Boolean(liveState?.session_stats?.session_end_reason);
 
   return (
     <div className="space-y-6">
@@ -77,6 +93,87 @@ export default async function OverviewPage() {
         <EmptyState
           message={`Supabase query failed (HTTP ${access.status}). On Vercel, verify NEXT_PUBLIC_SUPABASE_URL matches the shared project and NEXT_PUBLIC_SUPABASE_ANON_KEY is the full publishable key (sb_publishable_...) or legacy anon JWT — not a truncated value.`}
         />
+      ) : null}
+
+      {liveFresh && liveState ? (
+        <Card
+          title="Live session"
+          subtitle={
+            <>
+              Loop alive · tick {liveState.loop_count ?? "—"} · last{" "}
+              {relativeTime(liveState.heartbeat_ts)}
+            </>
+          }
+        >
+          <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+            <MetricCard
+              label="Equity"
+              value={fmtUsd(liveState.equity, 0)}
+              hint="from live_state upsert"
+            />
+            <MetricCard
+              label="Daily PnL"
+              value={fmtSignedUsd(liveState.daily_pnl)}
+              tone={
+                (liveState.daily_pnl ?? 0) > 0
+                  ? "positive"
+                  : (liveState.daily_pnl ?? 0) < 0
+                    ? "negative"
+                    : "neutral"
+              }
+            />
+            <MetricCard
+              label="Open uPnL"
+              value={fmtSignedUsd(liveState.unrealized_pnl)}
+              tone={
+                (liveState.unrealized_pnl ?? 0) > 0
+                  ? "positive"
+                  : (liveState.unrealized_pnl ?? 0) < 0
+                    ? "negative"
+                    : "neutral"
+              }
+              hint={`${liveState.open_position_count} open`}
+            />
+            <MetricCard
+              label="Session stats"
+              value={`${liveState.session_stats?.wins ?? 0}W / ${liveState.session_stats?.losses ?? 0}L`}
+              hint={
+                liveState.session_stats?.realized_pnl != null
+                  ? `realized ${fmtSignedUsd(Number(liveState.session_stats.realized_pnl))}`
+                  : undefined
+              }
+            />
+          </div>
+          {(liveState.open_positions?.length ?? 0) > 0 ? (
+            <ul className="mt-4 space-y-1 text-sm text-zinc-300">
+              {liveState.open_positions.map((p) => (
+                <li key={p.symbol} className="flex justify-between gap-4 font-mono text-xs">
+                  <span>{formatOccLabel(p.symbol)}</span>
+                  <span className={pnlColor(p.unrealized_plpc)}>
+                    {fmtPct(
+                      Math.abs(p.unrealized_plpc) > 5
+                        ? p.unrealized_plpc / 100
+                        : p.unrealized_plpc,
+                      1,
+                    )}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="mt-3 text-sm text-zinc-500">Flat — no open positions.</p>
+          )}
+        </Card>
+      ) : inSession && !sessionEnded ? (
+        <Card title="Live session" subtitle="Intraday loop telemetry">
+          <p className="text-sm text-zinc-400">
+            Loop offline
+            {liveState?.heartbeat_ts
+              ? ` — last heartbeat ${relativeTime(liveState.heartbeat_ts)}`
+              : " — no live_state row yet"}
+            . Open the command-center blotter for broker-truth marks.
+          </p>
+        </Card>
       ) : null}
 
       <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">

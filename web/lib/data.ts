@@ -2,6 +2,7 @@ import { supabaseSelect } from "@/lib/supabase";
 import type {
   AccountSnapshot,
   Heartbeat,
+  LiveStateRow,
   OpsMetricsDaily,
   RunRow,
   TradeRow,
@@ -60,4 +61,14 @@ export async function getValidationEvents(days = 30): Promise<ValidationEvent[]>
     `select=run_date,event_type&event_type=in.(validation_approved,validation_rejected)&run_date=gte.${daysAgoIso(days)}&order=run_date.asc&limit=5000`,
   );
   return rows ?? [];
+}
+
+export async function getLiveState(
+  source = "paper",
+): Promise<LiveStateRow | null> {
+  const rows = await supabaseSelect<LiveStateRow>(
+    "llm_advisor_live_state",
+    `select=source,session_date,heartbeat_ts,loop_count,equity,last_equity,daily_pnl,unrealized_pnl,open_position_count,open_positions,session_stats,exit_policy,updated_at&source=eq.${encodeURIComponent(source)}&limit=1`,
+  );
+  return rows?.[0] ?? null;
 }

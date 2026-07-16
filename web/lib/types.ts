@@ -105,3 +105,92 @@ export type OpsMetricsDaily = {
   metric_date: string;
   payload: OpsMetricsPayload;
 };
+
+export type LiveExitPolicy = {
+  stop_loss_pct: number;
+  profit_target_pct: number;
+  max_hold_minutes?: number;
+  allow_overnight?: boolean;
+};
+
+export type LiveOpenPosition = {
+  symbol: string;
+  option_symbol?: string | null;
+  underlying_symbol?: string | null;
+  asset_class?: string | null;
+  qty: number;
+  side: string;
+  entry_price: number | null;
+  current_price: number | null;
+  unrealized_pl: number;
+  unrealized_plpc: number;
+  opened_at?: string | null;
+  setup_type?: string | null;
+  dte?: number | null;
+  stop_mark?: number | null;
+  tp_mark?: number | null;
+  pct_to_stop?: number | null;
+  pct_to_tp?: number | null;
+};
+
+export type LiveOrder = {
+  id?: string;
+  symbol: string;
+  side: string;
+  type: string;
+  qty: number | null;
+  filled_qty?: number | null;
+  limit_price: number | null;
+  stop_price?: number | null;
+  filled_avg_price?: number | null;
+  status: string;
+  submitted_at: string | null;
+  filled_at?: string | null;
+};
+
+export type LiveAccount = {
+  equity: number | null;
+  last_equity: number | null;
+  buying_power: number | null;
+  daily_pnl: number | null;
+  daily_pnl_pct: number | null;
+};
+
+export type LiveStateRow = {
+  source: string;
+  session_date: string;
+  heartbeat_ts: string;
+  loop_count: number | null;
+  equity: number | null;
+  last_equity: number | null;
+  daily_pnl: number | null;
+  unrealized_pnl: number | null;
+  open_position_count: number;
+  open_positions: LiveOpenPosition[];
+  session_stats: {
+    fills?: number;
+    realized_pnl?: number;
+    wins?: number;
+    losses?: number;
+    closed?: Array<{
+      symbol: string;
+      pnl: number;
+      exit_reason: string;
+      closed_at: string;
+    }>;
+    session_end_reason?: string;
+  };
+  exit_policy: LiveExitPolicy;
+  updated_at?: string;
+};
+
+export type LiveBlotterPayload = {
+  account: LiveAccount;
+  positions: LiveOpenPosition[];
+  openOrders: LiveOrder[];
+  todaysOrders: LiveOrder[];
+  fetchedAt: string;
+  exitPolicy: LiveExitPolicy;
+  liveState: LiveStateRow | null;
+  error?: string;
+};
