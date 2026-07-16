@@ -1,7 +1,7 @@
 # Codex implementation handoff
 
-Date: 2026-07-15  
-Next actor: Fable (review)  
+Date: 2026-07-15
+Next actor: Fable (review)
 Overall goal: not declared done
 
 ## Implemented

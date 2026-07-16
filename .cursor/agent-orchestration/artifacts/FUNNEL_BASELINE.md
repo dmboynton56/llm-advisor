@@ -1,6 +1,6 @@
 # Trade Funnel Baseline
 
-Generated: 2026-07-15  
+Generated: 2026-07-15
 Command: `.venv/bin/python scripts/report_trade_funnel.py`
 
 | Date | Signals | Approved | Rejected | Attempts | Failed | Filled | Trades | PnL |
@@ -11,8 +11,8 @@ Command: `.venv/bin/python scripts/report_trade_funnel.py`
 | **2026-05-21 (operational live loop)** | **32** | **0** | **0** | **0** | **0** | **0** | **0** | **$0.00** |
 | TOTAL | 468 | 0 | 0 | 0 | 0 | 0 | 0 | $0.00 |
 
-Failure reasons: none recorded.  
-Exit reasons: none recorded.  
+Failure reasons: none recorded.
+Exit reasons: none recorded.
 Average entry position size: n/a.
 
 ## Interpretation
