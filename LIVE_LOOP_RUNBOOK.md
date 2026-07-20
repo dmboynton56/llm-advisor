@@ -14,9 +14,10 @@ This runbook defines a successful LLM Advisor paper-trading day.
    - `processed/live_loop_log.jsonl`
    - `processed/order_events.jsonl` when signals or order attempts occur
    - `processed/session_summary.json`
-4. `EOD Aggregate` runs after the live workflow completes unless the live
-   workflow was cancelled. It ingests the artifact, optionally merges BigQuery,
-   and upserts Supabase telemetry rows.
+4. `EOD Aggregate` runs after the live workflow completes (including
+   timeout-cancelled runs that still uploaded `llm-advisor-daily-news-*`).
+   It ingests the artifact, optionally merges BigQuery, and upserts Supabase
+   telemetry rows. It noops only when there is no telemetry artifact.
 5. The portfolio reads Supabase through `/api/llm-advisor/metrics`.
 
 Google Cloud Scheduler owns the daily timing and dispatches the GitHub
