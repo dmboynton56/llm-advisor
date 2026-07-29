@@ -2,6 +2,8 @@
 from __future__ import annotations
 
 from types import SimpleNamespace
+from datetime import datetime, timedelta, timezone
+from dataclasses import replace
 
 import pytest
 from alpaca.trading.enums import OrderClass, OrderSide, OrderType, PositionIntent, TimeInForce
@@ -142,3 +144,77 @@ def test_execute_signal_trade_returns_option_candidate_diagnostics() -> None:
     assert result["success"] is False
     assert result["error"] == "no_option_candidate"
     assert result["diagnostics"] == diagnostics
+
+
+def test_ensure_protective_stop_uses_actual_position_fill() -> None:
+    submitted = {}
+
+    class FakeTradingClient:
+        def get_orders(self, filter):
+            return []
+
+        def submit_order(self, order_data):
+            submitted["order"] = order_data
+            return SimpleNamespace(id="stop-1")
+
+    manager = OptionsOrderManager.__new__(OptionsOrderManager)
+    manager.trading_client = FakeTradingClient()
+    manager.options_settings = OptionsSettings(stop_loss_pct=0.35)
+    manager._risk_events = []
+
+    events = manager.ensure_protective_stops(
+        positions=[
+            {
+                "symbol": "SPY260116C00500000",
+                "asset_class": "option",
+                "qty": 3,
+                "entry_price": 2.0,
+            }
+        ],
+        order_meta={"SPY260116C00500000": {"order_id": "entry-1"}},
+    )
+
+    request = submitted["order"]
+    assert request.side == OrderSide.SELL
+    assert request.type == OrderType.STOP
+    assert request.position_intent == PositionIntent.SELL_TO_CLOSE
+    assert request.qty == 3
+    assert request.stop_price == 1.30
+    assert events[0]["details"]["actual_filled_qty"] == 3
+    assert events[0]["details"]["entry_order_id"] == "entry-1"
+
+
+def test_entry_guard_blocks_same_contract_and_underlying_direction() -> None:
+    manager = OptionsOrderManager.__new__(OptionsOrderManager)
+    manager.settings = _settings()
+    manager._stopout_cooldowns = {}
+    manager.get_open_orders = lambda symbols=None, **kwargs: []
+    manager.get_open_positions = lambda: [
+        {
+            "symbol": "SPY260116C00500000",
+            "asset_class": "option",
+            "qty": 1,
+        }
+    ]
+
+    duplicate = manager._entry_guard(_plan())
+    assert duplicate["error"] == "duplicate_option_contract"
+
+    other_call = replace(_plan(), option_symbol="SPY260116C00510000")
+    exposure = manager._entry_guard(other_call)
+    assert exposure["error"] == "underlying_direction_exposure"
+
+
+def test_entry_guard_honors_persisted_stopout_cooldown() -> None:
+    manager = OptionsOrderManager.__new__(OptionsOrderManager)
+    manager.settings = _settings()
+    manager._stopout_cooldowns = {
+        "SPY": datetime.now(timezone.utc).replace(microsecond=0)
+    }
+    manager._stopout_cooldowns["SPY"] += timedelta(minutes=30)
+    manager.get_open_orders = lambda symbols=None, **kwargs: []
+    manager.get_open_positions = lambda: []
+
+    result = manager._entry_guard(_plan())
+
+    assert result["error"] == "stopout_cooldown"

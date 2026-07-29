@@ -1,16 +1,40 @@
 import { Card, EmptyState } from "@/components/MetricCard";
 import { TradesTable } from "@/components/TradesTable";
-import { getLatestOpsMetrics, getTrades } from "@/lib/data";
+import { getLatestOpsMetrics, getTradeLifecycles } from "@/lib/data";
 import { supabaseConfigured } from "@/lib/supabase";
 import { fmtSignedUsd } from "@/lib/format";
+import type { TradeLifecycleRow, TradeRow } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
 
+function lifecycleAsTrade(row: TradeLifecycleRow): TradeRow {
+  return {
+    trade_uid: row.lifecycle_uid,
+    run_date: (row.opened_at ?? row.closed_at ?? "").slice(0, 10),
+    order_id: row.entry_order_id,
+    symbol: row.symbol,
+    underlying_symbol: row.underlying_symbol,
+    asset_class: "option",
+    side: "buy",
+    setup_type: null,
+    option_dte: null,
+    qty: row.filled_qty,
+    entry_price: row.entry_fill_price,
+    exit_price: row.exit_fill_price,
+    entry_time: row.opened_at,
+    exit_time: row.closed_at,
+    exit_reason: row.exit_reason,
+    pnl: row.realized_pnl,
+    status: row.status,
+  };
+}
+
 export default async function TradesPage() {
-  const [trades, opsMetrics] = await Promise.all([
-    getTrades(90),
+  const [lifecycles, opsMetrics] = await Promise.all([
+    getTradeLifecycles(90),
     getLatestOpsMetrics(),
   ]);
+  const trades = lifecycles.map(lifecycleAsTrade);
 
   const losers = opsMetrics?.payload?.biggest_losers ?? [];
 
@@ -19,8 +43,8 @@ export default async function TradesPage() {
       <div>
         <h1 className="text-xl font-semibold tracking-tight">Trades</h1>
         <p className="mt-1 text-sm text-zinc-500">
-          Every executed trade over the last 90 days. Entry and exit dates are
-          separate so overnight positions are attributed correctly.
+          Broker-position lifecycles over the last 90 days, using actual fills
+          when available and exit-date attribution.
         </p>
       </div>
 
@@ -38,7 +62,7 @@ export default async function TradesPage() {
 
       <Card
         title="Biggest losers"
-        subtitle="Worst closed trades in the current metrics window, with the LLM's validation reasoning at entry"
+        subtitle="Legacy entry-lot analysis with the LLM's validation reasoning; canonical PnL is the lifecycle table above"
       >
         {losers.length > 0 ? (
           <div className="space-y-3">

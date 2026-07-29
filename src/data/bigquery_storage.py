@@ -803,6 +803,31 @@ class BigQueryStorage(StorageAdapter):
             ]
         )
         self.client.query(q, job_config=job_config).result()
+
+    def update_trade_entry_fill(
+        self,
+        trade_pk: int,
+        qty: int,
+        entry_price: float,
+    ) -> None:
+        params = [
+            bigquery.ScalarQueryParameter("trade_pk", "INT64", int(trade_pk)),
+            bigquery.ScalarQueryParameter("qty", "INT64", int(qty)),
+            bigquery.ScalarQueryParameter("entry_price", "NUMERIC", float(entry_price)),
+        ]
+        config = bigquery.QueryJobConfig(query_parameters=params)
+        trades = f"`{self.project_id}.{self.dataset_id}.trades`"
+        positions = f"`{self.project_id}.{self.dataset_id}.positions`"
+        self.client.query(
+            f"UPDATE {trades} SET status = 'open', qty = @qty, entry_price = @entry_price "
+            "WHERE id = @trade_pk",
+            job_config=config,
+        ).result()
+        self.client.query(
+            f"UPDATE {positions} SET qty = @qty, entry_price = @entry_price "
+            "WHERE trade_id = @trade_pk",
+            job_config=config,
+        ).result()
     
     def get_open_positions(self) -> List[Dict[str, Any]]:
         """Get all open positions."""

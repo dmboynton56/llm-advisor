@@ -51,20 +51,14 @@ def evaluate_thresholds(
     # when slope agrees. Moderate z-scores still belong to mean reversion.
     if state.status == "idle":
         if state.ema_slope_hourly > 0 and z >= thresholds.tc_arm_z:
-            state.status = "tc_armed"
-            state.side = "long"
-            state.armed_z = z
+            state.arm("tc_armed", "long", z)
             return None
         if state.ema_slope_hourly < 0 and z <= -thresholds.tc_arm_z:
-            state.status = "tc_armed"
-            state.side = "short"
-            state.armed_z = z
+            state.arm("tc_armed", "short", z)
             return None
 
         if abs(z) >= thresholds.mr_arm_z:
-            state.status = "mr_armed"
-            state.side = "long" if z < 0 else "short"
-            state.armed_z = z
+            state.arm("mr_armed", "long" if z < 0 else "short", z)
             return None
     
     # MR trigger

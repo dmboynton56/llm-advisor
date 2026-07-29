@@ -12,6 +12,8 @@ class FakeStorage:
     def __init__(self) -> None:
         self.closed = []
         self.deleted = []
+        self.entry_fills = []
+        self.positions = []
 
     def close_trade_by_pk(self, trade_pk, exit_time, exit_price=None, pnl=None, exit_reason=""):
         self.closed.append(
@@ -25,6 +27,14 @@ class FakeStorage:
 
     def delete_position_by_trade_pk(self, trade_pk):
         self.deleted.append(trade_pk)
+
+    def update_trade_entry_fill(self, trade_pk, qty, entry_price):
+        self.entry_fills.append(
+            {"trade_pk": trade_pk, "qty": qty, "entry_price": entry_price}
+        )
+
+    def update_position(self, position):
+        self.positions.append(position)
 
 
 class FakeOrderManager:
@@ -72,6 +82,8 @@ def test_trade_tracker_closes_option_at_profit_target() -> None:
     )
 
     positions = tracker.update_positions(now=datetime.now(timezone.utc))
+    assert len(positions) == 1  # close requested; broker disappearance confirms the fill
+    positions = tracker.update_positions(now=datetime.now(timezone.utc))
 
     assert positions == []
     assert manager.closed == ["SPY260116C00500000"]
@@ -79,8 +91,10 @@ def test_trade_tracker_closes_option_at_profit_target() -> None:
     assert storage.closed[0]["pnl"] == 52.0
     assert storage.deleted == [42]
     events = tracker.pop_exit_events()
-    assert events[0]["event_type"] == "option_exit_requested"
-    assert events[0]["details"]["reason"] == "option_profit_target"
+    requested = next(
+        event for event in events if event["event_type"] == "option_exit_requested"
+    )
+    assert requested["details"]["reason"] == "option_profit_target"
 
 
 def test_trade_tracker_closes_option_at_time_stop() -> None:
@@ -99,6 +113,8 @@ def test_trade_tracker_closes_option_at_time_stop() -> None:
         metadata={"asset_class": "option", "opened_at": now - timedelta(minutes=31)},
     )
 
+    positions = tracker.update_positions(now=now)
+    assert len(positions) == 1
     positions = tracker.update_positions(now=now)
 
     assert positions == []
@@ -126,6 +142,8 @@ def test_trade_tracker_force_closes_option_on_entry_window_end() -> None:
         force_close_options=True,
         force_close_reason="option_entry_window_close",
     )
+    assert len(positions) == 1
+    positions = tracker.update_positions(now=datetime.now(timezone.utc))
 
     assert positions == []
     assert manager.closed == ["SPY260116C00500000"]
@@ -189,3 +207,47 @@ def test_time_stop_is_inert_for_future_expiry_when_overnight_allowed() -> None:
 
     assert len(positions) == 1
     assert manager.closed == []
+
+
+def test_protective_stop_event_activates_actual_entry_fill() -> None:
+    storage = FakeStorage()
+    symbol = "SPY260116C00500000"
+    tracker = TradeTracker(
+        FakeOrderManager([]),
+        storage=storage,
+        options_settings=OptionsSettings(),
+    )
+    tracker.register_open_trade(
+        symbol,
+        "entry-1",
+        42,
+        metadata={
+            "asset_class": "option",
+            "underlying_symbol": "SPY",
+            "option_symbol": symbol,
+        },
+    )
+
+    tracker._persist_actual_entry_fills(
+        [
+            {
+                "event_type": "option_protective_stop_submitted",
+                "symbol": symbol,
+                "details": {
+                    "actual_filled_qty": 3,
+                    "actual_entry_price": 2.15,
+                    "position": {
+                        "side": "long",
+                        "current_price": 2.20,
+                        "unrealized_pl": 15.0,
+                    },
+                },
+            }
+        ]
+    )
+
+    assert storage.entry_fills == [
+        {"trade_pk": 42, "qty": 3, "entry_price": 2.15}
+    ]
+    assert storage.positions[0]["qty"] == 3
+    assert storage.positions[0]["entry_price"] == 2.15

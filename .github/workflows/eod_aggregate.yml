@@ -218,6 +218,15 @@ jobs:
             python scripts/run_eod_aggregate.py --lookback-days 3 --validate $BQ_FLAG
           fi
 
+      - name: Alert on broker reconciliation gap
+        if: steps.live_artifact.outputs.skip_remaining_steps != 'true' && steps.telemetry_content.outputs.has_content == 'true'
+        run: |
+          DATE_ARGS=()
+          if [ -n "${{ github.event.inputs.date }}" ]; then
+            DATE_ARGS=(--date "${{ github.event.inputs.date }}")
+          fi
+          python scripts/alert_broker_reconciliation.py "${DATE_ARGS[@]}"
+
       - name: Sync BigQuery to Supabase (rolling window)
         if: ${{ steps.live_artifact.outputs.skip_remaining_steps != 'true' && steps.telemetry_content.outputs.has_content == 'true' && env.GCP_PROJECT_ID != '' }}
         run: python scripts/sync_bq_to_supabase.py --days 14

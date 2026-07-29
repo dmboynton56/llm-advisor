@@ -1,7 +1,7 @@
 """Symbol state management for live trading loop."""
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import Optional
+from typing import Any, Dict, List, Optional
 
 from src.features.stdev_features import RollingStats
 from config.thresholds import STDEVThresholds, ThresholdMultiplier
@@ -37,6 +37,7 @@ class SymbolState:
     last_sigma: float = 0.0
     last_z: float = 0.0
     armed_z: Optional[float] = None
+    z_trajectory: List[Dict[str, Any]] = field(default_factory=list)
     trade: Optional[TradePlan] = None
     last_update_utc: Optional[str] = None
 
@@ -56,11 +57,21 @@ class SymbolState:
         self.last_sigma = float(sigma)
         self.last_z = float(z)
         self.last_update_utc = timestamp.isoformat()
+        if self.status.endswith("_armed") or self.status.endswith("_triggered"):
+            self.z_trajectory.append({"ts": self.last_update_utc, "z": self.last_z})
+            self.z_trajectory = self.z_trajectory[-120:]
+
+    def arm(self, status: str, side: str, z: float) -> None:
+        """Start a new auditable signal trajectory."""
+        self.status = status
+        self.side = side
+        self.armed_z = float(z)
+        self.z_trajectory = [{"ts": self.last_update_utc, "z": float(z)}]
     
     def reset_to_idle(self) -> None:
         """Reset state to idle."""
         self.status = "idle"
         self.side = None
         self.armed_z = None
+        self.z_trajectory = []
         self.trade = None
-

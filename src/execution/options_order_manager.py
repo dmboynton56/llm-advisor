@@ -1,14 +1,24 @@
 """Paper-only options order manager for STDEV signals."""
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
+import json
+from pathlib import Path
+import re
 from typing import Any, Dict, List, Optional
 
 from dotenv import load_dotenv
 
 from alpaca.trading.client import TradingClient
-from alpaca.trading.enums import OrderClass, OrderSide, OrderType, PositionIntent, TimeInForce
-from alpaca.trading.requests import LimitOrderRequest
+from alpaca.trading.enums import (
+    OrderClass,
+    OrderSide,
+    OrderType,
+    PositionIntent,
+    QueryOrderStatus,
+    TimeInForce,
+)
+from alpaca.trading.requests import GetOrdersRequest, LimitOrderRequest, StopOrderRequest
 
 from src.core.config import OptionsSettings, RiskSettings, Settings
 from src.data.alpaca_options_client import AlpacaOptionsClient
@@ -16,6 +26,23 @@ from src.execution.options_strategy_mapper import OptionTradePlan, OptionsStrate
 from src.utils.env_sanitize import getenv_strip
 
 load_dotenv()
+
+_OCC_OPTION_RE = re.compile(
+    r"^(?P<underlying>[A-Z0-9.]{1,10})(?P<expiry>\d{6})(?P<contract_type>[CP])\d{8}$"
+)
+_ACTIVE_ORDER_STATUSES = {
+    "accepted",
+    "accepted_for_bidding",
+    "held",
+    "new",
+    "partially_filled",
+    "pending_cancel",
+    "pending_new",
+    "pending_replace",
+    "pending_review",
+}
+_TERMINAL_CANCEL_STATUSES = {"canceled", "expired", "rejected", "replaced"}
+_PROTECTIVE_STOP_PREFIX = "llma-stop-"
 
 
 class OptionsOrderManager:
@@ -28,6 +55,7 @@ class OptionsOrderManager:
         paper: bool = True,
         settings: Optional[Settings] = None,
         options_client: Optional[AlpacaOptionsClient] = None,
+        risk_state_path: Optional[Path] = None,
     ):
         self.settings = settings or Settings.load()
         self.options_settings: OptionsSettings = self.settings.options
@@ -49,6 +77,11 @@ class OptionsOrderManager:
             feed=self.options_settings.data_feed,
         )
         self.mapper = OptionsStrategyMapper(self.options_settings, self.risk_settings)
+        self._risk_events: List[Dict[str, Any]] = []
+        self._stopout_cooldowns: Dict[str, datetime] = {}
+        self._last_exit_orders: Dict[str, str] = {}
+        self._risk_state_path = Path(risk_state_path) if risk_state_path else None
+        self._load_risk_state()
 
     @staticmethod
     def _failure(error: str, **extra: Any) -> Dict[str, Any]:
@@ -70,9 +103,50 @@ class OptionsOrderManager:
             print(f"  ! Failed to get positions: {exc}")
             return []
 
-    def close_position(self, symbol: str) -> bool:
+    def get_open_orders(
+        self,
+        symbols: Optional[List[str]] = None,
+        *,
+        raise_on_error: bool = False,
+    ) -> List[Any]:
+        """Return broker-open orders; callers use this for exposure and stop checks."""
         try:
-            self.trading_client.close_position(symbol)
+            request = GetOrdersRequest(
+                status=QueryOrderStatus.OPEN,
+                limit=500,
+                nested=True,
+                symbols=symbols,
+            )
+            return list(self.trading_client.get_orders(filter=request))
+        except Exception as exc:
+            print(f"  ! Failed to get open orders: {exc}")
+            if raise_on_error:
+                raise
+            return []
+
+    def close_position(self, symbol: str) -> bool:
+        """Cancel the protective stop, confirm it is inactive, then request a close."""
+        cancel_result = self.cancel_protective_stop(symbol)
+        if cancel_result["status"] == "filled":
+            self._risk_events.append(
+                {
+                    "event_type": "option_exit_already_filled",
+                    "symbol": symbol,
+                    "details": cancel_result,
+                }
+            )
+            return True
+        if cancel_result["status"] not in ("absent", "canceled"):
+            print(
+                f"  ! Protective stop for {symbol} is not safely canceled "
+                f"({cancel_result['status']}); deferring close"
+            )
+            return False
+        try:
+            order = self.trading_client.close_position(symbol)
+            order_id = str(getattr(order, "id", "") or "")
+            if order_id:
+                self._last_exit_orders[symbol] = order_id
             print(f"  > Closed position {symbol}")
             return True
         except Exception as exc:
@@ -113,6 +187,10 @@ class OptionsOrderManager:
                 available=buying_power,
                 option_plan=plan.to_dict(),
             )
+
+        guard_failure = self._entry_guard(plan)
+        if guard_failure:
+            return guard_failure
 
         return self.execute_option_trade(plan)
 
@@ -157,6 +235,400 @@ class OptionsOrderManager:
                 detail=str(exc),
                 option_plan=plan.to_dict(),
             )
+
+    def _entry_guard(self, plan: OptionTradePlan) -> Optional[Dict[str, Any]]:
+        """Enforce broker-truth exposure limits, including pending buy orders."""
+        positions = self.get_open_positions()
+        try:
+            open_orders = self.get_open_orders(raise_on_error=True)
+        except Exception as exc:
+            return self._failure(
+                "broker_order_query_failed",
+                detail=str(exc),
+                option_plan=plan.to_dict(),
+            )
+        desired_symbol = plan.option_symbol.upper()
+        desired_underlying = plan.underlying_symbol.upper()
+        desired_direction = str(plan.signal_side).lower()
+
+        held_symbols = {str(pos.get("symbol", "")).upper() for pos in positions}
+        pending_entries = [
+            order
+            for order in open_orders
+            if self._order_side(order) == "buy" and self._order_status(order) in _ACTIVE_ORDER_STATUSES
+        ]
+        pending_symbols = {str(getattr(order, "symbol", "")).upper() for order in pending_entries}
+
+        if desired_symbol in held_symbols or desired_symbol in pending_symbols:
+            return self._failure(
+                "duplicate_option_contract",
+                option_symbol=plan.option_symbol,
+                option_plan=plan.to_dict(),
+            )
+
+        exposure: List[Dict[str, str]] = []
+        for pos in positions:
+            symbol = str(pos.get("symbol", "")).upper()
+            underlying, direction = self.option_exposure(symbol)
+            if underlying:
+                exposure.append(
+                    {"symbol": symbol, "underlying": underlying, "direction": direction or ""}
+                )
+        for order in pending_entries:
+            symbol = str(getattr(order, "symbol", "")).upper()
+            underlying, direction = self.option_exposure(symbol)
+            if underlying:
+                exposure.append(
+                    {"symbol": symbol, "underlying": underlying, "direction": direction or ""}
+                )
+
+        if any(
+            item["underlying"] == desired_underlying
+            and item["direction"] == desired_direction
+            for item in exposure
+        ):
+            return self._failure(
+                "underlying_direction_exposure",
+                underlying_symbol=plan.underlying_symbol,
+                direction=desired_direction,
+                existing_exposure=exposure,
+                option_plan=plan.to_dict(),
+            )
+
+        open_risk_count = len(positions) + len(pending_entries)
+        max_concurrent = int(self.settings.trading.max_concurrent_trades)
+        if open_risk_count >= max_concurrent:
+            return self._failure(
+                "max_concurrent_trades",
+                open_positions=len(positions),
+                pending_entries=len(pending_entries),
+                max_concurrent_trades=max_concurrent,
+                option_plan=plan.to_dict(),
+            )
+
+        cooldown_until = self._stopout_cooldowns.get(desired_underlying)
+        now = datetime.now(timezone.utc)
+        if cooldown_until and now < cooldown_until:
+            return self._failure(
+                "stopout_cooldown",
+                underlying_symbol=desired_underlying,
+                cooldown_until=cooldown_until.isoformat(),
+                option_plan=plan.to_dict(),
+            )
+        return None
+
+    def record_stopout(self, symbol: str, minutes: int = 60) -> None:
+        underlying, _ = self.option_exposure(symbol)
+        if underlying:
+            self._stopout_cooldowns[underlying] = datetime.now(timezone.utc) + timedelta(
+                minutes=max(1, int(minutes))
+            )
+            self._save_risk_state()
+
+    def ensure_protective_stops(
+        self,
+        positions: Optional[List[Dict[str, Any]]] = None,
+        order_meta: Optional[Dict[str, Dict[str, Any]]] = None,
+    ) -> List[Dict[str, Any]]:
+        """Attach a DAY broker stop to every open long-option position."""
+        positions = positions if positions is not None else self.get_open_positions()
+        order_meta = order_meta or {}
+        events: List[Dict[str, Any]] = []
+        option_positions = [
+            pos
+            for pos in positions
+            if str(pos.get("asset_class", "")).lower() in ("option", "us_option")
+        ]
+        try:
+            open_orders = self.get_open_orders(
+                [str(pos.get("symbol")) for pos in option_positions if pos.get("symbol")],
+                raise_on_error=True,
+            )
+        except Exception as exc:
+            for pos in option_positions:
+                event = {
+                    "event_type": "option_protective_stop_failed",
+                    "symbol": str(pos.get("symbol", "")).upper(),
+                    "details": {
+                        "error": f"broker_order_query_failed: {exc}",
+                        "actual_filled_qty": abs(float(pos.get("qty", 0) or 0)),
+                        "actual_entry_price": self._float_or_none(pos.get("entry_price")),
+                    },
+                }
+                events.append(event)
+                self._risk_events.append(event)
+            return events
+
+        for pos in option_positions:
+            symbol = str(pos.get("symbol", "")).upper()
+            qty = abs(float(pos.get("qty", 0) or 0))
+            entry_price = self._float_or_none(pos.get("entry_price"))
+            if not symbol or qty <= 0 or not entry_price:
+                continue
+
+            matching = [
+                order
+                for order in open_orders
+                if str(getattr(order, "symbol", "")).upper() == symbol
+                and self._is_protective_stop(order)
+            ]
+            if matching:
+                protected_qty = sum(
+                    abs(self._float_or_none(getattr(order, "qty", None)) or 0.0)
+                    for order in matching
+                )
+                if abs(protected_qty - qty) < 1e-9:
+                    continue
+                cancel_result = self.cancel_protective_stop(symbol)
+                if cancel_result.get("status") not in ("absent", "canceled"):
+                    event = {
+                        "event_type": "option_protective_stop_failed",
+                        "symbol": symbol,
+                        "details": {
+                            "error": "protective_stop_qty_mismatch_cancel_failed",
+                            "cancel_result": cancel_result,
+                            "protected_qty": protected_qty,
+                            "actual_filled_qty": qty,
+                            "actual_entry_price": entry_price,
+                        },
+                    }
+                    events.append(event)
+                    self._risk_events.append(event)
+                    continue
+
+            stop_price = self._round_option_price(
+                entry_price * (1.0 - float(self.options_settings.stop_loss_pct))
+            )
+            client_order_id = self._protective_client_order_id(symbol)
+            request = StopOrderRequest(
+                symbol=symbol,
+                qty=qty,
+                side=OrderSide.SELL,
+                type=OrderType.STOP,
+                time_in_force=TimeInForce.DAY,
+                order_class=OrderClass.SIMPLE,
+                stop_price=stop_price,
+                position_intent=PositionIntent.SELL_TO_CLOSE,
+                client_order_id=client_order_id,
+            )
+            try:
+                order = self.trading_client.submit_order(order_data=request)
+                meta = order_meta.get(symbol, {})
+                details = {
+                    "stop_order_id": str(getattr(order, "id", "") or ""),
+                    "entry_order_id": str(meta.get("order_id", "") or ""),
+                    "actual_filled_qty": qty,
+                    "actual_entry_price": entry_price,
+                    "position": pos,
+                    "stop_price": stop_price,
+                    "stop_loss_pct": float(self.options_settings.stop_loss_pct),
+                    "time_in_force": "day",
+                }
+                event = {
+                    "event_type": "option_protective_stop_submitted",
+                    "symbol": symbol,
+                    "details": details,
+                }
+                events.append(event)
+                self._risk_events.append(event)
+                print(f"  > Protected {qty:g} {symbol} with stop @ ${stop_price:.2f}")
+            except Exception as exc:
+                event = {
+                    "event_type": "option_protective_stop_failed",
+                    "symbol": symbol,
+                    "details": {
+                        "error": str(exc),
+                        "actual_filled_qty": qty,
+                        "actual_entry_price": entry_price,
+                        "stop_price": stop_price,
+                    },
+                }
+                events.append(event)
+                self._risk_events.append(event)
+                print(f"  ! Failed to protect {symbol}: {exc}")
+        return events
+
+    def cancel_protective_stop(self, symbol: str) -> Dict[str, Any]:
+        symbol = str(symbol).upper()
+        try:
+            open_orders = self.get_open_orders([symbol], raise_on_error=True)
+        except Exception as exc:
+            return {"status": "query_failed", "symbol": symbol, "error": str(exc)}
+        stops = [
+            order
+            for order in open_orders
+            if str(getattr(order, "symbol", "")).upper() == symbol
+            and self._is_protective_stop(order)
+        ]
+        if not stops:
+            return {"status": "absent", "symbol": symbol}
+
+        for order in stops:
+            order_id = str(getattr(order, "id", "") or "")
+            status = self._order_status(order)
+            if status == "filled":
+                return {"status": "filled", "symbol": symbol, "stop_order_id": order_id}
+            try:
+                self.trading_client.cancel_order_by_id(order_id)
+            except Exception as exc:
+                return {
+                    "status": "cancel_failed",
+                    "symbol": symbol,
+                    "stop_order_id": order_id,
+                    "error": str(exc),
+                }
+            try:
+                refreshed = self.trading_client.get_order_by_id(order_id)
+                status = self._order_status(refreshed)
+            except Exception:
+                status = "pending_cancel"
+            if status == "filled":
+                return {"status": "filled", "symbol": symbol, "stop_order_id": order_id}
+            if status not in _TERMINAL_CANCEL_STATUSES:
+                return {
+                    "status": status or "pending_cancel",
+                    "symbol": symbol,
+                    "stop_order_id": order_id,
+                }
+        return {"status": "canceled", "symbol": symbol}
+
+    def get_latest_exit_fill(self, symbol: str) -> Optional[Dict[str, Any]]:
+        """Return actual fill details for the most recently requested exit."""
+        symbol = str(symbol).upper()
+        order_id = self._last_exit_orders.get(symbol)
+        protective = False
+        if not order_id:
+            try:
+                request = GetOrdersRequest(
+                    status=QueryOrderStatus.CLOSED,
+                    limit=50,
+                    nested=True,
+                    symbols=[symbol],
+                )
+                closed_orders = list(self.trading_client.get_orders(filter=request))
+                filled_stops = [
+                    order
+                    for order in closed_orders
+                    if self._order_status(order) == "filled"
+                    and self._is_protective_stop(order)
+                ]
+                if not filled_stops:
+                    return None
+                filled_stops.sort(
+                    key=lambda order: str(getattr(order, "filled_at", "") or ""),
+                    reverse=True,
+                )
+                order_id = str(getattr(filled_stops[0], "id", "") or "")
+                protective = True
+            except Exception:
+                return None
+        try:
+            order = self.trading_client.get_order_by_id(order_id)
+        except Exception:
+            return {"order_id": order_id, "is_protective_stop": protective}
+        return {
+            "order_id": order_id,
+            "status": self._order_status(order),
+            "filled_qty": self._float_or_none(getattr(order, "filled_qty", None)),
+            "filled_avg_price": self._float_or_none(
+                getattr(order, "filled_avg_price", None)
+            ),
+            "filled_at": str(getattr(order, "filled_at", "") or ""),
+            "is_protective_stop": protective or self._is_protective_stop(order),
+        }
+
+    def pop_risk_events(self) -> List[Dict[str, Any]]:
+        events = list(self._risk_events)
+        self._risk_events.clear()
+        return events
+
+    @staticmethod
+    def option_exposure(symbol: str) -> tuple[Optional[str], Optional[str]]:
+        match = _OCC_OPTION_RE.fullmatch(str(symbol).upper().replace(" ", ""))
+        if not match:
+            return None, None
+        direction = "long" if match.group("contract_type") == "C" else "short"
+        return match.group("underlying"), direction
+
+    @staticmethod
+    def _order_status(order: Any) -> str:
+        value = getattr(order, "status", "")
+        return str(getattr(value, "value", value)).lower()
+
+    @staticmethod
+    def _order_side(order: Any) -> str:
+        value = getattr(order, "side", "")
+        return str(getattr(value, "value", value)).lower()
+
+    @classmethod
+    def _is_protective_stop(cls, order: Any) -> bool:
+        order_type = getattr(order, "type", None) or getattr(order, "order_type", "")
+        order_type = str(getattr(order_type, "value", order_type)).lower()
+        client_order_id = str(getattr(order, "client_order_id", "") or "")
+        return (
+            cls._order_side(order) == "sell"
+            and order_type in ("stop", "stop_limit")
+            and (
+                client_order_id.startswith(_PROTECTIVE_STOP_PREFIX)
+                or str(getattr(order, "position_intent", "")).lower().endswith(
+                    "sell_to_close"
+                )
+            )
+        )
+
+    @staticmethod
+    def _protective_client_order_id(symbol: str) -> str:
+        stamp = datetime.now(timezone.utc).strftime("%y%m%d%H%M%S")
+        return f"{_PROTECTIVE_STOP_PREFIX}{symbol[-18:]}-{stamp}"[:48]
+
+    @staticmethod
+    def _round_option_price(price: float) -> float:
+        return max(0.01, round(float(price) + 1e-9, 2))
+
+    @staticmethod
+    def _float_or_none(value: Any) -> Optional[float]:
+        try:
+            return float(value) if value is not None else None
+        except (TypeError, ValueError):
+            return None
+
+    def _load_risk_state(self) -> None:
+        if not self._risk_state_path or not self._risk_state_path.exists():
+            return
+        try:
+            payload = json.loads(self._risk_state_path.read_text(encoding="utf-8"))
+            raw = payload.get("stopout_cooldowns", {})
+            now = datetime.now(timezone.utc)
+            for underlying, value in raw.items():
+                cutoff = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+                if cutoff.tzinfo is None:
+                    cutoff = cutoff.replace(tzinfo=timezone.utc)
+                if cutoff > now:
+                    self._stopout_cooldowns[str(underlying).upper()] = cutoff
+        except Exception as exc:
+            print(f"  ! Failed to load risk state: {exc}")
+
+    def _save_risk_state(self) -> None:
+        if not self._risk_state_path:
+            return
+        try:
+            self._risk_state_path.parent.mkdir(parents=True, exist_ok=True)
+            self._risk_state_path.write_text(
+                json.dumps(
+                    {
+                        "updated_at": datetime.now(timezone.utc).isoformat(),
+                        "stopout_cooldowns": {
+                            key: value.isoformat()
+                            for key, value in self._stopout_cooldowns.items()
+                        },
+                    },
+                    indent=2,
+                    sort_keys=True,
+                ),
+                encoding="utf-8",
+            )
+        except Exception as exc:
+            print(f"  ! Failed to save risk state: {exc}")
 
     @staticmethod
     def _position_to_dict(pos: Any) -> Dict[str, Any]:

@@ -340,6 +340,18 @@ def append_order_event(
             "triggered_at": state.trade.triggered_at.isoformat(),
             "execution_attempts": state.trade.execution_attempts,
         }
+    if state:
+        record["signal_context"] = {
+            "armed_z": state.armed_z,
+            "trigger_z": signal.z_score if signal else state.last_z,
+            "z_trajectory": list(state.z_trajectory),
+            "atr_5m": state.atr_5m,
+            "atr_percentile": state.atr_percentile,
+            "htf_bias": state.htf_bias,
+            "ema_slope_hourly": state.ema_slope_hourly,
+            "last_mu": state.last_mu,
+            "last_sigma": state.last_sigma,
+        }
     events_path.parent.mkdir(parents=True, exist_ok=True)
     with events_path.open("a", encoding="utf-8") as f:
         f.write(json.dumps(record, default=json_default) + "\n")
@@ -674,7 +686,7 @@ def build_execution_success_details(
         "mode": mode,
     }
     if validation is not None:
-        for key in ("reasoning", "confidence", "risk_assessment"):
+        for key in ("reasoning", "confidence", "risk_assessment", "veto_flags"):
             value = getattr(validation, key, None)
             if value is not None:
                 details[key] = value
@@ -700,13 +712,28 @@ def update_positions(
             )
             if order_events_path and hasattr(trade_tracker, "pop_exit_events"):
                 for event in trade_tracker.pop_exit_events():
+                    event_type = event.get("event_type", "option_exit_event")
+                    details = event.get("details", {})
                     append_order_event(
                         order_events_path,
-                        event.get("event_type", "option_exit_event"),
+                        event_type,
                         event.get("symbol", "UNKNOWN"),
                         loop_count,
-                        details=event.get("details", {}),
+                        details=details,
                     )
+                    if event_type == "option_protective_stop_failed":
+                        send_discord_alert(
+                            "🚨 Protective stop submission failed for "
+                            f"{event.get('symbol', 'UNKNOWN')}; emergency close requested. "
+                            f"Error: {details.get('error', 'unknown')}"
+                        )
+                    elif event_type == "option_stop_overshoot":
+                        send_discord_alert(
+                            "⚠️ Option stop overshoot for "
+                            f"{event.get('symbol', 'UNKNOWN')}: "
+                            f"realized {100 * float(details.get('realized_loss_pct', 0)):.1f}% "
+                            f"vs {100 * float(details.get('policy_stop_pct', 0)):.1f}% policy."
+                        )
             if positions:
                 total_pl = trade_tracker.calculate_total_unrealized_pl()
                 logger.debug(f"Open positions: {len(positions)}, Total unrealized P/L: ${total_pl:.2f}")
@@ -1072,6 +1099,11 @@ def main():
     parser.add_argument("--output", default=None, help="Output directory for logs")
     parser.add_argument("--use-db", action="store_true", help="Save to database in addition to JSON files")
     parser.add_argument("--db-path", default=None, help="Database path for SQLite (default: data/trading.db)")
+    parser.add_argument(
+        "--session-cutoff",
+        default=None,
+        help="Optional live-segment handoff time in ET (HH:MM); does not run EOD flatten",
+    )
     args = parser.parse_args()
     
     # Load settings
@@ -1343,7 +1375,11 @@ def main():
             if instrument == "options":
                 from src.execution.options_order_manager import OptionsOrderManager
 
-                order_manager = OptionsOrderManager(paper=paper_trading, settings=settings)
+                order_manager = OptionsOrderManager(
+                    paper=paper_trading,
+                    settings=settings,
+                    risk_state_path=output_dir / "risk_state.json",
+                )
                 logger.info(
                     "Options order manager initialized (paper trading: %s, strategy: %s)",
                     paper_trading,
@@ -1393,9 +1429,16 @@ def main():
     run_end_utc = to_utc(run_end_et)
     eod_close_et = et_dt(trading_date, settings.trading.end_of_day_close_time)
     eod_close_utc = to_utc(eod_close_et)
+    session_cutoff_et = (
+        et_dt(trading_date, args.session_cutoff)
+        if args.session_cutoff and not is_backtest
+        else None
+    )
     
     logger.info(f"Entry window: {run_start_et.strftime('%H:%M')} - {run_end_et.strftime('%H:%M')} ET")
     logger.info(f"Position monitoring cutoff: {eod_close_et.strftime('%H:%M')} ET")
+    if session_cutoff_et:
+        logger.info("Segment handoff cutoff: %s ET", session_cutoff_et.strftime("%H:%M"))
     
     # Simulated time for backtesting
     sim_time_et = run_start_et if is_backtest else None
@@ -1467,7 +1510,18 @@ def main():
             # Real-time mode
             current_et = datetime.now(ET)
             current_utc = current_et.astimezone(timezone.utc)
-            
+
+            if session_cutoff_et and current_et >= session_cutoff_et:
+                append_order_event(
+                    order_events_path,
+                    "session_segment_handoff",
+                    "ALL",
+                    loop_count,
+                    details={"session_cutoff": args.session_cutoff},
+                )
+                finalize_live_session("segment_handoff")
+                break
+
             # Check EOD close for live trading
             if current_et >= eod_close_et:
                 from src.execution.eod_position_manager import check_and_close_eod
@@ -1484,6 +1538,12 @@ def main():
                     eod_flatten_max_dte=settings.options.eod_flatten_max_dte,
                 )
                 if closed_or_flat:
+                    update_positions(
+                        trade_tracker,
+                        current_utc=current_utc,
+                        order_events_path=order_events_path,
+                        loop_count=loop_count,
+                    )
                     overnight_n = live_open_position_count(order_manager)
                     if overnight_n:
                         logger.info("End-of-day policy complete; holding %s option position(s) overnight.", overnight_n)
@@ -1749,6 +1809,8 @@ def main():
                 
                 latest_price = bars_1m[-1]["c"]
                 state = states[symbol]
+                if trade_tracker and hasattr(trade_tracker, "set_underlying_mark"):
+                    trade_tracker.set_underlying_mark(symbol, latest_price)
                 prev_status = state.status
                 
                 # Evaluate thresholds
@@ -1824,6 +1886,7 @@ def main():
                                             "confidence": last_validation.confidence,
                                             "reasoning": last_validation.reasoning,
                                             "risk_assessment": last_validation.risk_assessment,
+                                            "veto_flags": getattr(last_validation, "veto_flags", []),
                                         },
                                     )
                                 else:
@@ -1840,6 +1903,7 @@ def main():
                                             "confidence": last_validation.confidence,
                                             "reasoning": last_validation.reasoning,
                                             "risk_assessment": last_validation.risk_assessment,
+                                            "veto_flags": getattr(last_validation, "veto_flags", []),
                                         },
                                     )
                                     if storage and signal_id is not None:
@@ -2060,6 +2124,16 @@ def main():
                             persisted_stop = None if is_option_order else state.trade.sl_price
                             persisted_take_profit = None if is_option_order else state.trade.tp_price
                             option_plan = result.get("option_plan") if is_option_order else None
+                            if is_option_order and isinstance(option_plan, dict) and state.trade:
+                                option_plan = {
+                                    **option_plan,
+                                    "underlying_trade_plan": {
+                                        "entry_price": state.trade.entry_price,
+                                        "stop_loss": state.trade.sl_price,
+                                        "take_profit": state.trade.tp_price,
+                                        "side": state.trade.side,
+                                    },
+                                }
                             underlying_symbol = result.get("underlying_symbol") if is_option_order else symbol
                             option_symbol = result.get("option_symbol") if is_option_order else None
                             qty_raw = result.get("qty", 0)
@@ -2081,7 +2155,7 @@ def main():
                                         "stop_loss": persisted_stop,
                                         "take_profit": persisted_take_profit,
                                         "qty": qty_i,
-                                        "status": "open",
+                                        "status": "pending" if is_option_order else "open",
                                         "entry_time": current_utc,
                                         "exit_time": None,
                                         "exit_price": None,
@@ -2089,20 +2163,24 @@ def main():
                                         "exit_reason": "",
                                         "option_metadata": option_plan,
                                     })
-                                    storage.update_position({
-                                        "trade_id": trade_pk,
-                                        "symbol": execution_symbol,
-                                        "asset_class": "option" if is_option_order else "stock",
-                                        "underlying_symbol": underlying_symbol,
-                                        "option_symbol": option_symbol,
-                                        "side": persisted_side,
-                                        "entry_price": persisted_entry_price,
-                                        "current_price": persisted_current_price,
-                                        "stop_loss": persisted_stop,
-                                        "take_profit": persisted_take_profit,
-                                        "qty": qty_i,
-                                        "unrealized_pnl": 0.0,
-                                    })
+                                    # Option submissions are only accepted orders here. The
+                                    # tracker activates the trade/position with actual broker
+                                    # fill quantity and price before attaching its stop.
+                                    if not is_option_order:
+                                        storage.update_position({
+                                            "trade_id": trade_pk,
+                                            "symbol": execution_symbol,
+                                            "asset_class": "stock",
+                                            "underlying_symbol": underlying_symbol,
+                                            "option_symbol": option_symbol,
+                                            "side": persisted_side,
+                                            "entry_price": persisted_entry_price,
+                                            "current_price": persisted_current_price,
+                                            "stop_loss": persisted_stop,
+                                            "take_profit": persisted_take_profit,
+                                            "qty": qty_i,
+                                            "unrealized_pnl": 0.0,
+                                        })
                                     if trade_tracker:
                                         trade_tracker.register_open_trade(
                                             execution_symbol,

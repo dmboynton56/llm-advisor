@@ -6,6 +6,7 @@ import type {
   OpsMetricsDaily,
   RunRow,
   TradeRow,
+  TradeLifecycleRow,
   ValidationEvent,
 } from "@/lib/types";
 
@@ -43,6 +44,16 @@ export async function getTrades(days = 90): Promise<TradeRow[]> {
   const rows = await supabaseSelect<TradeRow>(
     "llm_advisor_backtest_trades",
     `select=trade_uid,run_date,order_id,symbol,underlying_symbol,asset_class,side,setup_type,option_dte,qty,entry_price,exit_price,entry_time,exit_time,exit_reason,pnl,status&run_date=gte.${daysAgoIso(days)}&order=run_date.desc,entry_time.desc&limit=1000`,
+  );
+  return rows ?? [];
+}
+
+export async function getTradeLifecycles(
+  days = 30,
+): Promise<TradeLifecycleRow[]> {
+  const rows = await supabaseSelect<TradeLifecycleRow>(
+    "llm_advisor_trade_lifecycles",
+    `select=lifecycle_uid,entry_order_id,exit_order_id,symbol,underlying_symbol,opened_at,closed_at,filled_qty,entry_fill_price,exit_fill_price,exit_reason,realized_pnl,status&closed_at=gte.${daysAgoIso(days)}T00:00:00Z&order=closed_at.desc&limit=1000`,
   );
   return rows ?? [];
 }

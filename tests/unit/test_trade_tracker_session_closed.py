@@ -12,17 +12,20 @@ def test_session_closed_on_option_profit_target() -> None:
     storage = MagicMock()
     order_manager = MagicMock()
     symbol = "SPY260116C00500000"
-    order_manager.get_open_positions.return_value = [
-        {
-            "symbol": symbol,
-            "option_symbol": symbol,
-            "asset_class": "option",
-            "qty": 1,
-            "entry_price": 2.0,
-            "current_price": 2.6,
-            "unrealized_pl": 60.0,
-            "unrealized_plpc": 0.30,
-        }
+    order_manager.get_open_positions.side_effect = [
+        [
+            {
+                "symbol": symbol,
+                "option_symbol": symbol,
+                "asset_class": "option",
+                "qty": 1,
+                "entry_price": 2.0,
+                "current_price": 2.6,
+                "unrealized_pl": 60.0,
+                "unrealized_plpc": 0.30,
+            }
+        ],
+        [],
     ]
     order_manager.close_position.return_value = True
 
@@ -32,6 +35,7 @@ def test_session_closed_on_option_profit_target() -> None:
         options_settings=OptionsSettings(profit_target_pct=0.25),
     )
     tracker.register_open_trade(symbol, "o1", 7, metadata={"asset_class": "option"})
+    tracker.update_positions(now=datetime.now(timezone.utc))
     tracker.update_positions(now=datetime.now(timezone.utc))
 
     closed = tracker.get_session_closed()

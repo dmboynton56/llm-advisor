@@ -92,6 +92,16 @@ class StorageAdapter(ABC):
     ) -> None:
         """Mark a trade row closed by trades.id (internal PK)."""
         pass
+
+    @abstractmethod
+    def update_trade_entry_fill(
+        self,
+        trade_pk: int,
+        qty: int,
+        entry_price: float,
+    ) -> None:
+        """Activate a pending trade with the broker's actual aggregate fill."""
+        pass
     
     @abstractmethod
     def get_open_positions(self) -> List[Dict[str, Any]]:
@@ -564,6 +574,26 @@ class SQLiteStorage(StorageAdapter):
             conn.commit()
         finally:
             conn.close()
+
+    def update_trade_entry_fill(
+        self,
+        trade_pk: int,
+        qty: int,
+        entry_price: float,
+    ) -> None:
+        conn = self._get_connection()
+        try:
+            conn.execute(
+                "UPDATE trades SET status = ?, qty = ?, entry_price = ? WHERE id = ?",
+                ("open", int(qty), float(entry_price), int(trade_pk)),
+            )
+            conn.execute(
+                "UPDATE positions SET qty = ?, entry_price = ? WHERE trade_id = ?",
+                (int(qty), float(entry_price), int(trade_pk)),
+            )
+            conn.commit()
+        finally:
+            conn.close()
     
     def get_open_positions(self) -> List[Dict[str, Any]]:
         """Get all open positions."""
@@ -913,6 +943,23 @@ class PostgreSQLStorage(StorageAdapter):
                     WHERE id = %s
                     """,
                     ("closed", exit_time, exit_price, pnl, exit_reason, int(trade_pk)),
+                )
+
+    def update_trade_entry_fill(
+        self,
+        trade_pk: int,
+        qty: int,
+        entry_price: float,
+    ) -> None:
+        with self._get_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "UPDATE trades SET status = %s, qty = %s, entry_price = %s WHERE id = %s",
+                    ("open", int(qty), float(entry_price), int(trade_pk)),
+                )
+                cur.execute(
+                    "UPDATE positions SET qty = %s, entry_price = %s WHERE trade_id = %s",
+                    (int(qty), float(entry_price), int(trade_pk)),
                 )
     
     def get_open_positions(self) -> List[Dict[str, Any]]:

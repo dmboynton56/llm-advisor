@@ -48,8 +48,10 @@ class TradeTracker:
         self.tracked_positions: Dict[str, Dict[str, Any]] = {}
         self._order_meta: Dict[str, Dict[str, Any]] = {}
         self._closing_symbols: set[str] = set()
+        self._closing_context: Dict[str, Dict[str, Any]] = {}
         self._exit_events: List[Dict[str, Any]] = []
         self.session_closed: List[Dict[str, Any]] = []
+        self._underlying_marks: Dict[str, float] = {}
 
     def register_open_trade(
         self,
@@ -65,6 +67,9 @@ class TradeTracker:
             "opened_at": datetime.now(timezone.utc),
             **(metadata or {}),
         }
+
+    def set_underlying_mark(self, symbol: str, price: float) -> None:
+        self._underlying_marks[str(symbol).upper()] = float(price)
 
     def update_positions(
         self,
@@ -83,12 +88,48 @@ class TradeTracker:
         fetched_symbols = {str(pos.get("symbol", "")) for pos in positions}
         self._closing_symbols.intersection_update(fetched_symbols)
 
+        if self.options_settings and hasattr(self.order_manager, "ensure_protective_stops"):
+            try:
+                self.order_manager.ensure_protective_stops(
+                    positions=positions,
+                    order_meta=self._order_meta,
+                )
+                if hasattr(self.order_manager, "pop_risk_events"):
+                    risk_events = self.order_manager.pop_risk_events()
+                    self._exit_events.extend(risk_events)
+                    self._persist_actual_entry_fills(risk_events)
+                    self._close_unprotected_positions(risk_events, now)
+            except Exception as exc:
+                logger.error("Failed to ensure broker option protection: %s", exc)
+
         for pos in positions:
             symbol = pos["symbol"]
             self.tracked_positions[symbol] = {
                 **pos,
                 "last_updated": datetime.now().isoformat(),
             }
+            if self.options_settings and self._is_option_position(pos):
+                meta = self._order_meta.get(symbol, {})
+                underlying = str(meta.get("underlying_symbol") or "").upper()
+                self._exit_events.append(
+                    {
+                        "event_type": "option_position_mark",
+                        "symbol": symbol,
+                        "details": {
+                            "entry_order_id": meta.get("order_id"),
+                            "current_price": self._float_or_none(pos.get("current_price")),
+                            "entry_price": self._float_or_none(pos.get("entry_price")),
+                            "qty": self._float_or_none(pos.get("qty")),
+                            "unrealized_pl": self._float_or_none(pos.get("unrealized_pl")),
+                            "unrealized_plpc": self._normalized_pct(
+                                pos.get("unrealized_plpc")
+                            ),
+                            "underlying_symbol": meta.get("underlying_symbol"),
+                            "underlying_price": self._underlying_marks.get(underlying),
+                            "underlying_trade_plan": meta.get("option_plan"),
+                        },
+                    }
+                )
 
         positions = self._close_option_positions_if_needed(
             positions,
@@ -103,23 +144,50 @@ class TradeTracker:
         for symbol in closed_symbols:
             old_pos = self.tracked_positions.pop(symbol)
             meta = self._order_meta.pop(symbol, {})
-            u_pnl = float(old_pos.get("unrealized_pl", 0) or 0)
-            logger.info("Position closed: %s (last unrealized P/L: $%.2f)", symbol, u_pnl)
+            context = self._closing_context.pop(symbol, {})
+            fill = self._latest_exit_fill(symbol)
+            exit_px = self._float_or_none((fill or {}).get("filled_avg_price"))
+            exit_qty = self._float_or_none((fill or {}).get("filled_qty"))
+            pnl = self._realized_pnl_from_fill(old_pos, exit_px, exit_qty)
+            if pnl is None:
+                pnl = float(old_pos.get("unrealized_pl", 0) or 0)
+            reason = str(context.get("reason") or "position_closed")
+            if not context and (fill or {}).get("is_protective_stop"):
+                reason = "option_stop_loss"
+            logger.info("Position closed: %s (realized/estimated P/L: $%.2f)", symbol, pnl)
             self._record_session_closed(
                 symbol=symbol,
-                pnl=u_pnl,
-                exit_reason="position_closed",
+                pnl=pnl,
+                exit_reason=reason,
             )
+            if self._is_option_position(old_pos):
+                self._exit_events.append(
+                    {
+                        "event_type": "option_exit_filled",
+                        "symbol": symbol,
+                        "details": {
+                            "reason": reason,
+                            "entry_order_id": meta.get("order_id"),
+                            "exit_order": fill,
+                            "actual_exit_price": exit_px,
+                            "actual_filled_qty": exit_qty,
+                            "realized_pnl": pnl,
+                            "position": old_pos,
+                        },
+                    }
+                )
+                self._record_stopout_and_overshoot(symbol, old_pos, pnl, reason)
 
             if self.storage and meta:
                 try:
-                    exit_px = old_pos.get("current_price")
+                    if exit_px is None:
+                        exit_px = old_pos.get("current_price")
                     if exit_px is not None:
                         try:
                             exit_px = float(exit_px)
                         except (TypeError, ValueError):
                             exit_px = None
-                    if exit_px is None and u_pnl:
+                    if exit_px is None and pnl:
                         qty = abs(float(old_pos.get("qty", 0) or 0))
                         entry = old_pos.get("avg_entry_price") or old_pos.get("entry_price")
                         try:
@@ -128,10 +196,11 @@ class TradeTracker:
                             entry_f = None
                         side = str(old_pos.get("side", "")).lower()
                         if qty > 0 and entry_f is not None:
+                            multiplier = 100.0 if self._is_option_position(old_pos) else 1.0
                             if side in ("long", "buy"):
-                                exit_px = entry_f + (u_pnl / qty)
+                                exit_px = entry_f + (pnl / (qty * multiplier))
                             elif side in ("short", "sell"):
-                                exit_px = entry_f - (u_pnl / qty)
+                                exit_px = entry_f - (pnl / (qty * multiplier))
                     if meta.get("trade_pk") is not None:
                         trade_pk = int(meta["trade_pk"])
                         if hasattr(self.storage, "close_trade_by_pk"):
@@ -139,8 +208,8 @@ class TradeTracker:
                                 trade_pk,
                                 datetime.now(timezone.utc),
                                 exit_price=exit_px,
-                                pnl=u_pnl,
-                                exit_reason="position_closed",
+                                pnl=pnl,
+                                exit_reason=reason,
                             )
                         elif meta.get("order_id"):
                             self.storage.save_trade(
@@ -149,8 +218,8 @@ class TradeTracker:
                                     "status": "closed",
                                     "exit_time": datetime.now(timezone.utc),
                                     "exit_price": exit_px,
-                                    "pnl": u_pnl,
-                                    "exit_reason": "position_closed",
+                                    "pnl": pnl,
+                                    "exit_reason": reason,
                                 }
                             )
                         self.storage.delete_position_by_trade_pk(trade_pk)
@@ -249,14 +318,13 @@ class TradeTracker:
             )
 
             if closed:
-                self._record_session_closed(
-                    symbol=symbol,
-                    pnl=self._float_or_zero(pos.get("unrealized_pl")),
-                    exit_reason=reason,
-                )
-                self._persist_closed_position(symbol, pos, reason)
-                self.tracked_positions.pop(symbol, None)
-                self._order_meta.pop(symbol, None)
+                self._closing_context[symbol] = {
+                    "reason": reason,
+                    "requested_at": now.isoformat(),
+                    "position": pos,
+                }
+                # Keep the position tracked until Alpaca confirms it is absent.
+                remaining.append(pos)
             else:
                 self._closing_symbols.discard(symbol)
                 remaining.append(pos)
@@ -330,6 +398,135 @@ class TradeTracker:
             self.storage.delete_position_by_trade_pk(int(trade_pk))
         except Exception as exc:
             logger.error("Failed to persist option exit for %s: %s", symbol, exc)
+
+    def _persist_actual_entry_fills(self, events: List[Dict[str, Any]]) -> None:
+        if not self.storage or not hasattr(self.storage, "update_trade_entry_fill"):
+            return
+        for event in events:
+            if event.get("event_type") != "option_protective_stop_submitted":
+                continue
+            symbol = str(event.get("symbol", ""))
+            meta = self._order_meta.get(symbol, {})
+            trade_pk = meta.get("trade_pk")
+            details = event.get("details") or {}
+            if trade_pk is None or details.get("actual_entry_price") is None:
+                continue
+            try:
+                qty = int(float(details.get("actual_filled_qty") or 0))
+                entry_price = float(details["actual_entry_price"])
+                self.storage.update_trade_entry_fill(
+                    int(trade_pk),
+                    qty=qty,
+                    entry_price=entry_price,
+                )
+                position = (
+                    details.get("position")
+                    if isinstance(details.get("position"), dict)
+                    else {}
+                )
+                self.storage.update_position(
+                    {
+                        "trade_id": int(trade_pk),
+                        "symbol": symbol,
+                        "asset_class": meta.get("asset_class") or "option",
+                        "underlying_symbol": meta.get("underlying_symbol"),
+                        "option_symbol": meta.get("option_symbol") or symbol,
+                        "side": position.get("side") or "long",
+                        "entry_price": entry_price,
+                        "current_price": position.get("current_price") or entry_price,
+                        "stop_loss": None,
+                        "take_profit": None,
+                        "qty": qty,
+                        "unrealized_pnl": position.get("unrealized_pl") or 0.0,
+                    }
+                )
+            except Exception as exc:
+                logger.error("Failed to persist actual entry fill for %s: %s", symbol, exc)
+
+    def _close_unprotected_positions(
+        self,
+        events: List[Dict[str, Any]],
+        now: datetime,
+    ) -> None:
+        for event in events:
+            if event.get("event_type") != "option_protective_stop_failed":
+                continue
+            symbol = str(event.get("symbol", ""))
+            if not symbol or symbol in self._closing_symbols:
+                continue
+            logger.error("Closing unprotected option position %s immediately", symbol)
+            try:
+                if self.order_manager.close_position(symbol):
+                    self._closing_symbols.add(symbol)
+                    self._closing_context[symbol] = {
+                        "reason": "option_protection_failed",
+                        "requested_at": now.isoformat(),
+                    }
+            except Exception as exc:
+                logger.critical("Emergency close failed for unprotected %s: %s", symbol, exc)
+
+    def _latest_exit_fill(self, symbol: str) -> Optional[Dict[str, Any]]:
+        if not hasattr(self.order_manager, "get_latest_exit_fill"):
+            return None
+        try:
+            fill = self.order_manager.get_latest_exit_fill(symbol)
+            return fill if isinstance(fill, dict) else None
+        except Exception as exc:
+            logger.error("Failed to load actual exit fill for %s: %s", symbol, exc)
+            return None
+
+    @classmethod
+    def _realized_pnl_from_fill(
+        cls,
+        pos: Dict[str, Any],
+        exit_price: Optional[float],
+        exit_qty: Optional[float],
+    ) -> Optional[float]:
+        entry_price = cls._float_or_none(
+            pos.get("avg_entry_price") or pos.get("entry_price")
+        )
+        qty = abs(exit_qty or cls._float_or_zero(pos.get("qty")))
+        if entry_price is None or exit_price is None or qty <= 0:
+            return None
+        multiplier = 100.0 if cls._is_option_position(pos) else 1.0
+        side = str(pos.get("side", "")).lower()
+        direction = -1.0 if side in ("short", "sell") else 1.0
+        return (exit_price - entry_price) * qty * multiplier * direction
+
+    def _record_stopout_and_overshoot(
+        self,
+        symbol: str,
+        pos: Dict[str, Any],
+        pnl: float,
+        reason: str,
+    ) -> None:
+        if reason != "option_stop_loss" or not self.options_settings:
+            return
+        if hasattr(self.order_manager, "record_stopout"):
+            try:
+                self.order_manager.record_stopout(symbol, minutes=60)
+            except Exception as exc:
+                logger.error("Failed to record stopout cooldown for %s: %s", symbol, exc)
+        cost_basis = abs(self._float_or_zero(pos.get("cost_basis")))
+        if cost_basis <= 0:
+            return
+        realized_loss_pct = max(0.0, -float(pnl) / cost_basis)
+        policy = float(self.options_settings.stop_loss_pct)
+        if realized_loss_pct <= policy + 0.05:
+            return
+        self._exit_events.append(
+            {
+                "event_type": "option_stop_overshoot",
+                "symbol": symbol,
+                "details": {
+                    "policy_stop_pct": policy,
+                    "realized_loss_pct": realized_loss_pct,
+                    "overshoot_points": realized_loss_pct - policy,
+                    "realized_pnl": pnl,
+                    "cost_basis": cost_basis,
+                },
+            }
+        )
 
     def _hold_minutes(self, symbol: str, now: datetime) -> Optional[float]:
         opened_at = self._order_meta.get(symbol, {}).get("opened_at")

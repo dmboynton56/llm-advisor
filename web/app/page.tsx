@@ -6,6 +6,7 @@ import {
   getLatestHeartbeat,
   getLiveState,
   getRuns,
+  getTradeLifecycles,
 } from "@/lib/data";
 import { supabaseConfigured, checkSupabaseAccess } from "@/lib/supabase";
 import {
@@ -17,6 +18,7 @@ import {
   isRegularSessionEt,
   pnlColor,
   relativeTime,
+  dateEtIso,
 } from "@/lib/format";
 import type { LiveStateRow } from "@/lib/types";
 
@@ -44,11 +46,12 @@ function liveStateFresh(row: LiveStateRow | null): boolean {
 }
 
 export default async function OverviewPage() {
-  const [snapshots, runs, heartbeat, liveState] = await Promise.all([
+  const [snapshots, runs, heartbeat, liveState, lifecycles] = await Promise.all([
     getAccountSnapshots(90),
     getRuns(30),
     getLatestHeartbeat(),
     getLiveState("paper"),
+    getTradeLifecycles(30),
   ]);
 
   const access =
@@ -87,13 +90,25 @@ export default async function OverviewPage() {
     .filter((s) => s.equity !== null)
     .map((s) => ({ label: s.snapshot_date, equity: Number(s.equity) }));
 
-  const pnlPoints = runs.map((r) => ({
-    label: r.run_date.slice(5),
-    pnl: Number(r.total_pnl ?? 0),
-    trades: r.total_trades,
-  }));
+  const exitDaily = new Map<string, { pnl: number; trades: number }>();
+  for (const lifecycle of lifecycles) {
+    const exitDate = dateEtIso(lifecycle.closed_at);
+    if (!exitDate) continue;
+    const pnl = Number(lifecycle.realized_pnl ?? 0);
+    const current = exitDaily.get(exitDate) ?? { pnl: 0, trades: 0 };
+    current.pnl += pnl;
+    current.trades += 1;
+    exitDaily.set(exitDate, current);
+  }
+  const pnlPoints = [...exitDaily.entries()]
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([date, value]) => ({
+      label: date.slice(5),
+      pnl: value.pnl,
+      trades: value.trades,
+    }));
 
-  const totalPnl30d = runs.reduce((acc, r) => acc + Number(r.total_pnl ?? 0), 0);
+  const totalPnl30d = pnlPoints.reduce((acc, point) => acc + point.pnl, 0);
   const liveFresh = liveStateFresh(liveState);
   const inSession = isRegularSessionEt();
   const sessionEnded = Boolean(liveState?.session_stats?.session_end_reason);
@@ -258,10 +273,10 @@ export default async function OverviewPage() {
       </Card>
 
       <Card
-        title="Strategy PnL by entry date"
+        title="Strategy PnL by exit date"
         subtitle={
           <>
-            Full-lifecycle realized PnL grouped by trade entry date (30 days) ·{" "}
+            Broker-position lifecycle PnL grouped by the ET date it closed (30 days) ·{" "}
             <span className={pnlColor(totalPnl30d)}>
               {fmtSignedUsd(totalPnl30d)} total
             </span>

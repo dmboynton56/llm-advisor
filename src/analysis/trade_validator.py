@@ -1,6 +1,6 @@
 """Optional LLM validation for trades before execution."""
-from dataclasses import dataclass
-from typing import Optional
+from dataclasses import dataclass, field
+from typing import List, Optional
 
 from src.analysis.llm_client import LLMClient, normalize_structured_content
 from src.live.threshold_evaluator import SignalEvent
@@ -15,6 +15,7 @@ class TradeValidation:
     confidence: int  # 0-100
     reasoning: str
     risk_assessment: str
+    veto_flags: List[str] = field(default_factory=list)
 
 
 def validate_trade_with_llm(
@@ -98,6 +99,9 @@ Should we execute this trade? Analyze risk/reward and return JSON with:
 - confidence: integer (0-100)
 - reasoning: string explanation
 - risk_assessment: string (low/medium/high)
+- veto_flags: array of hard-veto codes selected only from:
+  weak_trigger, htf_conflict, low_volatility, poor_risk_reward,
+  event_risk, liquidity_risk, data_quality
 """
     
     schema = {
@@ -107,8 +111,29 @@ Should we execute this trade? Analyze risk/reward and return JSON with:
             "confidence": {"type": "integer"},
             "reasoning": {"type": "string"},
             "risk_assessment": {"type": "string"},
+            "veto_flags": {
+                "type": "array",
+                "items": {
+                    "type": "string",
+                    "enum": [
+                        "weak_trigger",
+                        "htf_conflict",
+                        "low_volatility",
+                        "poor_risk_reward",
+                        "event_risk",
+                        "liquidity_risk",
+                        "data_quality",
+                    ],
+                },
+            },
         },
-        "required": ["should_execute", "confidence", "reasoning", "risk_assessment"],
+        "required": [
+            "should_execute",
+            "confidence",
+            "reasoning",
+            "risk_assessment",
+            "veto_flags",
+        ],
     }
     
     try:
@@ -119,6 +144,11 @@ Should we execute this trade? Analyze risk/reward and return JSON with:
             confidence=int(content.get("confidence", 0)),
             reasoning=str(content.get("reasoning", "")),
             risk_assessment=str(content.get("risk_assessment", "unknown")),
+            veto_flags=[
+                str(flag)
+                for flag in (content.get("veto_flags") or [])
+                if isinstance(flag, str)
+            ],
         )
     except Exception as e:
         # Validation failures should not become implicit approvals.

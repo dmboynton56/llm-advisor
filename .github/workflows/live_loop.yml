@@ -4,226 +4,28 @@ on:
   workflow_dispatch:
     inputs:
       symbols:
-        description: 'Symbols to trade (comma separated)'
+        description: "Symbols to trade (comma separated)"
         required: false
-        default: 'SPY,QQQ,IWM'
+        default: "SPY,QQQ,IWM"
 
 permissions:
   contents: read
   actions: read
 
 jobs:
-  live-loop:
-    runs-on: ubuntu-latest
-    timeout-minutes: 420 # 7 hours (market session + buffer)
-    
-    env:
-      ALPACA_API_KEY: ${{ secrets.ALPACA_API_KEY }}
-      ALPACA_SECRET_KEY: ${{ secrets.ALPACA_SECRET_KEY }}
-      ALPACA_PAPER_TRADING: true
-      TRADING_INSTRUMENT: options
-      OPTIONS_PAPER_ONLY: true
-      ALLOW_STOCK_FALLBACK: false
-      OPTIONS_STRATEGY_TYPE: single_long
-      OPTION_DTE_MIN: 7
-      OPTION_DTE_MAX: 14
-      OPTION_DELTA_MIN: 0.35
-      OPTION_DELTA_MAX: 0.55
-      # Paper sizing: 2% premium risk x 3 concurrent positions = 6% worst case.
-      MAX_RISK_PER_TRADE_PERCENT: 2.0
-      MAX_CONCURRENT_TRADES: 3
-      MAX_OPTION_PREMIUM_PER_TRADE: 2000
-      MAX_OPTION_BID_ASK_SPREAD_PCT: 0.15
-      MIN_OPTION_OPEN_INTEREST: 100
-      OPTION_STRIKE_WINDOW_PCT: 0.10
-      OPTION_CONTRACT_LIMIT: 250
-      OPTION_FALLBACK_ENABLED: true
-      OPTION_FALLBACK_DTE_MIN: 3
-      OPTION_FALLBACK_DTE_MAX: 21
-      OPTION_FALLBACK_DELTA_MIN: 0.25
-      OPTION_FALLBACK_DELTA_MAX: 0.65
-      OPTION_FALLBACK_MAX_PREMIUM_PER_TRADE: 2500
-      OPTION_FALLBACK_MAX_BID_ASK_SPREAD_PCT: 0.25
-      OPTION_FALLBACK_MIN_OPEN_INTEREST: 25
-      OPTION_FALLBACK_STRIKE_WINDOW_PCT: 0.15
-      OPTION_FALLBACK_CONTRACT_LIMIT: 250
-      OPTION_PROFIT_TARGET_PCT: 0.25
-      OPTION_STOP_LOSS_PCT: 0.35
-      OPTION_MAX_HOLD_MINUTES: 2880
-      OPTION_CLOSE_AT_ENTRY_WINDOW_END: false
-      OPTION_ALLOW_OVERNIGHT: true
-      OPTION_EOD_FLATTEN_MAX_DTE: 0
-      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
-      ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
-      GOOGLE_API_KEY: ${{ secrets.GOOGLE_API_KEY }}
-      GCP_PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
-      GCP_SA_KEY: ${{ secrets.GCP_SA_KEY }}
-      DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
-      STORAGE_ENV: bq
-      TRADING_WINDOW_START: '09:30'
-      TRADING_WINDOW_END: '15:30'
-      END_OF_DAY_CLOSE_TIME: '15:50'
-      # Intraday live-state upsert to shared Supabase (same secrets as eod_aggregate.yml).
-      SUPABASE_DB_HOST: ${{ secrets.SUPABASE_DB_HOST }}
-      SUPABASE_DB_NAME: ${{ secrets.SUPABASE_DB_NAME }}
-      SUPABASE_DB_USER: ${{ secrets.SUPABASE_DB_USER }}
-      SUPABASE_DB_PORT: ${{ secrets.SUPABASE_DB_PORT }}
-      SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
-      LIVE_STATE_PUBLISH_TICKS: '1'
+  morning:
+    uses: ./.github/workflows/live_segment.yml
+    with:
+      symbols: ${{ inputs.symbols || 'SPY,QQQ,IWM' }}
+      segment: morning
+      session_cutoff: "12:35"
+    secrets: inherit
 
-    steps:
-      - name: Checkout Code
-        uses: actions/checkout@v4
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
-          cache: 'pip'
-
-      - name: Install Dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install -r requirements.txt
-
-      - name: Check market open
-        run: python scripts/check_market_open.py
-
-      - name: Auth GCP
-        uses: google-github-actions/auth@v2
-        with:
-          credentials_json: ${{ secrets.GCP_SA_KEY }}
-          create_credentials_file: true
-          export_environment_variables: true
-
-      - name: Validate GCP auth
-        run: |
-          python -m json.tool "$GOOGLE_APPLICATION_CREDENTIALS" > /dev/null
-          python - <<'PY'
-          from google.cloud import bigquery
-          client = bigquery.Client()
-          print(f"BigQuery auth OK: {client.project}")
-          PY
-
-      - name: Find latest premarket artifact
-        id: premarket_artifact
-        timeout-minutes: 15
-        uses: actions/github-script@v7
-        with:
-          script: |
-            const owner = context.repo.owner
-            const repo = context.repo.repo
-            const formatter = new Intl.DateTimeFormat('en-US', {
-              timeZone: 'America/New_York',
-              year: 'numeric',
-              month: '2-digit',
-              day: '2-digit',
-            })
-            function etDate(value) {
-              const parts = Object.fromEntries(
-                formatter.formatToParts(new Date(value)).map((part) => [part.type, part.value])
-              )
-              return `${parts.year}-${parts.month}-${parts.day}`
-            }
-
-            const todayEt = etDate(new Date())
-            const deadline = Date.now() + 12 * 60 * 1000
-
-            while (true) {
-              const runs = await github.paginate(github.rest.actions.listWorkflowRuns, {
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                workflow_id: 'premarket.yml',
-                status: 'completed',
-                per_page: 30,
-              })
-              for (const run of runs) {
-                if (run.conclusion !== 'success') continue
-                const finishedAt = run.updated_at || run.run_started_at || run.created_at
-                if (!finishedAt || etDate(finishedAt) !== todayEt) continue
-
-                const artifacts = await github.paginate(github.rest.actions.listWorkflowRunArtifacts, {
-                  owner,
-                  repo,
-                  run_id: run.id,
-                  per_page: 100,
-                })
-                const artifact = artifacts.find((item) => item.name === 'premarket-context')
-                if (artifact) {
-                  core.setOutput('run_id', String(run.id))
-                  core.setOutput('artifact_name', artifact.name)
-                  core.setOutput('premarket_date', todayEt)
-                  return
-                }
-              }
-
-              if (Date.now() >= deadline) {
-                core.setFailed(`No successful premarket-context artifact found for ${todayEt} ET.`)
-                return
-              }
-              core.info(`Waiting for today's premarket-context artifact (${todayEt} ET)...`)
-              await new Promise((resolve) => setTimeout(resolve, 30000))
-            }
-
-      # Extract at repo root so paths stay ``data/daily_news/<YYYY-MM-DD>/processed/…``.
-      # Using ``path: data/daily_news`` duplicates the prefix (nested ``data/daily_news``).
-      - name: Download Premarket Context
-        uses: actions/download-artifact@v4
-        with:
-          name: ${{ steps.premarket_artifact.outputs.artifact_name }}
-          run-id: ${{ steps.premarket_artifact.outputs.run_id }}
-          github-token: ${{ github.token }}
-          path: .
-
-      - name: Verify premarket context on disk
-        env:
-          PREMARKET_DATE: ${{ steps.premarket_artifact.outputs.premarket_date }}
-        run: |
-          set -euo pipefail
-          DATE="${PREMARKET_DATE:-}"
-          if [ -z "$DATE" ]; then
-            echo "premarket_date output missing from Find latest premarket artifact step"
-            exit 1
-          fi
-          DEST="data/daily_news/${DATE}/processed/premarket_context.json"
-          if [ -f "$DEST" ]; then
-            echo "OK: $DEST"
-            exit 0
-          fi
-          if [ -f premarket_context.json ]; then
-            mkdir -p "data/daily_news/${DATE}/processed"
-            mv premarket_context.json "$DEST"
-            echo "Relocated flat artifact to $DEST"
-            exit 0
-          fi
-          echo "premarket_context.json not found (checked $DEST and repo root)"
-          find . -name 'premarket_context.json' 2>/dev/null || true
-          exit 1
-
-      - name: Run Live Loop
-        run: |
-          SYMBOLS="${{ github.event.inputs.symbols || 'SPY,QQQ,IWM' }}"
-          SYMBOLS_SPACE=$(echo $SYMBOLS | tr ',' ' ')
-          # Run the loop. --fast 60 means 1 minute iterations.
-          python scripts/run_live_loop.py --symbols $SYMBOLS_SPACE --use-db --fast 60
-
-      - name: Prepare telemetry artifact paths
-        if: always()
-        run: touch .telemetry-artifact-anchor
-
-      - name: Upload daily telemetry artifacts
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: llm-advisor-daily-news-${{ github.run_id }}
-          path: |
-            data/daily_news/
-            .telemetry-artifact-anchor
-          if-no-files-found: warn
-
-      - name: Notify Discord on Failure
-        if: failure() && env.DISCORD_WEBHOOK_URL != ''
-        run: |
-          curl -X POST -H "Content-Type: application/json" \
-            -d "{\"content\": \"❌ **LLM Advisor Live Loop Failed**\\nRun: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}\"}" \
-            $DISCORD_WEBHOOK_URL
+  afternoon:
+    needs: morning
+    uses: ./.github/workflows/live_segment.yml
+    with:
+      symbols: ${{ inputs.symbols || 'SPY,QQQ,IWM' }}
+      segment: afternoon
+      session_cutoff: ""
+    secrets: inherit

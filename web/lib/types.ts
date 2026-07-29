@@ -53,6 +53,22 @@ export type ValidationEvent = {
   event_type: string;
 };
 
+export type TradeLifecycleRow = {
+  lifecycle_uid: string;
+  entry_order_id: string | null;
+  exit_order_id: string | null;
+  symbol: string;
+  underlying_symbol: string | null;
+  opened_at: string | null;
+  closed_at: string | null;
+  filled_qty: number | null;
+  entry_fill_price: number | null;
+  exit_fill_price: number | null;
+  exit_reason: string | null;
+  realized_pnl: number | null;
+  status: string;
+};
+
 export type CellStats = {
   trades: number;
   closed_trades: number;

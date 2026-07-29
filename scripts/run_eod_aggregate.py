@@ -111,6 +111,38 @@ class OrderEventRow:
     source_file: str
 
 
+@dataclass
+class BrokerReconciliationRow:
+    reconciliation_date: str
+    booked_realized_pnl: float
+    broker_daily_pnl: float | None
+    pnl_gap: float | None
+    lifecycle_exit_count: int
+    tolerance: float
+    status: str
+    details: dict[str, Any]
+
+
+@dataclass
+class TradeLifecycleRow:
+    lifecycle_uid: str
+    entry_order_id: str | None
+    exit_order_id: str | None
+    symbol: str
+    underlying_symbol: str | None
+    opened_at: str | None
+    closed_at: str | None
+    filled_qty: float | None
+    entry_fill_price: float | None
+    exit_fill_price: float | None
+    protective_stop_order_id: str | None
+    protective_stop_price: float | None
+    exit_reason: str | None
+    realized_pnl: float | None
+    status: str
+    details: dict[str, Any]
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Aggregate EOD artifacts to Supabase.")
     parser.add_argument("--date", help="Single date to process (YYYY-MM-DD).")
@@ -354,6 +386,168 @@ def dedupe_order_events(rows: list[OrderEventRow]) -> list[OrderEventRow]:
     for row in rows:
         by_uid[row.event_uid] = row
     return sorted(by_uid.values(), key=lambda x: (x.run_date, x.event_ts, x.event_uid))
+
+
+def build_broker_reconciliations(
+    run_dates: list[str],
+    order_events: list[OrderEventRow],
+    account_snapshots: list[AccountSnapshotRow],
+    tolerance: float = 50.0,
+) -> list[BrokerReconciliationRow]:
+    """Reconcile final flat-account daily PnL to actual lifecycle fill events."""
+    fills_by_date: dict[str, list[OrderEventRow]] = {}
+    requests_by_date: dict[str, list[OrderEventRow]] = {}
+    for event in order_events:
+        if event.event_type == "option_exit_filled":
+            fills_by_date.setdefault(event.run_date, []).append(event)
+        elif event.event_type == "option_exit_requested":
+            requests_by_date.setdefault(event.run_date, []).append(event)
+
+    latest_snapshot: dict[str, AccountSnapshotRow] = {}
+    for snapshot in account_snapshots:
+        previous = latest_snapshot.get(snapshot.snapshot_date)
+        if previous is None or snapshot.captured_at > previous.captured_at:
+            latest_snapshot[snapshot.snapshot_date] = snapshot
+
+    rows: list[BrokerReconciliationRow] = []
+    for run_date in sorted(set(run_dates)):
+        events = fills_by_date.get(run_date, [])
+        source = "option_exit_filled"
+        if not events:
+            # Backward-compatible estimate for days recorded before fill events existed.
+            events = requests_by_date.get(run_date, [])
+            source = "option_exit_requested_estimate"
+        booked = 0.0
+        for event in events:
+            key = "realized_pnl" if source == "option_exit_filled" else "unrealized_pl"
+            booked += _as_float(event.details.get(key)) or 0.0
+
+        snapshot = latest_snapshot.get(run_date)
+        final_exit_ts = max((event.event_ts for event in events), default=None)
+        snapshot_is_final = bool(
+            snapshot
+            and (
+                final_exit_ts is None
+                or snapshot.captured_at >= final_exit_ts
+            )
+        )
+        broker_pnl = snapshot.daily_pnl if snapshot_is_final and snapshot else None
+        gap = (broker_pnl - booked) if broker_pnl is not None else None
+        status = "pending"
+        if gap is not None:
+            status = "ok" if abs(gap) <= tolerance else "alert"
+        rows.append(
+            BrokerReconciliationRow(
+                reconciliation_date=run_date,
+                booked_realized_pnl=booked,
+                broker_daily_pnl=broker_pnl,
+                pnl_gap=gap,
+                lifecycle_exit_count=len(events),
+                tolerance=tolerance,
+                status=status,
+                details={
+                    "booked_source": source,
+                    "snapshot_captured_at": snapshot.captured_at if snapshot else None,
+                    "final_exit_at": final_exit_ts,
+                    "snapshot_after_final_exit": snapshot_is_final,
+                    "flat_account_required": True,
+                },
+            )
+        )
+    return rows
+
+
+def build_trade_lifecycles(
+    order_events: list[OrderEventRow],
+) -> list[TradeLifecycleRow]:
+    """Build one broker-position lifecycle per protected, non-aggregated entry."""
+    by_uid: dict[str, TradeLifecycleRow] = {}
+    symbol_open_uid: dict[str, str] = {}
+
+    for event in sorted(order_events, key=lambda row: row.event_ts):
+        if event.event_type != "option_protective_stop_submitted":
+            continue
+        details = event.details
+        entry_order_id = str(details.get("entry_order_id") or "").strip() or None
+        uid = entry_order_id or f"{event.run_date}:{event.symbol}:{event.event_ts}"
+        row = TradeLifecycleRow(
+            lifecycle_uid=uid,
+            entry_order_id=entry_order_id,
+            exit_order_id=None,
+            symbol=event.symbol,
+            underlying_symbol=_underlying_from_occ(event.symbol),
+            opened_at=event.event_ts,
+            closed_at=None,
+            filled_qty=_as_float(details.get("actual_filled_qty")),
+            entry_fill_price=_as_float(details.get("actual_entry_price")),
+            exit_fill_price=None,
+            protective_stop_order_id=str(
+                details.get("stop_order_id") or ""
+            ).strip()
+            or None,
+            protective_stop_price=_as_float(details.get("stop_price")),
+            exit_reason=None,
+            realized_pnl=None,
+            status="open",
+            details={"entry_event_uid": event.event_uid},
+        )
+        by_uid[uid] = row
+        symbol_open_uid[event.symbol] = uid
+
+    for event in sorted(order_events, key=lambda row: row.event_ts):
+        if event.event_type != "option_exit_filled":
+            continue
+        details = event.details
+        entry_order_id = str(details.get("entry_order_id") or "").strip() or None
+        uid = entry_order_id or symbol_open_uid.get(event.symbol)
+        if uid is None:
+            uid = f"{event.run_date}:{event.symbol}:reconciled"
+        row = by_uid.get(uid)
+        if row is None:
+            position = details.get("position") if isinstance(details.get("position"), dict) else {}
+            row = TradeLifecycleRow(
+                lifecycle_uid=uid,
+                entry_order_id=entry_order_id,
+                exit_order_id=None,
+                symbol=event.symbol,
+                underlying_symbol=_underlying_from_occ(event.symbol),
+                opened_at=None,
+                closed_at=None,
+                filled_qty=_as_float(
+                    details.get("actual_filled_qty") or position.get("qty")
+                ),
+                entry_fill_price=_as_float(position.get("entry_price")),
+                exit_fill_price=None,
+                protective_stop_order_id=None,
+                protective_stop_price=None,
+                exit_reason=None,
+                realized_pnl=None,
+                status="open",
+                details={},
+            )
+            by_uid[uid] = row
+
+        exit_order = (
+            details.get("exit_order")
+            if isinstance(details.get("exit_order"), dict)
+            else {}
+        )
+        row.exit_order_id = str(exit_order.get("order_id") or "").strip() or None
+        row.closed_at = str(exit_order.get("filled_at") or event.event_ts)
+        row.exit_fill_price = _as_float(details.get("actual_exit_price"))
+        row.filled_qty = _as_float(details.get("actual_filled_qty")) or row.filled_qty
+        row.exit_reason = str(details.get("reason") or "position_closed")
+        row.realized_pnl = _as_float(details.get("realized_pnl"))
+        row.status = "closed"
+        row.details.update(
+            {
+                "exit_event_uid": event.event_uid,
+                "exit_order_status": exit_order.get("status"),
+                "protective_stop_fill": bool(exit_order.get("is_protective_stop")),
+            }
+        )
+
+    return sorted(by_uid.values(), key=lambda row: (row.opened_at or "", row.lifecycle_uid))
 
 
 def _ts_to_iso(val: Any) -> str | None:
@@ -702,10 +896,22 @@ def parse_order_events(run_date: str, events_path: Path) -> list[OrderEventRow]:
             details = payload.get("details")
             if not isinstance(details, dict):
                 details = {}
+            else:
+                details = dict(details)
+            for context_key in ("signal_context", "trade_plan"):
+                context_value = payload.get(context_key)
+                if isinstance(context_value, dict):
+                    details.setdefault(context_key, context_value)
             order = details.get("order")
             order_id = None
             if isinstance(order, dict):
                 order_id = str(order.get("order_id") or "").strip() or None
+            if not order_id:
+                order_id = str(
+                    details.get("entry_order_id")
+                    or details.get("exit_order_id")
+                    or ""
+                ).strip() or None
 
             event_uid = f"{run_date}:{event_ts}:{event_type}:{symbol}:{idx}"
             rows.append(
@@ -1035,6 +1241,114 @@ def upsert_order_events(cur, rows: list[OrderEventRow], now_iso: str) -> int:
     return len(rows)
 
 
+def upsert_broker_reconciliations(
+    cur,
+    rows: list[BrokerReconciliationRow],
+    now_iso: str,
+) -> int:
+    if not rows:
+        return 0
+    if execute_values is None:
+        raise SystemExit("Missing psycopg2. Install requirements before running EOD Supabase sync.")
+    values = [
+        (
+            row.reconciliation_date,
+            row.booked_realized_pnl,
+            row.broker_daily_pnl,
+            row.pnl_gap,
+            row.lifecycle_exit_count,
+            row.tolerance,
+            row.status,
+            json.dumps(row.details, sort_keys=True),
+            now_iso,
+        )
+        for row in rows
+    ]
+    execute_values(
+        cur,
+        """
+        INSERT INTO llm_advisor_broker_reconciliation_daily
+        (reconciliation_date,booked_realized_pnl,broker_daily_pnl,pnl_gap,
+         lifecycle_exit_count,tolerance,status,details,updated_at)
+        VALUES %s
+        ON CONFLICT (reconciliation_date) DO UPDATE SET
+          booked_realized_pnl = EXCLUDED.booked_realized_pnl,
+          broker_daily_pnl = EXCLUDED.broker_daily_pnl,
+          pnl_gap = EXCLUDED.pnl_gap,
+          lifecycle_exit_count = EXCLUDED.lifecycle_exit_count,
+          tolerance = EXCLUDED.tolerance,
+          status = EXCLUDED.status,
+          details = EXCLUDED.details,
+          updated_at = EXCLUDED.updated_at
+        """,
+        values,
+    )
+    return len(rows)
+
+
+def upsert_trade_lifecycles(
+    cur,
+    rows: list[TradeLifecycleRow],
+    now_iso: str,
+) -> int:
+    if not rows:
+        return 0
+    if execute_values is None:
+        raise SystemExit("Missing psycopg2. Install requirements before running EOD Supabase sync.")
+    values = [
+        (
+            row.lifecycle_uid,
+            row.entry_order_id,
+            row.exit_order_id,
+            row.symbol,
+            row.underlying_symbol,
+            row.opened_at,
+            row.closed_at,
+            row.filled_qty,
+            row.entry_fill_price,
+            row.exit_fill_price,
+            row.protective_stop_order_id,
+            row.protective_stop_price,
+            row.exit_reason,
+            row.realized_pnl,
+            row.status,
+            json.dumps(row.details, sort_keys=True),
+            now_iso,
+        )
+        for row in rows
+    ]
+    execute_values(
+        cur,
+        """
+        INSERT INTO llm_advisor_trade_lifecycles
+        (lifecycle_uid,entry_order_id,exit_order_id,symbol,underlying_symbol,
+         opened_at,closed_at,filled_qty,entry_fill_price,exit_fill_price,
+         protective_stop_order_id,protective_stop_price,exit_reason,realized_pnl,
+         status,details,updated_at)
+        VALUES %s
+        ON CONFLICT (lifecycle_uid) DO UPDATE SET
+          entry_order_id = COALESCE(EXCLUDED.entry_order_id, llm_advisor_trade_lifecycles.entry_order_id),
+          exit_order_id = COALESCE(EXCLUDED.exit_order_id, llm_advisor_trade_lifecycles.exit_order_id),
+          symbol = EXCLUDED.symbol,
+          underlying_symbol = COALESCE(EXCLUDED.underlying_symbol, llm_advisor_trade_lifecycles.underlying_symbol),
+          opened_at = COALESCE(EXCLUDED.opened_at, llm_advisor_trade_lifecycles.opened_at),
+          closed_at = COALESCE(EXCLUDED.closed_at, llm_advisor_trade_lifecycles.closed_at),
+          filled_qty = COALESCE(EXCLUDED.filled_qty, llm_advisor_trade_lifecycles.filled_qty),
+          entry_fill_price = COALESCE(EXCLUDED.entry_fill_price, llm_advisor_trade_lifecycles.entry_fill_price),
+          exit_fill_price = COALESCE(EXCLUDED.exit_fill_price, llm_advisor_trade_lifecycles.exit_fill_price),
+          protective_stop_order_id = COALESCE(EXCLUDED.protective_stop_order_id, llm_advisor_trade_lifecycles.protective_stop_order_id),
+          protective_stop_price = COALESCE(EXCLUDED.protective_stop_price, llm_advisor_trade_lifecycles.protective_stop_price),
+          exit_reason = COALESCE(EXCLUDED.exit_reason, llm_advisor_trade_lifecycles.exit_reason),
+          realized_pnl = COALESCE(EXCLUDED.realized_pnl, llm_advisor_trade_lifecycles.realized_pnl),
+          status = EXCLUDED.status,
+          details = llm_advisor_trade_lifecycles.details || EXCLUDED.details,
+          updated_at = EXCLUDED.updated_at
+        """,
+        values,
+    )
+    return len(rows)
+
+
 def validate(cur) -> dict[str, int]:
     checks: dict[str, int] = {}
     cur.execute("SELECT COUNT(*) FROM llm_advisor_backtest_runs WHERE run_date >= CURRENT_DATE - INTERVAL '7 days'")
@@ -1121,14 +1435,27 @@ def main() -> None:
     heartbeats = dedupe_heartbeats(heartbeats)
     order_events = dedupe_order_events(order_events)
     account_snapshots = dedupe_account_snapshots(account_snapshots)
+    reconciliation_tolerance = float(
+        os.getenv("BROKER_RECONCILIATION_TOLERANCE", "50")
+    )
+    reconciliations = build_broker_reconciliations(
+        run_dates_list,
+        order_events,
+        account_snapshots,
+        tolerance=reconciliation_tolerance,
+    )
+    lifecycles = build_trade_lifecycles(order_events)
 
     LOGGER.info(
-        "Prepared aggregate rows | runs=%d trades=%d heartbeats=%d order_events=%d account_snapshots=%d",
+        "Prepared aggregate rows | runs=%d trades=%d heartbeats=%d order_events=%d "
+        "account_snapshots=%d reconciliations=%d lifecycles=%d",
         len(runs),
         len(trades),
         len(heartbeats),
         len(order_events),
         len(account_snapshots),
+        len(reconciliations),
+        len(lifecycles),
     )
     if not (runs or trades or heartbeats or order_events or account_snapshots):
         message = "No ingestable rows were parsed from located run directories"
@@ -1150,6 +1477,17 @@ def main() -> None:
             upsert_heartbeats(cur, heartbeats, now_iso)
             upsert_order_events(cur, order_events, now_iso)
             upsert_account_snapshots(cur, account_snapshots, now_iso)
+            upsert_broker_reconciliations(cur, reconciliations, now_iso)
+            upsert_trade_lifecycles(cur, lifecycles, now_iso)
+            alerts = [row for row in reconciliations if row.status == "alert"]
+            for row in alerts:
+                LOGGER.error(
+                    "Broker reconciliation alert %s: booked=%.2f broker=%s gap=%s",
+                    row.reconciliation_date,
+                    row.booked_realized_pnl,
+                    row.broker_daily_pnl,
+                    row.pnl_gap,
+                )
             if args.validate:
                 checks = validate(cur)
                 LOGGER.info("Validation checks: %s", json.dumps(checks, sort_keys=True))
