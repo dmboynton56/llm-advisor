@@ -661,6 +661,26 @@ def build_execution_failure_details(
     return details
 
 
+def build_execution_success_details(
+    result: Dict[str, Any],
+    attempt: int,
+    mode: str,
+    validation: Optional[Any] = None,
+) -> Dict[str, Any]:
+    """Link an executed order to the LLM decision that authorized it."""
+    details: Dict[str, Any] = {
+        "attempt": attempt,
+        "order": result,
+        "mode": mode,
+    }
+    if validation is not None:
+        for key in ("reasoning", "confidence", "risk_assessment"):
+            value = getattr(validation, key, None)
+            if value is not None:
+                details[key] = value
+    return details
+
+
 def update_positions(
     trade_tracker: Optional[Any] = None,
     *,
@@ -1943,7 +1963,12 @@ def main():
                                 loop_count,
                                 signal=signal,
                                 state=state,
-                                details={"attempt": attempt_num, "order": result, "mode": "backtest"},
+                                details=build_execution_success_details(
+                                    result,
+                                    attempt_num,
+                                    "backtest",
+                                    last_validation,
+                                ),
                             )
                             state.trade = None
                             state.status = "idle"
@@ -2002,7 +2027,12 @@ def main():
                                 loop_count,
                                 signal=signal,
                                 state=state,
-                                details={"attempt": attempt_num, "order": result, "mode": "paper_live"},
+                                details=build_execution_success_details(
+                                    result,
+                                    attempt_num,
+                                    "paper_live",
+                                    last_validation,
+                                ),
                             )
                             send_trade_alert(
                                 symbol=symbol,

@@ -10,6 +10,7 @@ import pytest
 from src.live.loop import (
     append_order_event,
     build_execution_failure_details,
+    build_execution_success_details,
     build_live_session_summary,
     execute_trade,
     entry_window_is_open,
@@ -270,6 +271,27 @@ def test_execution_failure_details_preserve_diagnostics() -> None:
     assert details["mode"] == "paper_live"
     assert details["reason"] == "no_option_candidate"
     assert details["diagnostics"]["filter_rejections"]["open_interest_too_low"] == 3
+
+
+def test_execution_success_details_preserve_validation_reasoning() -> None:
+    class Validation:
+        reasoning = "The setup passed the LLM risk review"
+        confidence = 72
+        risk_assessment = "medium"
+
+    result = {"order_id": "order-123", "status": "accepted"}
+
+    details = build_execution_success_details(
+        result,
+        attempt=1,
+        mode="paper_live",
+        validation=Validation(),
+    )
+
+    assert details["order"] == result
+    assert details["reasoning"] == "The setup passed the LLM risk review"
+    assert details["confidence"] == 72
+    assert details["risk_assessment"] == "medium"
 
 
 def test_startup_reconcile_deletes_bq_orphan_without_recovery(tmp_path: Path) -> None:

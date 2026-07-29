@@ -151,10 +151,27 @@ def biggest_losers(
     losers = [t for t in closed if float(t["pnl"]) < 0][:n]
 
     events_by_order: Dict[str, List[Dict[str, Any]]] = {}
+    reasoning_by_correlation: Dict[tuple[str, str, str], str] = {}
     for event in order_events:
         order_id = str(event.get("order_id") or "").strip()
         if order_id:
             events_by_order.setdefault(order_id, []).append(event)
+        details = event.get("details") or {}
+        reasoning = details.get("reasoning") if isinstance(details, dict) else None
+        run_date = str(event.get("run_date") or "").strip()
+        symbol = str(event.get("symbol") or "").strip().upper()
+        loop_count = event.get("loop_count")
+        if (
+            event.get("event_type") == "validation_approved"
+            and reasoning
+            and run_date
+            and symbol
+            and loop_count is not None
+        ):
+            reasoning_by_correlation.setdefault(
+                (run_date, symbol, str(loop_count)),
+                str(reasoning),
+            )
 
     out: List[Dict[str, Any]] = []
     for trade in losers:
@@ -163,8 +180,20 @@ def biggest_losers(
         for event in events_by_order.get(order_id, []):
             details = event.get("details") or {}
             if isinstance(details, dict) and details.get("reasoning"):
-                reasoning = details["reasoning"]
+                reasoning = str(details["reasoning"])
                 break
+        if reasoning is None:
+            for event in events_by_order.get(order_id, []):
+                run_date = str(event.get("run_date") or "").strip()
+                symbol = str(event.get("symbol") or "").strip().upper()
+                loop_count = event.get("loop_count")
+                if not run_date or not symbol or loop_count is None:
+                    continue
+                reasoning = reasoning_by_correlation.get(
+                    (run_date, symbol, str(loop_count))
+                )
+                if reasoning:
+                    break
         out.append(
             {
                 "trade_uid": trade.get("trade_uid"),

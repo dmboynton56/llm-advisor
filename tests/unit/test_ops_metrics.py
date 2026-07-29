@@ -127,6 +127,65 @@ class TestBiggestLosers:
         assert losers[1]["validation_reasoning"] is None
         assert losers[0]["side"] == "short"
 
+    def test_joins_pre_order_validation_through_execution_correlation(self):
+        events = [
+            {
+                "run_date": "2026-07-02",
+                "event_type": "validation_approved",
+                "symbol": "QQQ",
+                "loop_count": 17,
+                "order_id": None,
+                "details": {"reasoning": "Approved before the broker order existed"},
+            },
+            {
+                "run_date": "2026-07-02",
+                "event_type": "execution_succeeded",
+                "symbol": "QQQ",
+                "loop_count": 17,
+                "order_id": "o3",
+                "details": {"order": {"order_id": "o3"}},
+            },
+        ]
+
+        losers = biggest_losers(FIXTURE_TRADES, events, n=1)
+
+        assert (
+            losers[0]["validation_reasoning"]
+            == "Approved before the broker order existed"
+        )
+
+    def test_correlation_does_not_cross_symbols_or_loop_iterations(self):
+        events = [
+            {
+                "run_date": "2026-07-02",
+                "event_type": "validation_approved",
+                "symbol": "SPY",
+                "loop_count": 17,
+                "order_id": None,
+                "details": {"reasoning": "Wrong symbol"},
+            },
+            {
+                "run_date": "2026-07-02",
+                "event_type": "validation_approved",
+                "symbol": "QQQ",
+                "loop_count": 18,
+                "order_id": None,
+                "details": {"reasoning": "Wrong loop"},
+            },
+            {
+                "run_date": "2026-07-02",
+                "event_type": "execution_succeeded",
+                "symbol": "QQQ",
+                "loop_count": 17,
+                "order_id": "o3",
+                "details": {"order": {"order_id": "o3"}},
+            },
+        ]
+
+        losers = biggest_losers(FIXTURE_TRADES, events, n=1)
+
+        assert losers[0]["validation_reasoning"] is None
+
 
 class TestExecutionFunnel:
     def test_stages_and_rejections(self):
