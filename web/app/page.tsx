@@ -59,6 +59,29 @@ export default async function OverviewPage() {
   const latestSnapshot = snapshots.at(-1) ?? null;
   const latestRun = runs.at(-1) ?? null;
   const hb = heartbeatStatus(heartbeat?.heartbeat_ts ?? null);
+  const liveAccountCapturedAt =
+    liveState?.updated_at ?? liveState?.heartbeat_ts ?? null;
+  const snapshotCapturedAt = latestSnapshot?.captured_at ?? null;
+  const liveAccountIsNewer =
+    liveState?.equity != null &&
+    liveAccountCapturedAt != null &&
+    (snapshotCapturedAt == null ||
+      new Date(liveAccountCapturedAt).getTime() >
+        new Date(snapshotCapturedAt).getTime());
+  const accountEquity = liveAccountIsNewer
+    ? liveState?.equity
+    : latestSnapshot?.equity;
+  const accountDailyPnl = liveAccountIsNewer
+    ? liveState?.daily_pnl
+    : latestSnapshot?.daily_pnl;
+  const accountDailyPnlPct = liveAccountIsNewer
+    ? liveState?.daily_pnl != null && liveState.last_equity
+      ? liveState.daily_pnl / liveState.last_equity
+      : null
+    : latestSnapshot?.daily_pnl_pct;
+  const accountCapturedAt = liveAccountIsNewer
+    ? liveAccountCapturedAt
+    : snapshotCapturedAt;
 
   const equityPoints = snapshots
     .filter((s) => s.equity !== null)
@@ -112,7 +135,7 @@ export default async function OverviewPage() {
               hint="from live_state upsert"
             />
             <MetricCard
-              label="Daily PnL"
+              label="Broker daily PnL"
               value={fmtSignedUsd(liveState.daily_pnl)}
               tone={
                 (liveState.daily_pnl ?? 0) > 0
@@ -179,31 +202,31 @@ export default async function OverviewPage() {
       <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
         <MetricCard
           label="Account equity"
-          value={fmtUsd(latestSnapshot?.equity ?? null, 0)}
+          value={fmtUsd(accountEquity ?? null, 0)}
           hint={
-            latestSnapshot
-              ? `as of ${fmtDateTime(latestSnapshot.captured_at)}`
-              : "no snapshots yet"
+            accountCapturedAt
+              ? `latest stored value · ${fmtDateTime(accountCapturedAt)}`
+              : "no account telemetry yet"
           }
         />
         <MetricCard
-          label="Daily PnL"
-          value={fmtSignedUsd(latestSnapshot?.daily_pnl ?? null)}
+          label="Broker daily PnL"
+          value={fmtSignedUsd(accountDailyPnl ?? null)}
           tone={
-            (latestSnapshot?.daily_pnl ?? 0) > 0
+            (accountDailyPnl ?? 0) > 0
               ? "positive"
-              : (latestSnapshot?.daily_pnl ?? 0) < 0
+              : (accountDailyPnl ?? 0) < 0
                 ? "negative"
                 : "neutral"
           }
           hint={
-            latestSnapshot?.daily_pnl_pct != null
-              ? fmtPct(Number(latestSnapshot.daily_pnl_pct), 2)
-              : undefined
+            accountDailyPnlPct != null
+              ? `${fmtPct(Number(accountDailyPnlPct), 2)} vs prior close`
+              : "equity change vs prior close"
           }
         />
         <MetricCard
-          label="Trades (last session)"
+          label="Trades opened (last entry date)"
           value={latestRun ? latestRun.total_trades : "—"}
           hint={latestRun ? `on ${latestRun.run_date}` : undefined}
         />
@@ -235,10 +258,10 @@ export default async function OverviewPage() {
       </Card>
 
       <Card
-        title="Daily PnL"
+        title="Strategy PnL by entry date"
         subtitle={
           <>
-            Realized PnL per trading day (30 days) ·{" "}
+            Full-lifecycle realized PnL grouped by trade entry date (30 days) ·{" "}
             <span className={pnlColor(totalPnl30d)}>
               {fmtSignedUsd(totalPnl30d)} total
             </span>
@@ -252,17 +275,20 @@ export default async function OverviewPage() {
         )}
       </Card>
 
-      <Card title="Recent sessions">
+      <Card
+        title="Entry-date cohorts"
+        subtitle="Trades and full-lifecycle PnL grouped by the date each position was opened"
+      >
         {runs.length > 0 ? (
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-zinc-800 text-left text-xs uppercase tracking-wide text-zinc-500">
-                  <th className="py-2 pr-4 font-medium">Date</th>
-                  <th className="py-2 pr-4 font-medium">Trades</th>
-                  <th className="py-2 pr-4 font-medium">Closed</th>
+                  <th className="py-2 pr-4 font-medium">Entry date</th>
+                  <th className="py-2 pr-4 font-medium">Opened</th>
+                  <th className="py-2 pr-4 font-medium">Now closed</th>
                   <th className="py-2 pr-4 font-medium">Win rate</th>
-                  <th className="py-2 pr-4 font-medium">PnL</th>
+                  <th className="py-2 pr-4 font-medium">Lifetime PnL</th>
                   <th className="py-2 font-medium">Equity</th>
                 </tr>
               </thead>

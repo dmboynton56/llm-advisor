@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import { Activity, AlertTriangle, RefreshCw } from "lucide-react";
 import clsx from "clsx";
 import {
+  dateEtIso,
   fmtDateTime,
   fmtNum,
   fmtPct,
@@ -76,8 +77,24 @@ export function LiveBlotter() {
   const todaysOrders = data?.todaysOrders ?? [];
   const liveState = data?.liveState ?? null;
   const openUpl = positions.reduce((acc, p) => acc + (p.unrealized_pl || 0), 0);
-  const realizedApprox =
-    account?.daily_pnl != null ? account.daily_pnl - openUpl : null;
+  const sessionRealized =
+    liveState?.session_date === dateEtIso() &&
+    liveState.session_stats?.realized_pnl != null
+      ? Number(liveState.session_stats.realized_pnl)
+      : null;
+  const realizedPnl =
+    sessionRealized ??
+    (account?.daily_pnl != null ? account.daily_pnl - openUpl : null);
+  const reconciliationResidual =
+    sessionRealized != null && account?.daily_pnl != null
+      ? account.daily_pnl - sessionRealized - openUpl
+      : null;
+  const closedToday =
+    liveState?.session_date === dateEtIso()
+      ? (liveState.session_stats?.closed?.length ??
+        liveState.session_stats?.fills ??
+        0)
+      : 0;
   const stale = isLiveStateStale(liveState);
   const sessionActive = isRegularSessionEt();
   const showNoStopBanner =
@@ -137,13 +154,13 @@ export function LiveBlotter() {
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-5">
         <Stat label="Equity" value={fmtUsd(account?.equity ?? null, 0)} />
         <Stat
-          label="Daily PnL"
+          label="Broker daily PnL"
           value={fmtSignedUsd(account?.daily_pnl ?? null)}
           className={pnlColor(account?.daily_pnl)}
           hint={
             account?.daily_pnl_pct != null
-              ? fmtPct(account.daily_pnl_pct, 2)
-              : undefined
+              ? `${fmtPct(account.daily_pnl_pct, 2)} vs prior close`
+              : "equity change vs prior close"
           }
         />
         <Stat
@@ -152,9 +169,14 @@ export function LiveBlotter() {
           className={pnlColor(openUpl)}
         />
         <Stat
-          label="Realized (approx)"
-          value={fmtSignedUsd(realizedApprox)}
-          className={pnlColor(realizedApprox)}
+          label="Strategy realized today"
+          value={fmtSignedUsd(realizedPnl)}
+          className={pnlColor(realizedPnl)}
+          hint={
+            sessionRealized != null
+              ? `${closedToday} exits · full entry-to-exit PnL`
+              : "approx. broker PnL minus open uPnL"
+          }
         />
         <Stat
           label="Buying power"
@@ -168,6 +190,19 @@ export function LiveBlotter() {
           }
         />
       </div>
+
+      {reconciliationResidual != null &&
+      Math.abs(reconciliationResidual) >= 0.01 ? (
+        <p className="text-xs leading-relaxed text-zinc-500">
+          Reconciliation: broker PnL uses equity change versus the prior close;
+          strategy realized PnL uses full entry-to-exit trade PnL. Overnight
+          mark basis, fees, and account adjustments account for{" "}
+          <span className={pnlColor(reconciliationResidual)}>
+            {fmtSignedUsd(reconciliationResidual)}
+          </span>
+          .
+        </p>
+      ) : null}
 
       <div>
         <h3 className="text-xs font-medium uppercase tracking-wide text-zinc-500">

@@ -19,8 +19,8 @@ export default async function TradesPage() {
       <div>
         <h1 className="text-xl font-semibold tracking-tight">Trades</h1>
         <p className="mt-1 text-sm text-zinc-500">
-          Every executed trade over the last 90 days, filterable by date,
-          underlying, direction, setup, and DTE.
+          Every executed trade over the last 90 days. Entry and exit dates are
+          separate so overnight positions are attributed correctly.
         </p>
       </div>
 

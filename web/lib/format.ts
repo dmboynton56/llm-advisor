@@ -45,6 +45,24 @@ export function fmtDateTime(value: string | null | undefined): string {
   }
 }
 
+export function dateEtIso(
+  value: Date | string | null | undefined = new Date(),
+): string {
+  if (!value) return "";
+  const date = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: "America/New_York",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(date);
+  const year = parts.find((p) => p.type === "year")?.value;
+  const month = parts.find((p) => p.type === "month")?.value;
+  const day = parts.find((p) => p.type === "day")?.value;
+  return year && month && day ? `${year}-${month}-${day}` : "";
+}
+
 export function relativeTime(value: string | null | undefined): string {
   if (!value) return "never";
   const then = new Date(value).getTime();

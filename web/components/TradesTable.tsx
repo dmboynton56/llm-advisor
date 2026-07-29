@@ -3,7 +3,13 @@
 import { useMemo, useState } from "react";
 import clsx from "clsx";
 import type { TradeRow } from "@/lib/types";
-import { fmtDateTime, fmtNum, fmtSignedUsd, pnlColor } from "@/lib/format";
+import {
+  dateEtIso,
+  fmtDateTime,
+  fmtNum,
+  fmtSignedUsd,
+  pnlColor,
+} from "@/lib/format";
 
 function uniqueValues(rows: TradeRow[], key: keyof TradeRow): string[] {
   return Array.from(
@@ -57,13 +63,28 @@ export function TradesTable({ trades }: { trades: TradeRow[] }) {
   const [side, setSide] = useState("");
   const [setup, setSetup] = useState("");
   const [dte, setDte] = useState("");
-  const [date, setDate] = useState("");
+  const [entryDate, setEntryDate] = useState("");
+  const [exitDate, setExitDate] = useState("");
 
   const underlyings = useMemo(
     () => uniqueValues(trades, "underlying_symbol"),
     [trades],
   );
-  const dates = useMemo(() => uniqueValues(trades, "run_date").reverse(), [trades]);
+  const entryDates = useMemo(
+    () => uniqueValues(trades, "run_date").reverse(),
+    [trades],
+  );
+  const exitDates = useMemo(
+    () =>
+      Array.from(
+        new Set(
+          trades.map((trade) => dateEtIso(trade.exit_time)).filter(Boolean),
+        ),
+      )
+        .sort()
+        .reverse(),
+    [trades],
+  );
 
   const filtered = useMemo(
     () =>
@@ -78,10 +99,11 @@ export function TradesTable({ trades }: { trades: TradeRow[] }) {
         if (side && normalizedSide !== side) return false;
         if (setup && (t.setup_type ?? "") !== setup) return false;
         if (dte && dteBucket(t.option_dte) !== dte) return false;
-        if (date && t.run_date !== date) return false;
+        if (entryDate && t.run_date !== entryDate) return false;
+        if (exitDate && dateEtIso(t.exit_time) !== exitDate) return false;
         return true;
       }),
-    [trades, underlying, side, setup, dte, date],
+    [trades, underlying, side, setup, dte, entryDate, exitDate],
   );
 
   const filteredPnl = filtered.reduce((acc, t) => acc + Number(t.pnl ?? 0), 0);
@@ -89,7 +111,18 @@ export function TradesTable({ trades }: { trades: TradeRow[] }) {
   return (
     <div className="space-y-3">
       <div className="flex flex-wrap items-center gap-3">
-        <FilterSelect label="Date" value={date} onChange={setDate} options={dates} />
+        <FilterSelect
+          label="Entry date"
+          value={entryDate}
+          onChange={setEntryDate}
+          options={entryDates}
+        />
+        <FilterSelect
+          label="Exit date"
+          value={exitDate}
+          onChange={setExitDate}
+          options={exitDates}
+        />
         <FilterSelect
           label="Underlying"
           value={underlying}
@@ -111,7 +144,9 @@ export function TradesTable({ trades }: { trades: TradeRow[] }) {
         <FilterSelect label="DTE" value={dte} onChange={setDte} options={DTE_OPTIONS} />
         <span className="ml-auto text-xs text-zinc-500">
           {filtered.length} trades ·{" "}
-          <span className={pnlColor(filteredPnl)}>{fmtSignedUsd(filteredPnl)}</span>
+          <span className={pnlColor(filteredPnl)}>
+            {fmtSignedUsd(filteredPnl)} lifetime PnL
+          </span>
         </span>
       </div>
 
@@ -120,6 +155,7 @@ export function TradesTable({ trades }: { trades: TradeRow[] }) {
           <thead>
             <tr className="border-b border-zinc-800 text-left text-xs uppercase tracking-wide text-zinc-500">
               <th className="py-2 pr-4 font-medium">Entry</th>
+              <th className="py-2 pr-4 font-medium">Exit</th>
               <th className="py-2 pr-4 font-medium">Symbol</th>
               <th className="py-2 pr-4 font-medium">Side</th>
               <th className="py-2 pr-4 font-medium">Setup</th>
@@ -141,6 +177,9 @@ export function TradesTable({ trades }: { trades: TradeRow[] }) {
                   {fmtDateTime(t.entry_time) !== "—"
                     ? fmtDateTime(t.entry_time)
                     : t.run_date}
+                </td>
+                <td className="whitespace-nowrap py-2 pr-4 text-xs tabular-nums text-zinc-400">
+                  {fmtDateTime(t.exit_time)}
                 </td>
                 <td className="py-2 pr-4">
                   <span className="font-medium">{t.underlying_symbol ?? t.symbol}</span>
