@@ -29,15 +29,23 @@ export function AppShell({ children }: { children: ReactNode }) {
             aria-label="LLM Advisor home"
             className="flex shrink-0 items-center gap-2.5"
           >
-            <Image
-              src="/llm-advisor-mark.png"
-              alt=""
-              aria-hidden="true"
-              width={32}
-              height={32}
-              priority
-              className="size-8 object-contain"
-            />
+            <span className="relative size-8 shrink-0" aria-hidden="true">
+              <Image
+                src="/llm-advisor-logo.png"
+                alt=""
+                width={32}
+                height={32}
+                priority
+                className="brand-logo-full absolute inset-0 size-full rounded-md object-cover"
+              />
+              <Image
+                src="/llm-advisor-mark.png"
+                alt=""
+                width={32}
+                height={32}
+                className="brand-logo-mark absolute inset-0 size-full object-contain"
+              />
+            </span>
             <span className="hidden text-[14.5px] font-semibold tracking-[-0.012em] sm:inline">
               LLM Advisor
             </span>

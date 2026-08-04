@@ -5,8 +5,10 @@ import sys
 
 from scripts import run_eod_aggregate
 from scripts.run_eod_aggregate import (
+    AccountSnapshotRow,
     RunRow,
     TradeRow,
+    backfill_run_equity_from_snapshots,
     dedupe_runs,
     dedupe_trades,
     parse_heartbeat,
@@ -205,6 +207,50 @@ def test_dedupe_runs_prefers_artifact_final_equity_over_bq() -> None:
     assert len(merged) == 1
     assert merged[0].final_equity == 100002.92
     assert "session_summary" in merged[0].source_file
+
+
+def test_backfill_run_equity_uses_latest_same_day_snapshot() -> None:
+    run = RunRow(
+        run_date="2026-07-31",
+        total_trades=1,
+        closed_trades=1,
+        winning_trades=1,
+        losing_trades=0,
+        total_pnl=10.0,
+        average_win=10.0,
+        average_loss=None,
+        final_equity=None,
+        return_pct=None,
+        daily_return_pct=None,
+        win_rate=1.0,
+        source_file="bq://project.dataset.trades",
+    )
+    snapshots = [
+        AccountSnapshotRow(
+            snapshot_date="2026-07-31",
+            captured_at="2026-07-31T13:30:00+00:00",
+            equity=100010.0,
+            last_equity=None,
+            buying_power=None,
+            daily_pnl=None,
+            daily_pnl_pct=None,
+            source="alpaca_paper",
+        ),
+        AccountSnapshotRow(
+            snapshot_date="2026-07-31",
+            captured_at="2026-07-31T19:50:00+00:00",
+            equity=100020.0,
+            last_equity=None,
+            buying_power=None,
+            daily_pnl=None,
+            daily_pnl_pct=None,
+            source="alpaca_paper",
+        ),
+    ]
+
+    filled = backfill_run_equity_from_snapshots([run], snapshots)
+
+    assert filled[0].final_equity == 100020.0
 
 
 def test_dedupe_trades_prefers_row_with_exit_price() -> None:
