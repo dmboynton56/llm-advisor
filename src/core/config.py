@@ -58,8 +58,8 @@ class OptionsSettings(BaseModel):
 
 
 class LLMSettings(BaseModel):
-    provider: str = "google"  # "google", "openai", "anthropic", "grok"
-    model: str = "gemini-3-flash-preview"
+    provider: str = "openai"  # "google", "openai", "anthropic", "grok"
+    model: str = "gpt-5.4-nano"
     market_analysis_interval_minutes: int = Field(default=15, ge=5, le=60)
     enable_trade_validation: bool = True
 
@@ -126,8 +126,8 @@ class Settings(BaseModel):
                 data_feed=os.getenv("OPTION_DATA_FEED", "indicative").lower(),
             ),
             llm=LLMSettings(
-                provider=os.getenv("LLM_PROVIDER", "google"),
-                model=os.getenv("LLM_MODEL", "gemini-3-flash-preview"),
+                provider=os.getenv("LLM_PROVIDER", "openai"),
+                model=os.getenv("LLM_MODEL", "gpt-5.4-nano"),
                 market_analysis_interval_minutes=int(os.getenv("MARKET_ANALYSIS_INTERVAL_MINUTES", "15")),
                 enable_trade_validation=os.getenv("ENABLE_TRADE_VALIDATION", "true").lower() == "true",
             ),

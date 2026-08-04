@@ -46,10 +46,10 @@ MINIMUM_RISK_REWARD_RATIO = 2.0
 CONFIDENCE_THRESHOLD = 85  # Integer from 0 to 100
 
 # The LLM provider(s) to use for analysis. Can be "openai", "anthropic", "google", or a list.
-LLM_PROVIDERS = ["google"]
+LLM_PROVIDERS = ["openai"]
 
 # The specific model to use for the main analysis.
-LLM_MODEL = "gemini-3-flash-preview"
+LLM_MODEL = "gpt-5.4-nano"
 
 # The time in seconds the bot will wait between each analysis loop.
 ANALYSIS_INTERVAL_SECONDS = 30
