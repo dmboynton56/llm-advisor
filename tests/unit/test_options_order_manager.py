@@ -184,6 +184,40 @@ def test_ensure_protective_stop_uses_actual_position_fill() -> None:
     assert events[0]["details"]["entry_order_id"] == "entry-1"
 
 
+def test_partial_close_uses_exact_sell_to_close_market_request() -> None:
+    submitted = {}
+
+    class FakeTradingClient:
+        def get_orders(self, filter):
+            return []
+
+        def submit_order(self, order_data):
+            submitted["order"] = order_data
+            return SimpleNamespace(id="tier-order-1", status="accepted")
+
+    manager = OptionsOrderManager.__new__(OptionsOrderManager)
+    manager.trading_client = FakeTradingClient()
+    manager._risk_events = []
+    manager._last_exit_orders = {}
+
+    result = manager.close_position_quantity(
+        "SPY260116C00500000",
+        2,
+        lifecycle_id="life-1",
+        stage="tp1",
+        client_order_id="llma-tier-life-1-tp1-1",
+    )
+
+    assert result["success"] is True
+    request = submitted["order"]
+    assert request.qty == 2
+    assert request.side == OrderSide.SELL
+    assert request.type == OrderType.MARKET
+    assert request.order_class == OrderClass.SIMPLE
+    assert request.position_intent == PositionIntent.SELL_TO_CLOSE
+    assert request.client_order_id == "llma-tier-life-1-tp1-1"
+
+
 def test_entry_guard_blocks_same_contract_and_underlying_direction() -> None:
     manager = OptionsOrderManager.__new__(OptionsOrderManager)
     manager.settings = _settings()

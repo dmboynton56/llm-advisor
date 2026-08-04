@@ -36,6 +36,9 @@ class SymbolState:
     last_mu: float = 0.0
     last_sigma: float = 0.0
     last_z: float = 0.0
+    # Entry-time underlying levels are observational during the tiered paper
+    # trial; they never trigger an option exit.
+    shadow_levels: Dict[str, Any] = field(default_factory=dict)
     armed_z: Optional[float] = None
     z_trajectory: List[Dict[str, Any]] = field(default_factory=list)
     trade: Optional[TradePlan] = None

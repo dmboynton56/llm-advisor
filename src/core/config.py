@@ -50,11 +50,36 @@ class OptionsSettings(BaseModel):
     order_price_buffer_pct: float = Field(default=0.02, ge=0.0, le=0.25)
     profit_target_pct: float = Field(default=0.25, ge=0.01, le=5.0)
     stop_loss_pct: float = Field(default=0.35, ge=0.01, le=1.0)
+    tiered_exit_enabled: bool = False
+    tiered_exit_underlyings: List[str] = Field(default_factory=lambda: ["SPY", "QQQ"])
+    tiered_min_contracts: int = Field(default=4, ge=4, le=500)
+    tiered_tp1_return_pct: float = Field(default=0.25, ge=0.01, le=5.0)
+    tiered_tp1_fraction: float = Field(default=0.50, gt=0.0, lt=1.0)
+    tiered_tp2_return_pct: float = Field(default=0.50, ge=0.01, le=5.0)
+    tiered_tp2_fraction: float = Field(default=0.25, gt=0.0, lt=1.0)
+    tiered_post_tp1_stop_return_pct: float = Field(default=-0.05, ge=-1.0, le=0.0)
+    tiered_runner_floor_return_pct: float = Field(default=0.25, ge=0.0, le=5.0)
+    tiered_runner_giveback_pct: float = Field(default=0.25, gt=0.0, le=5.0)
+    tiered_exit_fill_timeout_seconds: int = Field(default=120, ge=30, le=900)
+    tiered_emergency_flatten: bool = False
     max_hold_minutes: int = Field(default=2880, ge=1, le=10080)
     close_at_entry_window_end: bool = False
     allow_overnight: bool = True
     eod_flatten_max_dte: int = Field(default=0, ge=0, le=365)
     data_feed: str = "indicative"
+
+    def __init__(self, **data):
+        super().__init__(**data)
+        if self.tiered_exit_enabled and not self.paper_only:
+            raise ValueError("tiered exits require OPTIONS_PAPER_ONLY=true")
+        if self.tiered_tp2_return_pct <= self.tiered_tp1_return_pct:
+            raise ValueError("tiered TP2 must be above tiered TP1")
+        if self.tiered_tp1_fraction + self.tiered_tp2_fraction >= 1.0:
+            raise ValueError("tiered allocations must leave runner quantity")
+        underlyings = [str(value).strip().upper() for value in self.tiered_exit_underlyings if str(value).strip()]
+        if not underlyings:
+            raise ValueError("tiered exit underlyings cannot be empty")
+        self.tiered_exit_underlyings = underlyings
 
 
 class LLMSettings(BaseModel):
@@ -119,6 +144,30 @@ class Settings(BaseModel):
                 order_price_buffer_pct=float(os.getenv("OPTION_ORDER_PRICE_BUFFER_PCT", "0.02")),
                 profit_target_pct=float(os.getenv("OPTION_PROFIT_TARGET_PCT", "0.25")),
                 stop_loss_pct=float(os.getenv("OPTION_STOP_LOSS_PCT", "0.35")),
+                tiered_exit_enabled=os.getenv("OPTION_TIERED_EXIT_ENABLED", os.getenv("OPTIONS_TIERED_EXIT_ENABLED", "false")).lower() == "true",
+                tiered_exit_underlyings=[
+                    value.strip().upper()
+                    for value in os.getenv("OPTION_TIERED_EXIT_UNDERLYINGS", os.getenv("OPTIONS_TIERED_EXIT_UNDERLYINGS", "SPY,QQQ")).split(",")
+                    if value.strip()
+                ],
+                tiered_min_contracts=int(os.getenv("OPTION_TIERED_MIN_CONTRACTS", os.getenv("OPTIONS_TIERED_MIN_CONTRACTS", "4"))),
+                tiered_tp1_return_pct=float(os.getenv("OPTION_TIERED_TP1_RETURN_PCT", os.getenv("OPTIONS_TIERED_TP1_RETURN_PCT", "0.25"))),
+                tiered_tp1_fraction=float(os.getenv("OPTION_TIERED_TP1_FRACTION", os.getenv("OPTIONS_TIERED_TP1_FRACTION", "0.50"))),
+                tiered_tp2_return_pct=float(os.getenv("OPTION_TIERED_TP2_RETURN_PCT", os.getenv("OPTIONS_TIERED_TP2_RETURN_PCT", "0.50"))),
+                tiered_tp2_fraction=float(os.getenv("OPTION_TIERED_TP2_FRACTION", os.getenv("OPTIONS_TIERED_TP2_FRACTION", "0.25"))),
+                tiered_post_tp1_stop_return_pct=float(
+                    os.getenv("OPTION_TIERED_POST_TP1_STOP_RETURN_PCT", os.getenv("OPTIONS_TIERED_POST_TP1_STOP_RETURN_PCT", "-0.05"))
+                ),
+                tiered_runner_floor_return_pct=float(
+                    os.getenv("OPTION_TIERED_RUNNER_FLOOR_RETURN_PCT", os.getenv("OPTIONS_TIERED_RUNNER_FLOOR_RETURN_PCT", "0.25"))
+                ),
+                tiered_runner_giveback_pct=float(
+                    os.getenv("OPTION_TIERED_RUNNER_GIVEBACK_PCT", os.getenv("OPTIONS_TIERED_RUNNER_GIVEBACK_PCT", "0.25"))
+                ),
+                tiered_exit_fill_timeout_seconds=int(
+                    os.getenv("OPTION_TIERED_EXIT_FILL_TIMEOUT_SECONDS", os.getenv("OPTIONS_TIERED_EXIT_FILL_TIMEOUT_SECONDS", "120"))
+                ),
+                tiered_emergency_flatten=os.getenv("OPTION_TIERED_EMERGENCY_FLATTEN", os.getenv("OPTIONS_TIERED_EMERGENCY_FLATTEN", "false")).lower() == "true",
                 max_hold_minutes=int(os.getenv("OPTION_MAX_HOLD_MINUTES", "2880")),
                 close_at_entry_window_end=os.getenv("OPTION_CLOSE_AT_ENTRY_WINDOW_END", "false").lower() == "true",
                 allow_overnight=os.getenv("OPTION_ALLOW_OVERNIGHT", "true").lower() == "true",

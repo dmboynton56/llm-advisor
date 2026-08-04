@@ -7,6 +7,8 @@ import json
 from pathlib import Path
 from typing import Any, Iterable, Optional
 
+from src.execution.tiered_exit import TieredExitState
+
 
 @dataclass(frozen=True)
 class OptionMark:
@@ -24,6 +26,15 @@ class ReplayPolicy:
     underlying_target: Optional[float] = None
     underlying_side: str = "long"
     max_hold_minutes: Optional[int] = None
+    tiered: bool = False
+    tp1_return_pct: float = 0.25
+    tp2_return_pct: float = 0.50
+    tp1_fraction: float = 0.50
+    tp2_fraction: float = 0.25
+    post_tp1_stop_return_pct: float = -0.05
+    runner_floor_return_pct: float = 0.25
+    runner_giveback_pct: float = 0.25
+    shadow_levels: Optional[dict[str, float]] = None
 
 
 @dataclass(frozen=True)
@@ -35,6 +46,13 @@ class ReplayResult:
     pnl: float
     return_pct: float
     hold_minutes: float
+    fills: tuple[dict[str, Any], ...] = ()
+    mfe_pct: float = 0.0
+    mae_pct: float = 0.0
+    runner_contribution: float = 0.0
+    legacy_pnl: Optional[float] = None
+    max_drawdown_pct: float = 0.0
+    shadow_crossings: tuple[dict[str, Any], ...] = ()
 
 
 def replay_exit(
@@ -51,11 +69,28 @@ def replay_exit(
     if entry_price <= 0 or qty <= 0:
         raise ValueError("entry_price and qty must be positive")
 
+    if policy.tiered and int(qty) >= 4:
+        return _replay_tiered(
+            ordered,
+            entry_price=float(entry_price),
+            qty=int(qty),
+            policy=policy,
+            multiplier=multiplier,
+        )
+
     opened_at = ordered[0].timestamp
     selected = ordered[-1]
     reason = "end_of_data"
+    running_peak = float("-inf")
+    max_drawdown = 0.0
+    mfe = float("-inf")
+    mae = float("inf")
     for mark in ordered:
         option_return = mark.option_price / entry_price - 1.0
+        mfe = max(mfe, option_return)
+        mae = min(mae, option_return)
+        running_peak = max(running_peak, option_return)
+        max_drawdown = max(max_drawdown, running_peak - option_return)
         if (
             policy.stop_loss_pct is not None
             and option_return <= -abs(policy.stop_loss_pct)
@@ -108,7 +143,211 @@ def replay_exit(
         pnl=(selected.option_price - entry_price) * qty * multiplier,
         return_pct=return_pct,
         hold_minutes=(selected.timestamp - opened_at).total_seconds() / 60.0,
+        legacy_pnl=(selected.option_price - entry_price) * qty * multiplier,
+        mfe_pct=0.0 if mfe == float("-inf") else mfe,
+        mae_pct=0.0 if mae == float("inf") else mae,
+        max_drawdown_pct=max_drawdown,
     )
+
+
+def _replay_tiered(
+    ordered: list[OptionMark],
+    *,
+    entry_price: float,
+    qty: int,
+    policy: ReplayPolicy,
+    multiplier: float,
+) -> ReplayResult:
+    opened_at = ordered[0].timestamp
+    state = TieredExitState.create(
+        lifecycle_id="replay",
+        underlying_symbol="",
+        option_symbol="",
+        initial_qty=qty,
+        entry_price=entry_price,
+        original_stop_price=entry_price * (1.0 - abs(float(policy.stop_loss_pct or 0.35))),
+        tp1_return_pct=policy.tp1_return_pct,
+        tp2_return_pct=policy.tp2_return_pct,
+        tp1_fraction=policy.tp1_fraction,
+        tp2_fraction=policy.tp2_fraction,
+        post_tp1_stop_return_pct=policy.post_tp1_stop_return_pct,
+        runner_floor_return_pct=policy.runner_floor_return_pct,
+        runner_giveback_pct=policy.runner_giveback_pct,
+        shadow_levels=policy.shadow_levels,
+    )
+    fills: list[dict[str, Any]] = []
+    mfe = float("-inf")
+    mae = float("inf")
+    runner_pnl = 0.0
+    max_drawdown = 0.0
+    running_peak = float("-inf")
+    shadow_crossings: list[dict[str, Any]] = []
+    previous_underlying: Optional[float] = None
+    selected = ordered[-1]
+    reason = "end_of_data"
+
+    for mark in ordered:
+        selected = mark
+        option_return = mark.option_price / entry_price - 1.0
+        mfe = max(mfe, option_return)
+        mae = min(mae, option_return)
+        running_peak = max(running_peak, option_return)
+        max_drawdown = max(max_drawdown, running_peak - option_return)
+        if mark.underlying_price is not None:
+            for name, raw_level in (policy.shadow_levels or {}).items():
+                level = _float_or_none(raw_level)
+                if level is None or previous_underlying is None or previous_underlying == mark.underlying_price:
+                    continue
+                if (previous_underlying - level) * (mark.underlying_price - level) <= 0:
+                    if not any(item["level_name"] == name for item in shadow_crossings):
+                        shadow_crossings.append(
+                            {
+                                "level_name": name,
+                                "level": level,
+                                "underlying_price": mark.underlying_price,
+                                "option_return_pct": option_return,
+                                "timestamp": mark.timestamp,
+                            }
+                        )
+            previous_underlying = float(mark.underlying_price)
+        action = state.next_profit_stage(option_return)
+        if action is not None and action[0] == "runner_trail":
+            stage, qty_to_exit = action
+            state.apply_fill(
+                stage=stage,
+                qty=qty_to_exit,
+                exit_price=mark.option_price,
+                multiplier=multiplier,
+                now=mark.timestamp,
+            )
+            fill_pnl = (mark.option_price - entry_price) * qty_to_exit * multiplier
+            if stage == "runner_trail":
+                runner_pnl += fill_pnl
+            fills.append({"stage": stage, "qty": qty_to_exit, "price": mark.option_price, "pnl": fill_pnl})
+            if state.stage == "closed":
+                reason = "runner_trail"
+                break
+            continue
+        stop_return = state.current_return_pct(state.active_stop_price)
+        if option_return <= stop_return:
+            stage = "tiered_stop"
+            qty_to_exit = state.remaining_qty
+            state.apply_fill(
+                stage=stage,
+                qty=qty_to_exit,
+                exit_price=mark.option_price,
+                multiplier=multiplier,
+                now=mark.timestamp,
+            )
+            fills.append({"stage": stage, "qty": qty_to_exit, "price": mark.option_price})
+            reason = "tiered_stop"
+            break
+        if (
+            policy.max_hold_minutes is not None
+            and (mark.timestamp - opened_at).total_seconds() / 60.0 >= policy.max_hold_minutes
+        ):
+            qty_to_exit = state.remaining_qty
+            state.apply_fill(
+                stage="time_stop",
+                qty=qty_to_exit,
+                exit_price=mark.option_price,
+                multiplier=multiplier,
+                now=mark.timestamp,
+            )
+            fills.append({"stage": "time_stop", "qty": qty_to_exit, "price": mark.option_price})
+            reason = "time_stop"
+            break
+        if action is not None:
+            stage, qty_to_exit = action
+            state.apply_fill(
+                stage=stage,
+                qty=qty_to_exit,
+                exit_price=mark.option_price,
+                multiplier=multiplier,
+                now=mark.timestamp,
+            )
+            fill_pnl = (mark.option_price - entry_price) * qty_to_exit * multiplier
+            fills.append({"stage": stage, "qty": qty_to_exit, "price": mark.option_price, "pnl": fill_pnl})
+
+    if state.remaining_qty > 0:
+        qty_to_exit = state.remaining_qty
+        state.apply_fill(
+            stage="end_of_data",
+            qty=qty_to_exit,
+            exit_price=selected.option_price,
+            multiplier=multiplier,
+            now=selected.timestamp,
+        )
+        fills.append({"stage": "end_of_data", "qty": qty_to_exit, "price": selected.option_price})
+
+    legacy_policy = ReplayPolicy(
+        name=f"{policy.name}:legacy_counterfactual",
+        profit_target_pct=policy.profit_target_pct if policy.profit_target_pct is not None else 0.25,
+        stop_loss_pct=abs(float(policy.stop_loss_pct or 0.35)),
+        underlying_stop=policy.underlying_stop,
+        underlying_target=policy.underlying_target,
+        underlying_side=policy.underlying_side,
+        max_hold_minutes=policy.max_hold_minutes,
+    )
+    legacy = replay_exit(
+        ordered,
+        entry_price=entry_price,
+        qty=qty,
+        policy=legacy_policy,
+        multiplier=multiplier,
+    )
+    exit_qty = max(1, state.realized_exit_qty)
+    weighted_exit_price = state.weighted_exit_value / exit_qty
+    return ReplayResult(
+        policy=policy.name,
+        exit_reason=reason,
+        exit_time=selected.timestamp,
+        exit_option_price=weighted_exit_price,
+        pnl=state.realized_pnl,
+        return_pct=weighted_exit_price / entry_price - 1.0,
+        hold_minutes=(selected.timestamp - opened_at).total_seconds() / 60.0,
+        fills=tuple(fills),
+        mfe_pct=0.0 if mfe == float("-inf") else mfe,
+        mae_pct=0.0 if mae == float("inf") else mae,
+        runner_contribution=runner_pnl,
+        legacy_pnl=legacy.pnl,
+        max_drawdown_pct=max_drawdown,
+        shadow_crossings=tuple(shadow_crossings),
+    )
+
+
+def evaluate_strategy_gate(
+    tiered_results: Iterable[ReplayResult],
+    legacy_results: Iterable[ReplayResult],
+) -> dict[str, Any]:
+    """Apply the paper-trial go/no-go gate without changing position sizing."""
+    tiered = list(tiered_results)
+    legacy = list(legacy_results)
+    if len(tiered) != len(legacy) or not tiered:
+        return {
+            "passed": False,
+            "reason": "mismatched_or_empty_lifecycles",
+            "lifecycle_count": min(len(tiered), len(legacy)),
+        }
+    tiered_pnl = sum(float(row.pnl) for row in tiered)
+    legacy_pnl = sum(float(row.pnl) for row in legacy)
+    tiered_winners = [float(row.pnl) for row in tiered if row.pnl > 0]
+    legacy_winners = [float(row.pnl) for row in legacy if row.pnl > 0]
+    avg_tiered_winner = sum(tiered_winners) / len(tiered_winners) if tiered_winners else 0.0
+    avg_legacy_winner = sum(legacy_winners) / len(legacy_winners) if legacy_winners else 0.0
+    worst_tiered = min(float(row.return_pct) for row in tiered)
+    worst_legacy = min(float(row.return_pct) for row in legacy)
+    return {
+        "passed": (
+            tiered_pnl - legacy_pnl >= 0
+            and avg_tiered_winner >= avg_legacy_winner
+            and worst_tiered - worst_legacy <= 0.05
+        ),
+        "lifecycle_count": len(tiered),
+        "cumulative_pnl_delta": tiered_pnl - legacy_pnl,
+        "average_winner_delta": avg_tiered_winner - avg_legacy_winner,
+        "worst_lifecycle_return_delta": worst_tiered - worst_legacy,
+    }
 
 
 def load_marks_from_order_events(

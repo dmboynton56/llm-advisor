@@ -92,6 +92,26 @@ def _opened_at_iso(meta: Dict[str, Any]) -> Optional[str]:
     return None
 
 
+def _tiered_state_payload(meta: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    state = meta.get("tiered_exit_state") if isinstance(meta, dict) else None
+    if state is None and isinstance(meta, dict):
+        state = meta.get("exit_state")
+    if hasattr(state, "to_dict"):
+        try:
+            return state.to_dict()
+        except Exception:
+            return None
+    if isinstance(state, dict):
+        return dict(state)
+    if isinstance(state, str):
+        try:
+            parsed = json.loads(state)
+            return parsed if isinstance(parsed, dict) else None
+        except json.JSONDecodeError:
+            return None
+    return None
+
+
 def build_live_state_row(
     trade_tracker: Any,
     order_manager: Any,
@@ -142,6 +162,7 @@ def build_live_state_row(
                 "opened_at": _opened_at_iso(meta),
                 "setup_type": _setup_type_from_meta(meta),
                 "dte": dte,
+                "tiered_exit_state": _tiered_state_payload(meta),
             }
         )
 
@@ -169,6 +190,16 @@ def build_live_state_row(
         "profit_target_pct": float(getattr(options, "profit_target_pct", 0.25) or 0.25),
         "max_hold_minutes": int(getattr(options, "max_hold_minutes", 2880) or 2880),
         "allow_overnight": bool(getattr(options, "allow_overnight", True)),
+        "tiered_exit_enabled": bool(getattr(options, "tiered_exit_enabled", False)),
+        "tiered_policy_version": "tiered_v1",
+        "tiered_exit_underlyings": list(getattr(options, "tiered_exit_underlyings", []) or []),
+        "tiered_min_contracts": int(getattr(options, "tiered_min_contracts", 4) or 4),
+        "tiered_tp1_return_pct": float(getattr(options, "tiered_tp1_return_pct", 0.25) or 0.25),
+        "tiered_tp2_return_pct": float(getattr(options, "tiered_tp2_return_pct", 0.50) or 0.50),
+        "tiered_post_tp1_stop_return_pct": float(getattr(options, "tiered_post_tp1_stop_return_pct", -0.05) or -0.05),
+        "tiered_runner_floor_return_pct": float(getattr(options, "tiered_runner_floor_return_pct", 0.25) or 0.25),
+        "tiered_runner_giveback_pct": float(getattr(options, "tiered_runner_giveback_pct", 0.25) or 0.25),
+        "tiered_exit_fill_timeout_seconds": int(getattr(options, "tiered_exit_fill_timeout_seconds", 120) or 120),
     }
 
     return {

@@ -95,11 +95,16 @@ class BigQueryStorage(StorageAdapter):
             bigquery.SchemaField("symbol", "STRING", mode="REQUIRED"),
             bigquery.SchemaField("htf_stats", "STRING", mode="NULLABLE"),
             bigquery.SchemaField("bands_5m", "STRING", mode="NULLABLE"),
+            bigquery.SchemaField("levels", "STRING", mode="NULLABLE"),
             bigquery.SchemaField("created_at", "TIMESTAMP", mode="REQUIRED"),
         ]
         table = bigquery.Table(table_id, schema=schema)
         table.clustering_fields = ["date", "symbol"]
         self.client.create_table(table, exists_ok=True)
+        self._ensure_table_fields(
+            table_id,
+            [bigquery.SchemaField("levels", "STRING", mode="NULLABLE")],
+        )
     
     def _create_table_market_analysis(self):
         """Create market_analysis table."""
@@ -230,6 +235,7 @@ class BigQueryStorage(StorageAdapter):
             bigquery.SchemaField("take_profit", "NUMERIC", mode="NULLABLE"),
             bigquery.SchemaField("qty", "INT64", mode="NULLABLE"),
             bigquery.SchemaField("unrealized_pnl", "NUMERIC", mode="NULLABLE"),
+            bigquery.SchemaField("exit_state", "STRING", mode="NULLABLE"),
             bigquery.SchemaField("last_updated", "TIMESTAMP", mode="REQUIRED"),
         ]
         table = bigquery.Table(table_id, schema=schema)
@@ -241,6 +247,7 @@ class BigQueryStorage(StorageAdapter):
                 bigquery.SchemaField("asset_class", "STRING", mode="NULLABLE"),
                 bigquery.SchemaField("underlying_symbol", "STRING", mode="NULLABLE"),
                 bigquery.SchemaField("option_symbol", "STRING", mode="NULLABLE"),
+                bigquery.SchemaField("exit_state", "STRING", mode="NULLABLE"),
             ],
         )
 
@@ -393,7 +400,8 @@ class BigQueryStorage(StorageAdapter):
             update_query = f"""
             UPDATE `{table_id}`
             SET htf_stats = @htf_stats,
-                bands_5m = @bands_5m
+                bands_5m = @bands_5m,
+                levels = @levels
             WHERE date = @date AND symbol = @symbol
             """
             job_config = bigquery.QueryJobConfig(
@@ -402,6 +410,7 @@ class BigQueryStorage(StorageAdapter):
                     bigquery.ScalarQueryParameter("symbol", "STRING", symbol),
                     bigquery.ScalarQueryParameter("htf_stats", "STRING", self._json_dumps(snapshot.get("htf"))),
                     bigquery.ScalarQueryParameter("bands_5m", "STRING", self._json_dumps(snapshot.get("bands_5m"))),
+                    bigquery.ScalarQueryParameter("levels", "STRING", self._json_dumps(snapshot.get("levels"))),
                 ]
             )
             self.client.query(update_query, job_config=job_config).result()
@@ -410,8 +419,8 @@ class BigQueryStorage(StorageAdapter):
             next_id = self._get_next_id("premarket_snapshots")
             insert_query = f"""
             INSERT INTO `{table_id}`
-            (id, date, symbol, htf_stats, bands_5m, created_at)
-            VALUES (@id, @date, @symbol, @htf_stats, @bands_5m, CURRENT_TIMESTAMP())
+            (id, date, symbol, htf_stats, bands_5m, levels, created_at)
+            VALUES (@id, @date, @symbol, @htf_stats, @bands_5m, @levels, CURRENT_TIMESTAMP())
             """
             job_config = bigquery.QueryJobConfig(
                 query_parameters=[
@@ -420,6 +429,7 @@ class BigQueryStorage(StorageAdapter):
                     bigquery.ScalarQueryParameter("symbol", "STRING", symbol),
                     bigquery.ScalarQueryParameter("htf_stats", "STRING", self._json_dumps(snapshot.get("htf"))),
                     bigquery.ScalarQueryParameter("bands_5m", "STRING", self._json_dumps(snapshot.get("bands_5m"))),
+                    bigquery.ScalarQueryParameter("levels", "STRING", self._json_dumps(snapshot.get("levels"))),
                 ]
             )
             self.client.query(insert_query, job_config=job_config).result()
@@ -449,6 +459,7 @@ class BigQueryStorage(StorageAdapter):
             "symbol": row.symbol,
             "htf": self._json_loads(row.htf_stats) if row.htf_stats else None,
             "bands_5m": self._json_loads(row.bands_5m) if row.bands_5m else None,
+            "levels": self._json_loads(getattr(row, "levels", None)) if getattr(row, "levels", None) else None,
             "created_at": row.created_at
         }
     
@@ -721,7 +732,11 @@ class BigQueryStorage(StorageAdapter):
             update_query = f"""
             UPDATE `{table_id}`
             SET current_price = @current_price,
+                stop_loss = @stop_loss,
+                take_profit = @take_profit,
+                qty = @qty,
                 unrealized_pnl = @unrealized_pnl,
+                exit_state = @exit_state,
                 last_updated = CURRENT_TIMESTAMP()
             WHERE trade_id = @trade_id
             """
@@ -729,7 +744,11 @@ class BigQueryStorage(StorageAdapter):
                 query_parameters=[
                     bigquery.ScalarQueryParameter("trade_id", "INT64", trade_id),
                     bigquery.ScalarQueryParameter("current_price", "NUMERIC", float(position.get("current_price")) if position.get("current_price") is not None else None),
+                    bigquery.ScalarQueryParameter("stop_loss", "NUMERIC", float(position.get("stop_loss")) if position.get("stop_loss") is not None else None),
+                    bigquery.ScalarQueryParameter("take_profit", "NUMERIC", float(position.get("take_profit")) if position.get("take_profit") is not None else None),
+                    bigquery.ScalarQueryParameter("qty", "INT64", position.get("qty", 0)),
                     bigquery.ScalarQueryParameter("unrealized_pnl", "NUMERIC", float(position.get("unrealized_pnl", 0.0))),
+                    bigquery.ScalarQueryParameter("exit_state", "STRING", self._json_dumps(position.get("exit_state"))),
                 ]
             )
             self.client.query(update_query, job_config=job_config).result()
@@ -740,10 +759,10 @@ class BigQueryStorage(StorageAdapter):
             INSERT INTO `{table_id}`
             (id, trade_id, symbol, asset_class, underlying_symbol, option_symbol, side,
              entry_price, current_price, stop_loss, take_profit, qty, unrealized_pnl,
-             last_updated)
+             exit_state, last_updated)
             VALUES (@id, @trade_id, @symbol, @asset_class, @underlying_symbol, @option_symbol,
                     @side, @entry_price, @current_price, @stop_loss, @take_profit, @qty,
-                    @unrealized_pnl, CURRENT_TIMESTAMP())
+                    @unrealized_pnl, @exit_state, CURRENT_TIMESTAMP())
             """
             job_config = bigquery.QueryJobConfig(
                 query_parameters=[
@@ -760,6 +779,7 @@ class BigQueryStorage(StorageAdapter):
                     bigquery.ScalarQueryParameter("take_profit", "NUMERIC", float(position.get("take_profit")) if position.get("take_profit") is not None else None),
                     bigquery.ScalarQueryParameter("qty", "INT64", position.get("qty", 0)),
                     bigquery.ScalarQueryParameter("unrealized_pnl", "NUMERIC", float(position.get("unrealized_pnl", 0.0))),
+                    bigquery.ScalarQueryParameter("exit_state", "STRING", self._json_dumps(position.get("exit_state"))),
                 ]
             )
             self.client.query(insert_query, job_config=job_config).result()

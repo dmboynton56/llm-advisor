@@ -31,6 +31,7 @@ def main() -> None:
     parser.add_argument("--underlying-stop", type=float)
     parser.add_argument("--underlying-target", type=float)
     parser.add_argument("--underlying-side", choices=("long", "short"), default="long")
+    parser.add_argument("--tiered", action="store_true", help="Replay the paper tiered state machine")
     args = parser.parse_args()
 
     marks = load_marks_from_order_events(
@@ -45,6 +46,15 @@ def main() -> None:
             stop_loss_pct=args.stop_pct,
         )
     ]
+    if args.tiered:
+        policies.append(
+            ReplayPolicy(
+                name="tiered_paper_trial",
+                profit_target_pct=args.target_pct,
+                stop_loss_pct=args.stop_pct,
+                tiered=True,
+            )
+        )
     if args.underlying_stop is not None or args.underlying_target is not None:
         policies.append(
             ReplayPolicy(

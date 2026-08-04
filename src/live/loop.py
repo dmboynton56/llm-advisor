@@ -127,6 +127,14 @@ def _create_minimal_snapshot_from_bars(
             "atr_5m": float(atr_5m),
             "k": {"k1": 1.2, "k2": 1.8, "k3": 0.6},
         },
+        "levels": {
+            "entry_mean": float(mu_5m),
+            "entry_sigma": float(sigma_5m),
+            "atr_5m": float(atr_5m),
+            "prior_day_high": None,
+            "prior_day_low": None,
+            "prior_day_close": None,
+        },
     }
 
 
@@ -230,6 +238,7 @@ def seed_states_from_snapshots(
             last_mu=mu,
             last_sigma=sigma,
             last_z=z,
+            shadow_levels=dict(snapshot.get("levels") or {}),
         )
         
         states[symbol] = state
@@ -351,6 +360,7 @@ def append_order_event(
             "ema_slope_hourly": state.ema_slope_hourly,
             "last_mu": state.last_mu,
             "last_sigma": state.last_sigma,
+            "shadow_levels": dict(getattr(state, "shadow_levels", {}) or {}),
         }
     events_path.parent.mkdir(parents=True, exist_ok=True)
     with events_path.open("a", encoding="utf-8") as f:
@@ -969,6 +979,7 @@ def reconcile_positions_with_alpaca(
                     "take_profit": bq_pos.get("take_profit"),
                     "qty": int(_position_qty(alpaca_pos)),
                     "unrealized_pnl": _float_or_none(alpaca_pos.get("unrealized_pl")) or 0.0,
+                    "exit_state": bq_pos.get("exit_state"),
                 })
                 append_order_event(
                     order_events_path,
@@ -1004,6 +1015,7 @@ def reconcile_positions_with_alpaca(
                 "take_profit": None,
                 "qty": int(_position_qty(alpaca_pos)),
                 "unrealized_pnl": _float_or_none(alpaca_pos.get("unrealized_pl")) or 0.0,
+                "exit_state": None,
             })
             append_order_event(
                 order_events_path,
@@ -1023,6 +1035,8 @@ def reconcile_positions_with_alpaca(
                     "underlying_symbol": bq_by_symbol.get(symbol, {}).get("underlying_symbol"),
                     "option_symbol": alpaca_pos.get("option_symbol") or bq_by_symbol.get(symbol, {}).get("option_symbol"),
                     "opened_at": bq_by_symbol.get(symbol, {}).get("entry_time") or datetime.now(timezone.utc),
+                    "exit_state": bq_by_symbol.get(symbol, {}).get("exit_state"),
+                    "tiered_candidate": False,
                 },
             )
         reconciled.append({
@@ -1033,6 +1047,7 @@ def reconcile_positions_with_alpaca(
             "trade_pk": trade_pk,
             "stop_loss": bq_by_symbol.get(symbol, {}).get("stop_loss"),
             "take_profit": bq_by_symbol.get(symbol, {}).get("take_profit"),
+            "exit_state": bq_by_symbol.get(symbol, {}).get("exit_state"),
         })
 
     if not reconciled:
@@ -1568,7 +1583,10 @@ def main():
             update_positions(
                 trade_tracker,
                 current_utc=current_utc,
-                force_close_options=settings.options.close_at_entry_window_end,
+                force_close_options=(
+                    settings.options.close_at_entry_window_end
+                    or settings.options.tiered_emergency_flatten
+                ),
                 force_close_reason="option_entry_window_close",
                 order_events_path=order_events_path,
                 loop_count=loop_count,
@@ -2133,6 +2151,7 @@ def main():
                                         "take_profit": state.trade.tp_price,
                                         "side": state.trade.side,
                                     },
+                                    "shadow_levels": dict(getattr(state, "shadow_levels", {}) or {}),
                                 }
                             underlying_symbol = result.get("underlying_symbol") if is_option_order else symbol
                             option_symbol = result.get("option_symbol") if is_option_order else None
@@ -2193,6 +2212,7 @@ def main():
                                                 "opened_at": current_utc,
                                                 "entry_price": persisted_entry_price,
                                                 "option_plan": option_plan,
+                                                "tiered_candidate": bool(is_option_order),
                                             },
                                         )
                                 except Exception as e:
