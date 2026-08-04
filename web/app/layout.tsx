@@ -9,6 +9,9 @@ export const metadata: Metadata = {
   title: "LLM Advisor | Ops Dashboard",
   description:
     "Operations dashboard for an LLM-validated options paper-trading system: account equity, trade performance, setup breakdowns, and execution funnel.",
+  icons: {
+    icon: "/llm-advisor-mark.png",
+  },
 };
 
 export default function RootLayout({
