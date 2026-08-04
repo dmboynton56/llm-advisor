@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import Image from "next/image";
 import type { ReactNode } from "react";
 import clsx from "clsx";
 import { ThemeToggle } from "@/components/ThemeToggle";
@@ -23,13 +24,20 @@ export function AppShell({ children }: { children: ReactNode }) {
     <div className="min-h-screen">
       <header className="sticky top-0 z-40 border-b border-line bg-[color-mix(in_srgb,var(--paper)_86%,transparent)] backdrop-blur-lg backdrop-saturate-150">
         <div className="mx-auto flex h-[62px] max-w-[1240px] items-center gap-7 px-5 sm:px-7">
-          <Link href="/" className="flex shrink-0 items-center gap-2.5">
-            <span
-              aria-hidden
-              className="grid size-[22px] place-items-center rounded-md border-[1.5px] border-ink font-mono text-[11px] font-semibold leading-none"
-            >
-              LA
-            </span>
+          <Link
+            href="/"
+            aria-label="LLM Advisor home"
+            className="flex shrink-0 items-center gap-2.5"
+          >
+            <Image
+              src="/llm-advisor-mark.png"
+              alt=""
+              aria-hidden="true"
+              width={32}
+              height={32}
+              priority
+              className="size-8 object-contain"
+            />
             <span className="hidden text-[14.5px] font-semibold tracking-[-0.012em] sm:inline">
               LLM Advisor
             </span>

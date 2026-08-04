@@ -17,11 +17,26 @@ const plexMono = IBM_Plex_Mono({
 });
 
 export const metadata: Metadata = {
+  metadataBase: new URL("https://llm-advisor.drewboynton.com"),
   title: "LLM Advisor | Ops Dashboard",
   description:
     "Operations dashboard for an LLM-validated options paper-trading system: account equity, trade performance, setup breakdowns, and execution funnel.",
   icons: {
     icon: "/llm-advisor-mark.png",
+    apple: "/llm-advisor-logo.png",
+  },
+  openGraph: {
+    title: "LLM Advisor | Ops Dashboard",
+    description:
+      "Operations dashboard for an LLM-validated options paper-trading system.",
+    images: [
+      {
+        url: "/llm-advisor-logo.png",
+        width: 1024,
+        height: 1024,
+        alt: "LLM Advisor logo",
+      },
+    ],
   },
 };
 
