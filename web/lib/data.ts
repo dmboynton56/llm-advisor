@@ -2,6 +2,7 @@ import { supabaseSelect } from "@/lib/supabase";
 import type {
   AccountSnapshot,
   Heartbeat,
+  JsonRecord,
   LiveStateRow,
   OpsMetricsDaily,
   RunRow,
@@ -9,6 +10,10 @@ import type {
   TradeLifecycleRow,
   ValidationEvent,
 } from "@/lib/types";
+import {
+  deriveTradeDirection,
+  tradeDirectionDetails,
+} from "@/lib/tradeDirection";
 
 function daysAgoIso(days: number): string {
   const d = new Date();
@@ -51,11 +56,114 @@ export async function getTrades(days = 90): Promise<TradeRow[]> {
 export async function getTradeLifecycles(
   days = 30,
 ): Promise<TradeLifecycleRow[]> {
-  const rows = await supabaseSelect<TradeLifecycleRow>(
-    "llm_advisor_trade_lifecycles",
-    `select=lifecycle_uid,entry_order_id,exit_order_id,symbol,underlying_symbol,opened_at,closed_at,filled_qty,entry_fill_price,exit_fill_price,exit_reason,realized_pnl,status&closed_at=gte.${daysAgoIso(days)}T00:00:00Z&order=closed_at.desc&limit=1000`,
-  );
-  return rows ?? [];
+  type ExecutionEvent = {
+    event_type: string;
+    event_ts: string | null;
+    order_id: string | null;
+    symbol: string;
+    side: string | null;
+    details: JsonRecord | null;
+  };
+
+  const [rows, executionEvents] = await Promise.all([
+    supabaseSelect<TradeLifecycleRow>(
+      "llm_advisor_trade_lifecycles",
+      `select=lifecycle_uid,entry_order_id,exit_order_id,symbol,underlying_symbol,opened_at,closed_at,filled_qty,entry_fill_price,exit_fill_price,exit_reason,realized_pnl,status,details&closed_at=gte.${daysAgoIso(days)}T00:00:00Z&order=closed_at.desc&limit=1000`,
+    ),
+    // Execution events already contain the option plan used at entry. Joining
+    // them here gives historical lifecycles explicit direction metadata even
+    // though the lifecycle table predates those columns.
+    supabaseSelect<ExecutionEvent>(
+      "llm_advisor_order_events",
+      `select=event_type,event_ts,order_id,symbol,side,details&event_type=eq.execution_succeeded&run_date=gte.${daysAgoIso(days)}&order=event_ts.desc&limit=2000`,
+    ),
+  ]);
+
+  const eventsByOrderId = new Map<string, ExecutionEvent>();
+  const eventsBySymbol = new Map<string, ExecutionEvent[]>();
+
+  function optionSymbolFromEvent(event: ExecutionEvent): string | null {
+    const details = event.details ?? {};
+    const order = details.order;
+    if (!order || typeof order !== "object" || Array.isArray(order)) return null;
+    const optionPlan = (order as JsonRecord).option_plan;
+    if (!optionPlan || typeof optionPlan !== "object" || Array.isArray(optionPlan)) {
+      return null;
+    }
+    const optionSymbol = (optionPlan as JsonRecord).option_symbol;
+    return typeof optionSymbol === "string" ? optionSymbol : null;
+  }
+
+  for (const event of executionEvents ?? []) {
+    if (event.order_id) eventsByOrderId.set(event.order_id, event);
+    const symbols = [event.symbol, optionSymbolFromEvent(event)]
+      .filter((symbol): symbol is string => Boolean(symbol))
+      .map((symbol) => symbol.toUpperCase());
+    for (const symbol of symbols) {
+      eventsBySymbol.set(symbol, [...(eventsBySymbol.get(symbol) ?? []), event]);
+    }
+  }
+
+  function matchingExecutionEvent(row: TradeLifecycleRow): ExecutionEvent | null {
+    if (row.entry_order_id) return eventsByOrderId.get(row.entry_order_id) ?? null;
+    const candidates = eventsBySymbol.get(row.symbol.toUpperCase()) ?? [];
+    if (!candidates.length) return null;
+    const target = Date.parse(row.opened_at ?? row.closed_at ?? "");
+    return candidates.reduce((best, candidate) => {
+      if (!best) return candidate;
+      if (!Number.isFinite(target)) return best;
+      const bestDistance = Math.abs(Date.parse(best.event_ts ?? "") - target);
+      const candidateDistance = Math.abs(Date.parse(candidate.event_ts ?? "") - target);
+      return candidateDistance < bestDistance ? candidate : best;
+    }, null as ExecutionEvent | null);
+  }
+
+  return (rows ?? []).map((row) => {
+    const event = matchingExecutionEvent(row);
+    if (!event) return row;
+
+    const eventDetails = event.details ?? {};
+    const order = eventDetails.order;
+    const optionPlan =
+      order && typeof order === "object" && !Array.isArray(order)
+        ? (order as JsonRecord).option_plan
+        : null;
+    const direction = deriveTradeDirection({
+      symbol: row.symbol,
+      side:
+        order && typeof order === "object" && !Array.isArray(order)
+          ? (order as JsonRecord).side
+          : null,
+      details: {
+        trade_direction: {
+          position_side:
+            order && typeof order === "object" && !Array.isArray(order)
+              ? (order as JsonRecord).side
+              : null,
+          contract_type:
+            optionPlan && typeof optionPlan === "object" && !Array.isArray(optionPlan)
+              ? (optionPlan as JsonRecord).contract_type
+              : null,
+          signal_bias:
+            optionPlan && typeof optionPlan === "object" && !Array.isArray(optionPlan)
+              ? (optionPlan as JsonRecord).signal_side
+              : event.side,
+          entry_action:
+            optionPlan && typeof optionPlan === "object" && !Array.isArray(optionPlan)
+              ? (optionPlan as JsonRecord).position_intent
+              : null,
+        },
+      },
+    });
+
+    return {
+      ...row,
+      details: {
+        ...(row.details ?? {}),
+        trade_direction: tradeDirectionDetails(direction),
+      },
+    };
+  });
 }
 
 export async function getLatestOpsMetrics(): Promise<OpsMetricsDaily | null> {

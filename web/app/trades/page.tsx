@@ -4,10 +4,21 @@ import { getLatestOpsMetrics, getTradeLifecycles } from "@/lib/data";
 import { supabaseConfigured } from "@/lib/supabase";
 import { fmtSignedUsd } from "@/lib/format";
 import type { TradeLifecycleRow, TradeRow } from "@/lib/types";
+import { deriveTradeDirection } from "@/lib/tradeDirection";
 
 export const dynamic = "force-dynamic";
 
 function lifecycleAsTrade(row: TradeLifecycleRow): TradeRow {
+  const direction = deriveTradeDirection({
+    symbol: row.symbol,
+    side: "buy",
+    details: row.details,
+    // Current lifecycle records represent broker-held option positions. The
+    // explicit event metadata above wins whenever it is available; this keeps
+    // older rows readable while the system remains single-long-premium.
+    assumeLongOptionPosition: true,
+  });
+
   return {
     trade_uid: row.lifecycle_uid,
     run_date: (row.opened_at ?? row.closed_at ?? "").slice(0, 10),
@@ -15,7 +26,11 @@ function lifecycleAsTrade(row: TradeLifecycleRow): TradeRow {
     symbol: row.symbol,
     underlying_symbol: row.underlying_symbol,
     asset_class: "option",
-    side: "buy",
+    side: direction.position_side,
+    position_side: direction.position_side,
+    contract_type: direction.contract_type,
+    signal_bias: direction.signal_bias,
+    entry_action: direction.entry_action,
     setup_type: null,
     option_dte: null,
     qty: row.filled_qty,
@@ -44,7 +59,8 @@ export default async function TradesPage() {
         <h1 className="text-xl font-semibold tracking-tight">Trades</h1>
         <p className="mt-1 text-sm text-zinc-500">
           Broker-position lifecycles over the last 90 days, using actual fills
-          when available and exit-date attribution.
+          when available and showing position, option contract, and market bias
+          separately.
         </p>
       </div>
 

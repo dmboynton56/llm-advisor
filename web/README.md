@@ -9,7 +9,7 @@ modeled on the sports-edge ops dashboard. Intended deploy: Vercel at
 | Route | Contents |
 |---|---|
 | `/` | Equity curve, daily PnL bars, current equity/buying power, trades today, live-loop heartbeat freshness, recent sessions |
-| `/trades` | Filterable trade table (date / underlying / side / setup / DTE) + biggest losers with LLM validation reasoning |
+| `/trades` | Filterable trade table (date / underlying / position / contract / bias / setup / DTE) + biggest losers with LLM validation reasoning |
 | `/breakdowns` | Win rate / PnL / RR grids per underlying, long vs short, MR vs TC, DTE buckets (cells with n < 10 greyed out) |
 | `/funnel` | Signal → validation → execution funnel, rejection-reason histogram, LLM approval rate over time |
 | `/command-center` | Env-gated private surface: **live Alpaca paper blotter** (positions, open orders, software stop/TP, loop-health banner), watchlist mocks, Robinhood MCP status |
