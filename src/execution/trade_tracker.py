@@ -1027,6 +1027,7 @@ class TradeTracker:
         self.session_closed.append(
             {
                 "position_id": str(lifecycle_id),
+                "entry_order_id": str(meta.get("order_id") or "") or None,
                 "symbol": symbol,
                 "option_symbol": meta.get("option_symbol") or symbol,
                 "underlying_symbol": meta.get("underlying_symbol")

@@ -137,6 +137,7 @@ function normalizeOpenPosition(position: LiveOpenPosition): OverviewPosition {
       position.position_id ??
       (typeof state.lifecycle_id === "string" ? state.lifecycle_id : null) ??
       symbol,
+    entry_order_id: position.entry_order_id ?? null,
     status: "open",
     symbol,
     option_symbol: symbol,
@@ -208,6 +209,7 @@ function normalizeLifecycle(row: TradeLifecycleRow): OverviewPosition {
 
   return {
     id: row.lifecycle_uid,
+    entry_order_id: row.entry_order_id,
     status: "closed",
     symbol: row.symbol,
     option_symbol: row.symbol,
@@ -253,6 +255,7 @@ function normalizeLiveClosed(
   );
   return {
     id: closed.position_id ?? symbol,
+    entry_order_id: closed.entry_order_id ?? null,
     status: "closed",
     symbol,
     option_symbol: symbol,
@@ -284,8 +287,55 @@ function normalizeLiveClosed(
   };
 }
 
-function positionIdentity(position: OverviewPosition): string {
-  return position.id || position.symbol;
+function identityNumber(value: number | null): string {
+  return value === null ? "" : value.toFixed(6);
+}
+
+function timeBucket(value: string | null): string {
+  if (!value) return "";
+  const timestamp = Date.parse(value);
+  return Number.isFinite(timestamp)
+    ? String(Math.floor(timestamp / 60_000))
+    : value.trim();
+}
+
+/**
+ * A live-state close and its EOD lifecycle row do not always share an ID:
+ * live tiered state historically used trade_pk while lifecycles use the entry
+ * order ID. Keep several conservative aliases so those records collapse
+ * without merging separate entries in the same option contract.
+ */
+function positionAliases(position: OverviewPosition): string[] {
+  const aliases: string[] = [];
+  const symbol = (position.option_symbol || position.symbol).toUpperCase();
+  const id = position.id.trim().toUpperCase();
+  const entryOrderId = position.entry_order_id?.trim().toUpperCase();
+  const opened = timeBucket(position.opened_at);
+  const closed = timeBucket(position.closed_at);
+
+  if (id && id !== symbol) aliases.push(`id:${id}`);
+  if (entryOrderId) aliases.push(`entry:${entryOrderId}`);
+  if (symbol && opened) aliases.push(`opened:${symbol}:${opened}`);
+  if (symbol && closed) aliases.push(`closed:${symbol}:${closed}`);
+  if (symbol && opened && position.initial_qty !== null && position.entry_price !== null) {
+    aliases.push(
+      `trade:${symbol}:${opened}:${identityNumber(position.initial_qty)}:${identityNumber(position.entry_price)}`,
+    );
+  }
+  if (symbol && closed && position.initial_qty !== null && position.exit_price !== null) {
+    aliases.push(
+      `exit:${symbol}:${closed}:${identityNumber(position.initial_qty)}:${identityNumber(position.exit_price)}`,
+    );
+  }
+  return aliases;
+}
+
+type PositionSource = "live-open" | "live-closed" | "lifecycle";
+
+function sourcePriority(source: PositionSource): number {
+  if (source === "live-closed") return 3;
+  if (source === "lifecycle") return 2;
+  return 1;
 }
 
 /** Merge live open/session data with durable lifecycles closed today in ET. */
@@ -295,24 +345,55 @@ export function getTodayOverviewPositions(
   now: Date = new Date(),
 ): OverviewPosition[] {
   const today = dateEtIso(now);
-  const merged = new Map<string, OverviewPosition>();
+  const merged = new Map<string, { position: OverviewPosition; priority: number }>();
+  const aliasToKey = new Map<string, string>();
+  let generatedKey = 0;
+
+  const add = (position: OverviewPosition, source: PositionSource) => {
+    const aliases = positionAliases(position);
+    const matchingKeys = new Set(
+      aliases
+        .map((alias) => aliasToKey.get(alias))
+        .filter((key): key is string => typeof key === "string" && merged.has(key)),
+    );
+    const key = matchingKeys.values().next().value ?? `position:${generatedKey++}`;
+    const candidates = [
+      ...[...matchingKeys]
+        .map((matchingKey) => merged.get(matchingKey))
+        .filter(
+          (candidate): candidate is { position: OverviewPosition; priority: number } =>
+            Boolean(candidate),
+        ),
+      { position, priority: sourcePriority(source) },
+    ];
+    const winner = candidates.reduce((current, candidate) =>
+      candidate.priority > current.priority ? candidate : current,
+    );
+
+    for (const matchingKey of matchingKeys) merged.delete(matchingKey);
+    merged.set(key, winner);
+
+    for (const candidate of candidates) {
+      for (const alias of positionAliases(candidate.position)) aliasToKey.set(alias, key);
+    }
+  };
+
   for (const position of liveState?.open_positions ?? []) {
     const normalized = normalizeOpenPosition(position);
-    merged.set(positionIdentity(normalized), normalized);
+    add(normalized, "live-open");
   }
   for (const closed of liveState?.session_stats?.closed ?? []) {
     if (dateEtIso(closed.closed_at) !== today) continue;
     const normalized = normalizeLiveClosed(closed);
-    merged.set(positionIdentity(normalized), normalized);
+    add(normalized, "live-closed");
   }
   for (const lifecycle of lifecycles) {
     if (dateEtIso(lifecycle.closed_at) !== today) continue;
     const normalized = normalizeLifecycle(lifecycle);
-    const key = positionIdentity(normalized);
-    if (!merged.has(key)) merged.set(key, normalized);
+    add(normalized, "lifecycle");
   }
 
-  return [...merged.values()].sort((a, b) => {
+  return [...merged.values()].map(({ position }) => position).sort((a, b) => {
     if (a.status !== b.status) return a.status === "open" ? -1 : 1;
     const aTime = Date.parse(a.status === "open" ? a.opened_at ?? "" : a.closed_at ?? "");
     const bTime = Date.parse(b.status === "open" ? b.opened_at ?? "" : b.closed_at ?? "");

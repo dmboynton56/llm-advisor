@@ -81,6 +81,7 @@ def test_build_live_state_row_option_with_meta() -> None:
     assert row["unrealized_pnl"] == 440.0
     pos = row["open_positions"][0]
     assert pos["symbol"] == symbol
+    assert pos["entry_order_id"] == "ord-1"
     assert pos["underlying_symbol"] == "QQQ"
     assert pos["setup_type"] == "MR"
     assert pos["dte"] == 8  # 2026-07-24 - 2026-07-16

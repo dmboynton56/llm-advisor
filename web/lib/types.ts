@@ -130,6 +130,8 @@ export type PositionFill = {
 /** Shared position shape for the overview list and detail dialog. */
 export type OverviewPosition = {
   id: string;
+  /** Stable broker-entry identity used when merging live and durable rows. */
+  entry_order_id?: string | null;
   status: "open" | "closed";
   symbol: string;
   option_symbol: string;
@@ -215,6 +217,7 @@ export type LiveExitPolicy = {
 export type LiveOpenPosition = {
   symbol: string;
   position_id?: string | null;
+  entry_order_id?: string | null;
   option_symbol?: string | null;
   underlying_symbol?: string | null;
   asset_class?: string | null;
@@ -278,6 +281,7 @@ export type LiveStateRow = {
     losses?: number;
     closed?: Array<{
       position_id?: string;
+      entry_order_id?: string | null;
       symbol: string;
       option_symbol?: string | null;
       underlying_symbol?: string | null;

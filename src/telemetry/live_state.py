@@ -151,6 +151,7 @@ def build_live_state_row(
                 "position_id": (tiered_state or {}).get("lifecycle_id")
                 or meta.get("order_id")
                 or symbol,
+                "entry_order_id": meta.get("order_id") or None,
                 "option_symbol": option_symbol,
                 "underlying_symbol": meta.get("underlying_symbol")
                 or (pos.get("underlying_symbol")),

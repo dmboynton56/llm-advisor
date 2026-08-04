@@ -41,6 +41,7 @@ def test_session_closed_on_option_profit_target() -> None:
     closed = tracker.get_session_closed()
     assert len(closed) == 1
     assert closed[0]["symbol"] == symbol
+    assert closed[0]["entry_order_id"] == "o1"
     assert closed[0]["pnl"] == 60.0
     assert closed[0]["exit_reason"] == "option_profit_target"
     assert "closed_at" in closed[0]
@@ -72,5 +73,6 @@ def test_session_closed_on_disappeared_position() -> None:
     closed = tracker.get_session_closed()
     assert len(closed) == 1
     assert closed[0]["symbol"] == "IWM"
+    assert closed[0]["entry_order_id"] == "o2"
     assert closed[0]["pnl"] == 10.0
     assert closed[0]["exit_reason"] == "position_closed"
