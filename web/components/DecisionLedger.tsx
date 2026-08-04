@@ -82,15 +82,27 @@ export function DecisionLedger({ log }: { log: DecisionLog }) {
                 ) : null}
               </span>
 
-              {/* The model writes a paragraph; the rail shows the opening of it
-                  and hands over the rest on hover. */}
+              {/* Keep the rail compact while making the full model reasoning
+                  available to pointer, touch, and keyboard users. */}
               {decision.reason ? (
-                <p
-                  title={decision.reason}
-                  className="col-start-2 col-end-4 mt-1 line-clamp-2 text-[11.5px] leading-relaxed text-ink-2"
-                >
-                  {decision.reason}
-                </p>
+                <details className="group col-start-2 col-end-4 mt-1 min-w-0">
+                  <summary className="cursor-pointer list-none rounded-md text-[11.5px] leading-relaxed text-ink-2 transition-colors hover:text-ink [&::-webkit-details-marker]:hidden">
+                    <span className="line-clamp-2">{decision.reason}</span>
+                    <span className="mt-1 inline-flex items-center gap-1 text-[10px] font-medium uppercase tracking-[0.08em] text-ink-3">
+                      <span className="group-open:hidden">View full reasoning</span>
+                      <span className="hidden group-open:inline">Hide reasoning</span>
+                      <span
+                        aria-hidden
+                        className="transition-transform duration-200 group-open:rotate-90"
+                      >
+                        →
+                      </span>
+                    </span>
+                  </summary>
+                  <p className="mt-2 border-l-2 border-line-2 pl-3 text-[12px] leading-relaxed text-ink-2">
+                    {decision.reason}
+                  </p>
+                </details>
               ) : null}
             </li>
           );
