@@ -1,6 +1,13 @@
-import { Card, EmptyState, MetricCard } from "@/components/MetricCard";
 import { ApprovalRateLine } from "@/components/charts/ApprovalRateLine";
 import { FunnelBars } from "@/components/charts/FunnelBars";
+import {
+  EmptyState,
+  PageHeader,
+  Panel,
+  Section,
+  Stat,
+  StatRow,
+} from "@/components/ui";
 import { getLatestOpsMetrics, getValidationEvents } from "@/lib/data";
 import { supabaseConfigured } from "@/lib/supabase";
 import { fmtPct } from "@/lib/format";
@@ -50,36 +57,33 @@ export default async function FunnelPage() {
     }));
 
   return (
-    <div className="space-y-6">
-      <div>
-        <h1 className="text-xl font-semibold tracking-tight">
-          Execution funnel
-        </h1>
-        <p className="mt-1 text-sm text-zinc-500">
-          How raw z-score signals survive the LLM validation gate and reach
-          Alpaca as option orders.
-        </p>
-      </div>
+    <div>
+      <PageHeader title="Execution funnel">
+        How raw z-score signals survive the LLM validation gate and reach Alpaca
+        as option orders.
+      </PageHeader>
 
       {!supabaseConfigured() ? (
-        <EmptyState message="Supabase is not configured. Set NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY." />
+        <div className="mb-8">
+          <EmptyState message="Supabase is not configured. Set NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY." />
+        </div>
       ) : null}
 
       {funnel ? (
         <>
-          <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
-            <MetricCard label="Signals" value={funnel.stages.signals ?? 0} />
-            <MetricCard
+          <StatRow>
+            <Stat label="Signals" value={funnel.stages.signals ?? 0} />
+            <Stat
               label="LLM approval rate"
               value={fmtPct(funnel.llm_approval_rate)}
               hint="approved / (approved + rejected)"
             />
-            <MetricCard
+            <Stat
               label="Executed"
               value={funnel.stages.executed ?? 0}
               hint="orders accepted by Alpaca"
             />
-            <MetricCard
+            <Stat
               label="Signal → fill"
               value={
                 funnel.stages.signals
@@ -87,61 +91,70 @@ export default async function FunnelPage() {
                   : "—"
               }
             />
-          </div>
+          </StatRow>
 
-          <Card
+          <Section
             title="Funnel stages"
             subtitle={`Current metrics window (${
               opsMetrics?.payload?.range?.start ?? "?"
             } → ${opsMetrics?.payload?.range?.end ?? opsMetrics?.metric_date})`}
           >
-            <FunnelBars data={stageData} />
-          </Card>
+            <Panel>
+              <FunnelBars data={stageData} />
+            </Panel>
+          </Section>
 
-          <Card
+          <Section
             title="Rejection reasons"
-            subtitle="Why signals didn't become trades (validation + execution failures)"
+            subtitle="Why signals didn't become trades — validation vetoes and execution failures."
           >
-            {rejections.length > 0 ? (
-              <div className="space-y-2">
-                {rejections.map(([reason, count]) => (
-                  <div key={reason} className="flex items-center gap-3 text-sm">
-                    <span className="w-64 shrink-0 truncate text-xs text-zinc-400">
-                      {reason}
-                    </span>
-                    <div className="h-4 flex-1 overflow-hidden rounded bg-zinc-800/60">
-                      <div
-                        className="h-full rounded bg-rose-400/70"
-                        style={{
-                          width: `${Math.max((count / Math.max(maxRejection, 1)) * 100, 4)}%`,
-                        }}
-                      />
-                    </div>
-                    <span className="w-8 text-right text-xs tabular-nums text-zinc-300">
-                      {count}
-                    </span>
-                  </div>
-                ))}
-              </div>
-            ) : (
-              <EmptyState message="No rejections in the current window." />
-            )}
-          </Card>
+            <Panel>
+              {rejections.length > 0 ? (
+                <ul className="flex flex-col gap-2.5">
+                  {rejections.map(([reason, count]) => (
+                    <li key={reason} className="flex items-center gap-3">
+                      <span className="w-56 shrink-0 truncate text-[11.5px] text-ink-2">
+                        {reason}
+                      </span>
+                      <span className="h-3.5 flex-1 overflow-hidden rounded bg-sunk">
+                        <span
+                          className="block h-full rounded bg-ink-2"
+                          style={{
+                            width: `${Math.max(
+                              (count / Math.max(maxRejection, 1)) * 100,
+                              4,
+                            )}%`,
+                          }}
+                        />
+                      </span>
+                      <span className="num w-8 text-right text-[11.5px] text-ink">
+                        {count}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <EmptyState message="No rejections in the current window." />
+              )}
+            </Panel>
+          </Section>
         </>
       ) : (
         <EmptyState message="Ops metrics haven't been computed yet — the EOD workflow writes a daily rollup after each session." />
       )}
 
-      <Card
+      <Section
         title="LLM approval rate over time"
         subtitle="Daily validation decisions from order events (30 days)"
       >
-        {approvalSeries.length > 0 ? (
-          <ApprovalRateLine data={approvalSeries} />
-        ) : (
-          <EmptyState message="No validation events in the last 30 days." />
-        )}
-      </Card>
+        <Panel>
+          {approvalSeries.length > 0 ? (
+            <ApprovalRateLine data={approvalSeries} />
+          ) : (
+            <EmptyState message="No validation events in the last 30 days." />
+          )}
+        </Panel>
+      </Section>
     </div>
   );
 }

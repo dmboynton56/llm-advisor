@@ -1,15 +1,184 @@
 @import "tailwindcss";
 
+/* ==========================================================================
+   LEDGER — design tokens
+   The UI is achromatic; colour is spent only on P&L. Prose is set in
+   Instrument Sans, every number is set in IBM Plex Mono.
+   ========================================================================== */
+
 :root {
-  --background: #09090b;
-  --foreground: #fafafa;
+  color-scheme: light;
+
+  --paper: #f3f4f1;
+  --card: #ffffff;
+  --sunk: #e9eae5;
+  --line: rgba(19, 21, 18, 0.1);
+  --line-2: rgba(19, 21, 18, 0.18);
+  --panel-border: transparent;
+
+  --ink: #131512;
+  --ink-2: #5a5f58;
+  --ink-3: #6e7469;
+
+  --gain: #00805a;
+  --loss: #c0392b;
+  --gain-wash: rgba(0, 128, 90, 0.1);
+  --loss-wash: rgba(192, 57, 43, 0.09);
+
+  --shadow-1: 0 1px 2px rgba(19, 21, 18, 0.05);
+  --shadow-2: 0 1px 2px rgba(19, 21, 18, 0.04), 0 14px 30px -18px rgba(19, 21, 18, 0.28);
 }
 
-body {
-  background: var(--background);
-  color: var(--foreground);
+[data-theme="dark"] {
+  color-scheme: dark;
+
+  --paper: #0f1110;
+  --card: #171a18;
+  --sunk: #1e211e;
+  --line: rgba(255, 255, 255, 0.09);
+  --line-2: rgba(255, 255, 255, 0.18);
+  --panel-border: rgba(255, 255, 255, 0.09);
+
+  --ink: #eceeea;
+  --ink-2: #9aa096;
+  --ink-3: #8a9087;
+
+  --gain: #3ed598;
+  --loss: #ff6b5e;
+  --gain-wash: rgba(62, 213, 152, 0.12);
+  --loss-wash: rgba(255, 107, 94, 0.12);
+
+  --shadow-1: 0 1px 2px rgba(0, 0, 0, 0.4);
+  --shadow-2: 0 1px 2px rgba(0, 0, 0, 0.5), 0 14px 30px -18px rgba(0, 0, 0, 0.9);
 }
 
-::selection {
-  background: rgba(52, 211, 153, 0.3);
+/* `inline` keeps the utilities pointing at the vars themselves, so flipping
+   [data-theme] on <html> re-themes everything without a re-render. */
+@theme inline {
+  --color-paper: var(--paper);
+  --color-card: var(--card);
+  --color-sunk: var(--sunk);
+  --color-line: var(--line);
+  --color-line-2: var(--line-2);
+  --color-panel-border: var(--panel-border);
+
+  --color-ink: var(--ink);
+  --color-ink-2: var(--ink-2);
+  --color-ink-3: var(--ink-3);
+
+  --color-gain: var(--gain);
+  --color-loss: var(--loss);
+  --color-gain-wash: var(--gain-wash);
+  --color-loss-wash: var(--loss-wash);
+
+  --font-sans: var(--font-instrument-sans), ui-sans-serif, system-ui, sans-serif;
+  --font-mono: var(--font-plex-mono), ui-monospace, SFMono-Regular, monospace;
+
+  --radius-panel: 14px;
+  --radius-panel-lg: 18px;
+
+  --shadow-panel: var(--shadow-2);
+  --shadow-raised: var(--shadow-1);
+}
+
+@layer base {
+  html {
+    -webkit-text-size-adjust: 100%;
+    overflow-x: clip;
+  }
+
+  body {
+    background: var(--paper);
+    color: var(--ink);
+    transition: background-color 0.3s ease, color 0.3s ease;
+  }
+
+  ::selection {
+    background: color-mix(in srgb, var(--gain) 24%, transparent);
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--ink);
+    outline-offset: 3px;
+    border-radius: 3px;
+  }
+
+  h1,
+  h2,
+  h3 {
+    letter-spacing: -0.018em;
+  }
+}
+
+@layer components {
+  /* Hairline-separated figures. Written as plain CSS rather than a stack of
+     Tailwind child variants so the responsive border resets stay legible and
+     cannot fight each other on specificity. */
+  .stat-row {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    border-top: 1px solid var(--line);
+    border-bottom: 1px solid var(--line);
+  }
+
+  .stat-row > * {
+    padding: 18px 20px;
+    border-left: 1px solid var(--line);
+  }
+
+  .stat-row > *:nth-child(odd) {
+    border-left: 0;
+    padding-left: 0;
+  }
+
+  .stat-row > *:nth-child(n + 3) {
+    border-top: 1px solid var(--line);
+  }
+
+  @media (min-width: 1024px) {
+    .stat-row {
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+    }
+
+    .stat-row > *,
+    .stat-row > *:nth-child(odd) {
+      border-left: 1px solid var(--line);
+      border-top: 0;
+      padding-left: 20px;
+    }
+
+    .stat-row > *:first-child {
+      border-left: 0;
+      padding-left: 0;
+    }
+  }
+}
+
+@layer utilities {
+  /* Every figure in the product is monospaced — that is the type thesis. */
+  .num {
+    font-family: var(--font-plex-mono), ui-monospace, SFMono-Regular, monospace;
+    font-variant-numeric: tabular-nums;
+    font-feature-settings: "zero" 1;
+  }
+
+  /* Small-caps field label, used for every field name in the app. */
+  .tag {
+    font-family: var(--font-plex-mono), ui-monospace, SFMono-Regular, monospace;
+    font-size: 10px;
+    font-weight: 500;
+    letter-spacing: 0.11em;
+    text-transform: uppercase;
+    color: var(--ink-3);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+  }
 }

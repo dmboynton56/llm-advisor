@@ -1,6 +1,7 @@
 import clsx from "clsx";
 import type { CellStats } from "@/lib/types";
-import { fmtNum, fmtPct, fmtSignedUsd, pnlColor } from "@/lib/format";
+import { fmtNum, fmtSignedUsd, pnlColor } from "@/lib/format";
+import { Meter, Panel, Section } from "@/components/ui";
 
 const MIN_SAMPLE = 10;
 
@@ -16,69 +17,61 @@ export function BreakdownGrid({
   keyOrder?: string[];
 }) {
   const keys = keyOrder
-    ? keyOrder.filter((k) => k in cells).concat(
-        Object.keys(cells).filter((k) => !keyOrder.includes(k)),
-      )
+    ? keyOrder
+        .filter((k) => k in cells)
+        .concat(Object.keys(cells).filter((k) => !keyOrder.includes(k)))
     : Object.keys(cells);
 
   return (
-    <section className="rounded-xl border border-zinc-800 bg-zinc-900/50 p-4">
-      <div className="mb-3">
-        <h2 className="text-sm font-semibold text-zinc-200">{title}</h2>
-        {subtitle ? <p className="mt-0.5 text-xs text-zinc-500">{subtitle}</p> : null}
-      </div>
+    <Section title={title} subtitle={subtitle}>
       {keys.length === 0 ? (
-        <p className="py-6 text-center text-sm text-zinc-500">No data yet.</p>
+        <Panel>
+          <p className="py-4 text-center text-[13px] text-ink-3">No data yet.</p>
+        </Panel>
       ) : (
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+        <div className="grid gap-3.5 sm:grid-cols-2 lg:grid-cols-3">
           {keys.map((key) => {
             const cell = cells[key];
             const lowSample = cell.closed_trades < MIN_SAMPLE;
             return (
-              <div
+              <Panel
                 key={key}
-                className={clsx(
-                  "rounded-lg border p-3",
-                  lowSample
-                    ? "border-zinc-800/60 bg-zinc-950/40 opacity-55"
-                    : "border-zinc-800 bg-zinc-950/60",
-                )}
+                className={clsx("p-4", lowSample && "opacity-55")}
               >
-                <div className="flex items-baseline justify-between">
-                  <span className="text-sm font-semibold">{key}</span>
-                  <span className="text-[10px] uppercase tracking-wide text-zinc-500">
+                <div className="flex items-baseline justify-between gap-2">
+                  <span className="text-[14px] font-semibold">{key}</span>
+                  <span className="num text-[10px] uppercase tracking-[0.08em] text-ink-3">
                     n={cell.closed_trades}
-                    {lowSample ? " (low)" : ""}
+                    {lowSample ? " · low" : ""}
                   </span>
                 </div>
-                <dl className="mt-2 grid grid-cols-2 gap-x-3 gap-y-1 text-xs">
-                  <dt className="text-zinc-500">Win rate</dt>
-                  <dd className="text-right tabular-nums text-zinc-200">
-                    {fmtPct(cell.win_rate)}
+                <dl className="mt-3 grid grid-cols-[auto_1fr] items-center gap-x-3 gap-y-2 text-[12px]">
+                  <dt className="text-ink-3">Win rate</dt>
+                  <dd className="flex justify-end">
+                    <Meter value={cell.win_rate} />
                   </dd>
-                  <dt className="text-zinc-500">PnL</dt>
-                  <dd
-                    className={clsx(
-                      "text-right tabular-nums",
-                      pnlColor(cell.total_pnl),
-                    )}
-                  >
+
+                  <dt className="text-ink-3">PnL</dt>
+                  <dd className={clsx("num text-right", pnlColor(cell.total_pnl))}>
                     {fmtSignedUsd(cell.total_pnl)}
                   </dd>
-                  <dt className="text-zinc-500">Avg RR</dt>
-                  <dd className="text-right tabular-nums text-zinc-200">
-                    {fmtNum(cell.avg_realized_rr)}
-                  </dd>
-                  <dt className="text-zinc-500">Profit factor</dt>
-                  <dd className="text-right tabular-nums text-zinc-200">
-                    {fmtNum(cell.profit_factor)}
-                  </dd>
+
+                  <dt className="text-ink-3">Avg RR</dt>
+                  <dd className="num text-right">{fmtNum(cell.avg_realized_rr)}</dd>
+
+                  <dt className="text-ink-3">Profit factor</dt>
+                  <dd className="num text-right">{fmtNum(cell.profit_factor)}</dd>
                 </dl>
-              </div>
+                {lowSample ? (
+                  <p className="mt-3 border-t border-line pt-2.5 text-[11px] text-ink-3">
+                    Under {MIN_SAMPLE} closed trades — read as a hint, not a result.
+                  </p>
+                ) : null}
+              </Panel>
             );
           })}
         </div>
       )}
-    </section>
+    </Section>
   );
 }

@@ -1,5 +1,5 @@
 import { BreakdownGrid } from "@/components/BreakdownGrid";
-import { EmptyState, MetricCard } from "@/components/MetricCard";
+import { EmptyState, PageHeader, Stat, StatRow, toneOf } from "@/components/ui";
 import { getLatestOpsMetrics } from "@/lib/data";
 import { supabaseConfigured } from "@/lib/supabase";
 import { fmtNum, fmtPct, fmtSignedUsd, fmtUsd } from "@/lib/format";
@@ -13,64 +13,55 @@ export default async function BreakdownsPage() {
   const breakdowns = payload?.breakdowns;
 
   return (
-    <div className="space-y-6">
-      <div>
-        <h1 className="text-xl font-semibold tracking-tight">Breakdowns</h1>
-        <p className="mt-1 text-sm text-zinc-500">
-          Performance sliced by underlying, direction, setup type, and days to
-          expiration
-          {opsMetrics
-            ? ` — window ${payload?.range?.start ?? "?"} → ${
-                payload?.range?.end ?? opsMetrics.metric_date
-              }`
-            : ""}
-          . Cells with fewer than 10 closed trades are greyed out.
-        </p>
-      </div>
+    <div>
+      <PageHeader title="Breakdowns">
+        Performance sliced by underlying, direction, setup type, and days to
+        expiration
+        {opsMetrics
+          ? ` — window ${payload?.range?.start ?? "?"} → ${
+              payload?.range?.end ?? opsMetrics.metric_date
+            }`
+          : ""}
+        . Cells with fewer than 10 closed trades are dimmed.
+      </PageHeader>
 
       {!supabaseConfigured() ? (
-        <EmptyState message="Supabase is not configured. Set NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY." />
+        <div className="mb-8">
+          <EmptyState message="Supabase is not configured. Set NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY." />
+        </div>
       ) : null}
 
       {!payload ? (
         <EmptyState message="Ops metrics haven't been computed yet — the EOD workflow writes a daily rollup after each session." />
       ) : (
         <>
-          <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
-            <MetricCard
-              label="Total PnL"
+          <StatRow>
+            <Stat
+              label="Total P&L"
               value={fmtSignedUsd(overall?.total_pnl ?? null)}
-              tone={
-                (overall?.total_pnl ?? 0) > 0
-                  ? "positive"
-                  : (overall?.total_pnl ?? 0) < 0
-                    ? "negative"
-                    : "neutral"
-              }
+              tone={toneOf(overall?.total_pnl ?? null)}
               hint={`${overall?.closed_trades ?? 0} closed trades`}
             />
-            <MetricCard
+            <Stat
               label="Win rate"
               value={fmtPct(overall?.win_rate ?? null)}
               hint={`avg win ${fmtUsd(overall?.average_win ?? null)} / avg loss ${fmtUsd(
                 overall?.average_loss ?? null,
               )}`}
             />
-            <MetricCard
+            <Stat
               label="Avg risk/reward"
               value={fmtNum(overall?.avg_realized_rr ?? null)}
               hint={`profit factor ${fmtNum(overall?.profit_factor ?? null)}`}
             />
-            <MetricCard
+            <Stat
               label="Max drawdown"
               value={
-                overall?.max_drawdown != null
-                  ? fmtUsd(overall.max_drawdown)
-                  : "—"
+                overall?.max_drawdown != null ? fmtUsd(overall.max_drawdown) : "—"
               }
               hint={`${fmtNum(overall?.trades_per_day ?? null, 1)} trades/day`}
             />
-          </div>
+          </StatRow>
 
           <BreakdownGrid
             title="By underlying"

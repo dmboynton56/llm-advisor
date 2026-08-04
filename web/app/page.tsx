@@ -1,8 +1,21 @@
-import { Card, EmptyState, MetricCard } from "@/components/MetricCard";
+import clsx from "clsx";
+import { DecisionLedger } from "@/components/DecisionLedger";
+import { Disclosure } from "@/components/Disclosure";
 import { EquityCurve } from "@/components/charts/EquityCurve";
 import { DailyPnlBars } from "@/components/charts/DailyPnlBars";
 import {
+  EmptyState,
+  Meter,
+  Panel,
+  PanelHead,
+  Section,
+  Stat,
+  StatRow,
+  toneOf,
+} from "@/components/ui";
+import {
   getAccountSnapshots,
+  getDecisionLog,
   getLatestHeartbeat,
   getLiveState,
   getRuns,
@@ -10,12 +23,13 @@ import {
 } from "@/lib/data";
 import { supabaseConfigured, checkSupabaseAccess } from "@/lib/supabase";
 import {
-  fmtDateTime,
+  fmtDate,
   fmtPct,
   fmtSignedUsd,
   fmtUsd,
   formatOccLabel,
   isRegularSessionEt,
+  normalizePlpc,
   pnlColor,
   relativeTime,
   dateEtIso,
@@ -26,33 +40,34 @@ export const dynamic = "force-dynamic";
 
 const LIVE_FRESH_MS = 3 * 60_000;
 
-function heartbeatStatus(heartbeatTs: string | null): {
-  label: string;
-  tone: "positive" | "negative" | "neutral";
-} {
-  if (!heartbeatTs) return { label: "No heartbeat", tone: "negative" };
-  const ageHours = (Date.now() - new Date(heartbeatTs).getTime()) / 3.6e6;
-  // The loop only runs on market days, so anything under ~4 days is normal
-  // (weekend + holiday gap).
-  if (ageHours <= 30) return { label: "Healthy", tone: "positive" };
-  if (ageHours <= 96) return { label: "Idle (non-trading days)", tone: "neutral" };
-  return { label: "Stale", tone: "negative" };
-}
-
 function liveStateFresh(row: LiveStateRow | null): boolean {
   if (!row?.heartbeat_ts) return false;
   const age = Date.now() - new Date(row.heartbeat_ts).getTime();
   return !Number.isNaN(age) && age <= LIVE_FRESH_MS;
 }
 
+function heartbeatStatus(heartbeatTs: string | null): {
+  label: string;
+  stale: boolean;
+} {
+  if (!heartbeatTs) return { label: "No heartbeat", stale: true };
+  const ageHours = (Date.now() - new Date(heartbeatTs).getTime()) / 3.6e6;
+  // The loop only runs on market days, so a gap under ~4 days is just a
+  // weekend or a holiday, not a fault.
+  if (ageHours <= 96) return { label: "Idle", stale: false };
+  return { label: "Stale", stale: true };
+}
+
 export default async function OverviewPage() {
-  const [snapshots, runs, heartbeat, liveState, lifecycles] = await Promise.all([
-    getAccountSnapshots(90),
-    getRuns(30),
-    getLatestHeartbeat(),
-    getLiveState("paper"),
-    getTradeLifecycles(30),
-  ]);
+  const [snapshots, runs, heartbeat, liveState, lifecycles, decisionLog] =
+    await Promise.all([
+      getAccountSnapshots(90),
+      getRuns(30),
+      getLatestHeartbeat(),
+      getLiveState("paper"),
+      getTradeLifecycles(30),
+      getDecisionLog(8),
+    ]);
 
   const access =
     supabaseConfigured() && runs.length === 0 && !heartbeat
@@ -61,7 +76,6 @@ export default async function OverviewPage() {
 
   const latestSnapshot = snapshots.at(-1) ?? null;
   const latestRun = runs.at(-1) ?? null;
-  const hb = heartbeatStatus(heartbeat?.heartbeat_ts ?? null);
   const liveAccountCapturedAt =
     liveState?.updated_at ?? liveState?.heartbeat_ts ?? null;
   const snapshotCapturedAt = latestSnapshot?.captured_at ?? null;
@@ -90,6 +104,18 @@ export default async function OverviewPage() {
     .filter((s) => s.equity !== null)
     .map((s) => ({ label: s.snapshot_date, equity: Number(s.equity) }));
 
+  // "Since" is measured from the oldest snapshot actually in the window, not
+  // from an assumed starting balance.
+  const windowStart = equityPoints[0] ?? null;
+  const sinceStart =
+    windowStart && accountEquity != null
+      ? Number(accountEquity) - windowStart.equity
+      : null;
+  const sinceStartPct =
+    sinceStart != null && windowStart && windowStart.equity !== 0
+      ? sinceStart / windowStart.equity
+      : null;
+
   const exitDaily = new Map<string, { pnl: number; trades: number }>();
   for (const lifecycle of lifecycles) {
     const exitDate = dateEtIso(lifecycle.closed_at);
@@ -109,235 +135,375 @@ export default async function OverviewPage() {
     }));
 
   const totalPnl30d = pnlPoints.reduce((acc, point) => acc + point.pnl, 0);
+  const closed30d = runs.reduce((acc, run) => acc + (run.closed_trades ?? 0), 0);
+  const won30d = runs.reduce((acc, run) => acc + (run.winning_trades ?? 0), 0);
+  const winRate30d = closed30d > 0 ? won30d / closed30d : null;
+  const cohortPnl = runs.reduce((acc, run) => acc + Number(run.total_pnl ?? 0), 0);
+
   const liveFresh = liveStateFresh(liveState);
   const inSession = isRegularSessionEt();
   const sessionEnded = Boolean(liveState?.session_stats?.session_end_reason);
+  const hb = heartbeatStatus(heartbeat?.heartbeat_ts ?? null);
+
+  const status = liveFresh
+    ? { label: "Live", tone: "live" as const }
+    : inSession && !sessionEnded
+      ? { label: "Loop offline", tone: "stale" as const }
+      : { label: hb.label, tone: hb.stale ? ("stale" as const) : ("idle" as const) };
+
+  const statusMeta = liveFresh
+    ? [
+        `tick ${liveState?.loop_count ?? "—"}`,
+        `heartbeat ${relativeTime(liveState?.heartbeat_ts)}`,
+        heartbeat?.symbols_tracked
+          ? `${heartbeat.symbols_tracked} symbols`
+          : null,
+      ]
+        .filter(Boolean)
+        .join(" · ")
+    : [
+        `last heartbeat ${relativeTime(heartbeat?.heartbeat_ts)}`,
+        heartbeat?.symbols_tracked
+          ? `${heartbeat.symbols_tracked} symbols`
+          : null,
+      ]
+        .filter(Boolean)
+        .join(" · ");
+
+  const openPositions = liveState?.open_positions ?? [];
 
   return (
-    <div className="space-y-6">
+    <div className="grid items-start gap-9 lg:grid-cols-[minmax(0,1fr)_316px] lg:gap-11">
+      {/* ------------------------------------------------------ main column */}
       <div>
-        <h1 className="text-xl font-semibold tracking-tight">Overview</h1>
-        <p className="mt-1 text-sm text-zinc-500">
-          Alpaca paper account health and daily results for the LLM-validated
-          options engine.
-        </p>
-      </div>
+        {!supabaseConfigured() ? (
+          <div className="mb-8">
+            <EmptyState message="Supabase is not configured. Set NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY." />
+          </div>
+        ) : null}
 
-      {!supabaseConfigured() ? (
-        <EmptyState message="Supabase is not configured. Set NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY." />
-      ) : null}
-
-      {access && !access.ok ? (
-        <EmptyState
-          message={`Supabase query failed (HTTP ${access.status}). On Vercel, verify NEXT_PUBLIC_SUPABASE_URL matches the shared project and NEXT_PUBLIC_SUPABASE_ANON_KEY is the full publishable key (sb_publishable_...) or legacy anon JWT — not a truncated value.`}
-        />
-      ) : null}
-
-      {liveFresh && liveState ? (
-        <Card
-          title="Live session"
-          subtitle={
-            <>
-              Loop alive · tick {liveState.loop_count ?? "—"} · last{" "}
-              {relativeTime(liveState.heartbeat_ts)}
-            </>
-          }
-        >
-          <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-            <MetricCard
-              label="Equity"
-              value={fmtUsd(liveState.equity, 0)}
-              hint="from live_state upsert"
-            />
-            <MetricCard
-              label="Broker daily PnL"
-              value={fmtSignedUsd(liveState.daily_pnl)}
-              tone={
-                (liveState.daily_pnl ?? 0) > 0
-                  ? "positive"
-                  : (liveState.daily_pnl ?? 0) < 0
-                    ? "negative"
-                    : "neutral"
-              }
-            />
-            <MetricCard
-              label="Open uPnL"
-              value={fmtSignedUsd(liveState.unrealized_pnl)}
-              tone={
-                (liveState.unrealized_pnl ?? 0) > 0
-                  ? "positive"
-                  : (liveState.unrealized_pnl ?? 0) < 0
-                    ? "negative"
-                    : "neutral"
-              }
-              hint={`${liveState.open_position_count} open`}
-            />
-            <MetricCard
-              label="Session stats"
-              value={`${liveState.session_stats?.wins ?? 0}W / ${liveState.session_stats?.losses ?? 0}L`}
-              hint={
-                liveState.session_stats?.realized_pnl != null
-                  ? `realized ${fmtSignedUsd(Number(liveState.session_stats.realized_pnl))}`
-                  : undefined
-              }
+        {access && !access.ok ? (
+          <div className="mb-8">
+            <EmptyState
+              message={`Supabase query failed (HTTP ${access.status}). On Vercel, verify NEXT_PUBLIC_SUPABASE_URL matches the shared project and NEXT_PUBLIC_SUPABASE_ANON_KEY is the full publishable key (sb_publishable_...) or legacy anon JWT — not a truncated value.`}
             />
           </div>
-          {(liveState.open_positions?.length ?? 0) > 0 ? (
-            <ul className="mt-4 space-y-1 text-sm text-zinc-300">
-              {liveState.open_positions.map((p) => (
-                <li key={p.symbol} className="flex justify-between gap-4 font-mono text-xs">
-                  <span>{formatOccLabel(p.symbol)}</span>
-                  <span className={pnlColor(p.unrealized_plpc)}>
-                    {fmtPct(
-                      Math.abs(p.unrealized_plpc) > 5
-                        ? p.unrealized_plpc / 100
-                        : p.unrealized_plpc,
-                      1,
+        ) : null}
+
+        <section aria-labelledby="equity-heading">
+          <div className="mb-4 flex flex-wrap items-center gap-2.5">
+            <span
+              aria-hidden
+              className={clsx(
+                "relative size-[7px] shrink-0 rounded-full",
+                status.tone === "live" ? "bg-gain" : "bg-ink-3",
+              )}
+            >
+              {status.tone === "live" ? (
+                <span className="absolute -inset-1 animate-ping rounded-full border border-gain" />
+              ) : null}
+            </span>
+            <span
+              className={clsx(
+                "num text-[11px] font-semibold uppercase tracking-[0.1em]",
+                status.tone === "live" ? "text-gain" : "text-ink-3",
+              )}
+            >
+              {status.label}
+            </span>
+            <span className="num text-[11.5px] text-ink-3">{statusMeta}</span>
+          </div>
+
+          <h1 id="equity-heading" className="tag mb-2.5">
+            Paper account equity
+          </h1>
+          <span className="num block text-[clamp(40px,6vw,62px)] font-medium leading-none tracking-[-0.04em]">
+            {fmtUsd(accountEquity ?? null, 2)}
+          </span>
+
+          <div className="mt-3.5 flex flex-wrap items-baseline gap-x-5 gap-y-2">
+            <span
+              className={clsx(
+                "num inline-flex items-baseline gap-1.5 text-[13.5px]",
+                pnlColor(accountDailyPnl ?? null),
+              )}
+            >
+              {fmtSignedUsd(accountDailyPnl ?? null)}
+              {accountDailyPnlPct != null ? (
+                <span>{fmtPct(Number(accountDailyPnlPct), 2)}</span>
+              ) : null}
+              <span className="font-sans text-[12.5px] text-ink-3">today</span>
+            </span>
+            {sinceStart != null && windowStart ? (
+              <span
+                className={clsx(
+                  "num inline-flex items-baseline gap-1.5 text-[13.5px]",
+                  pnlColor(sinceStart),
+                )}
+              >
+                {fmtSignedUsd(sinceStart)}
+                {sinceStartPct != null ? <span>{fmtPct(sinceStartPct, 2)}</span> : null}
+                <span className="font-sans text-[12.5px] text-ink-3">
+                  since {fmtDate(windowStart.label)}
+                </span>
+              </span>
+            ) : null}
+          </div>
+
+          <Panel className="mt-6 p-5 pb-4">
+            {equityPoints.length >= 2 ? (
+              <>
+                <EquityCurve
+                  data={equityPoints}
+                  baseline={windowStart?.equity ?? null}
+                />
+                <p className="mt-3 text-[11.5px] text-ink-3">
+                  Snapshots captured at live-loop start and end, 90 days. The
+                  dashed rule marks equity at the start of the window
+                  {accountCapturedAt ? ` · last value ${relativeTime(accountCapturedAt)}` : ""}
+                  .
+                </p>
+              </>
+            ) : (
+              <EmptyState message="Not enough equity snapshots yet — the live loop writes one at session start and end each trading day." />
+            )}
+          </Panel>
+
+          <StatRow className="mt-8">
+            <Stat
+              label="Broker daily P&L"
+              value={fmtSignedUsd(accountDailyPnl ?? null)}
+              tone={toneOf(accountDailyPnl ?? null)}
+              hint={
+                accountDailyPnlPct != null
+                  ? `${fmtPct(Number(accountDailyPnlPct), 2)} vs prior close`
+                  : "equity change vs prior close"
+              }
+            />
+            <Stat
+              label="Opened, last entry date"
+              value={latestRun ? latestRun.total_trades : "—"}
+              hint={latestRun ? `on ${latestRun.run_date}` : "no runs recorded"}
+            />
+            <Stat
+              label="Win rate · 30d"
+              value={fmtPct(winRate30d)}
+              hint={`${closed30d} closed positions`}
+            />
+            <Stat
+              label="Realized · 30d"
+              value={fmtSignedUsd(totalPnl30d)}
+              tone={toneOf(totalPnl30d)}
+              hint={
+                pnlPoints.length > 0
+                  ? `across ${pnlPoints.length} exit days`
+                  : "no exits in window"
+              }
+            />
+          </StatRow>
+        </section>
+
+        <Section
+          title="P&L by exit date"
+          subtitle="Broker-position lifecycle P&L, grouped by the ET date each position closed."
+          figure={
+            <span className={pnlColor(totalPnl30d)}>
+              {fmtSignedUsd(totalPnl30d)}
+            </span>
+          }
+        >
+          <Panel>
+            {pnlPoints.length > 0 ? (
+              <DailyPnlBars data={pnlPoints} />
+            ) : (
+              <EmptyState message="No positions closed in the last 30 days." />
+            )}
+          </Panel>
+        </Section>
+
+        <section className="mt-11">
+          <Disclosure
+            title="Entry-date cohorts"
+            subtitle="Trades and full-lifecycle P&L grouped by the day each position opened"
+            aggregates={[
+              { label: "Sessions", value: runs.length },
+              { label: "Win rate", value: fmtPct(winRate30d) },
+              {
+                label: "Lifetime",
+                value: fmtSignedUsd(cohortPnl),
+                tone:
+                  cohortPnl > 0 ? "positive" : cohortPnl < 0 ? "negative" : "neutral",
+              },
+            ]}
+          >
+            {runs.length > 0 ? (
+              <div className="overflow-x-auto">
+                <table className="w-full text-[13px]">
+                  <thead>
+                    <tr>
+                      {[
+                        "Entry date",
+                        "Opened",
+                        "Closed",
+                        "Win rate",
+                        "Lifetime P&L",
+                        "Equity",
+                      ].map((head, i) => (
+                        <th
+                          key={head}
+                          className={clsx(
+                            "tag whitespace-nowrap border-b border-line px-[18px] py-3 font-medium",
+                            i >= 1 && i !== 3 ? "text-right" : "text-left",
+                          )}
+                        >
+                          {head}
+                        </th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {[...runs]
+                      .reverse()
+                      .slice(0, 10)
+                      .map((run) => (
+                        <tr
+                          key={run.run_date}
+                          className="border-b border-line transition-colors last:border-0 hover:bg-sunk"
+                        >
+                          <td className="num whitespace-nowrap px-[18px] py-3">
+                            {run.run_date}
+                          </td>
+                          <td className="num whitespace-nowrap px-[18px] py-3 text-right">
+                            {run.total_trades}
+                          </td>
+                          <td className="num whitespace-nowrap px-[18px] py-3 text-right">
+                            {run.closed_trades}
+                          </td>
+                          <td className="whitespace-nowrap px-[18px] py-3">
+                            <Meter value={run.win_rate} />
+                          </td>
+                          <td
+                            className={clsx(
+                              "num whitespace-nowrap px-[18px] py-3 text-right",
+                              pnlColor(Number(run.total_pnl ?? 0)),
+                            )}
+                          >
+                            {fmtSignedUsd(Number(run.total_pnl ?? 0))}
+                          </td>
+                          <td className="num whitespace-nowrap px-[18px] py-3 text-right text-ink-2">
+                            {fmtUsd(run.final_equity, 0)}
+                          </td>
+                        </tr>
+                      ))}
+                  </tbody>
+                </table>
+              </div>
+            ) : (
+              <div className="p-[18px]">
+                <EmptyState message="No sessions recorded yet." />
+              </div>
+            )}
+          </Disclosure>
+        </section>
+      </div>
+
+      {/* -------------------------------------------------------------- rail */}
+      <aside
+        aria-label="Current session"
+        className="flex flex-col gap-4.5 lg:sticky lg:top-[82px]"
+      >
+        <Panel>
+          <PanelHead
+            title="Open positions"
+            aside={`${liveState?.open_position_count ?? 0} held`}
+          />
+          <p
+            className={clsx(
+              "num text-[24px] font-medium tracking-[-0.03em]",
+              pnlColor(liveState?.unrealized_pnl ?? null),
+            )}
+          >
+            {fmtSignedUsd(liveState?.unrealized_pnl ?? null)}
+          </p>
+
+          {openPositions.length > 0 ? (
+            <ul className="mt-3.5 flex flex-col">
+              {openPositions.map((position) => (
+                <li
+                  key={position.symbol}
+                  className="-mx-2.5 flex items-baseline justify-between gap-2.5 rounded-lg px-2.5 py-2 transition-colors hover:bg-sunk"
+                >
+                  <span className="num text-[12px] text-ink-2">
+                    {formatOccLabel(position.symbol)}
+                  </span>
+                  <span
+                    className={clsx(
+                      "num text-[12.5px] font-medium",
+                      pnlColor(position.unrealized_plpc),
                     )}
+                  >
+                    {fmtPct(normalizePlpc(position.unrealized_plpc), 1)}
                   </span>
                 </li>
               ))}
             </ul>
           ) : (
-            <p className="mt-3 text-sm text-zinc-500">Flat — no open positions.</p>
+            <p className="mt-3 text-[12.5px] text-ink-3">
+              {liveState
+                ? "Flat — no open positions."
+                : "No live state recorded yet."}
+            </p>
           )}
-        </Card>
-      ) : inSession && !sessionEnded ? (
-        <Card title="Live session" subtitle="Intraday loop telemetry">
-          <p className="text-sm text-zinc-400">
-            Loop offline
-            {liveState?.heartbeat_ts
-              ? ` — last heartbeat ${relativeTime(liveState.heartbeat_ts)}`
-              : " — no live_state row yet"}
-            . Open the command-center blotter for broker-truth marks.
-          </p>
-        </Card>
-      ) : null}
 
-      <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
-        <MetricCard
-          label="Account equity"
-          value={fmtUsd(accountEquity ?? null, 0)}
-          hint={
-            accountCapturedAt
-              ? `latest stored value · ${fmtDateTime(accountCapturedAt)}`
-              : "no account telemetry yet"
-          }
-        />
-        <MetricCard
-          label="Broker daily PnL"
-          value={fmtSignedUsd(accountDailyPnl ?? null)}
-          tone={
-            (accountDailyPnl ?? 0) > 0
-              ? "positive"
-              : (accountDailyPnl ?? 0) < 0
-                ? "negative"
-                : "neutral"
-          }
-          hint={
-            accountDailyPnlPct != null
-              ? `${fmtPct(Number(accountDailyPnlPct), 2)} vs prior close`
-              : "equity change vs prior close"
-          }
-        />
-        <MetricCard
-          label="Trades opened (last entry date)"
-          value={latestRun ? latestRun.total_trades : "—"}
-          hint={latestRun ? `on ${latestRun.run_date}` : undefined}
-        />
-        <MetricCard
-          label="Live loop"
-          value={hb.label}
-          tone={hb.tone}
-          hint={
-            heartbeat
-              ? `last heartbeat ${relativeTime(heartbeat.heartbeat_ts)}${
-                  heartbeat.symbols_tracked
-                    ? ` · ${heartbeat.symbols_tracked} symbols`
-                    : ""
-                }`
-              : undefined
-          }
-        />
-      </div>
-
-      <Card
-        title="Equity curve"
-        subtitle="Paper account equity snapshots captured at live-loop start and end (90 days)"
-      >
-        {equityPoints.length >= 2 ? (
-          <EquityCurve data={equityPoints} />
-        ) : (
-          <EmptyState message="Not enough equity snapshots yet — the live loop writes one at session start and end each trading day." />
-        )}
-      </Card>
-
-      <Card
-        title="Strategy PnL by exit date"
-        subtitle={
-          <>
-            Broker-position lifecycle PnL grouped by the ET date it closed (30 days) ·{" "}
-            <span className={pnlColor(totalPnl30d)}>
-              {fmtSignedUsd(totalPnl30d)} total
-            </span>
-          </>
-        }
-      >
-        {pnlPoints.length > 0 ? (
-          <DailyPnlBars data={pnlPoints} />
-        ) : (
-          <EmptyState message="No run history in the last 30 days." />
-        )}
-      </Card>
-
-      <Card
-        title="Entry-date cohorts"
-        subtitle="Trades and full-lifecycle PnL grouped by the date each position was opened"
-      >
-        {runs.length > 0 ? (
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b border-zinc-800 text-left text-xs uppercase tracking-wide text-zinc-500">
-                  <th className="py-2 pr-4 font-medium">Entry date</th>
-                  <th className="py-2 pr-4 font-medium">Opened</th>
-                  <th className="py-2 pr-4 font-medium">Now closed</th>
-                  <th className="py-2 pr-4 font-medium">Win rate</th>
-                  <th className="py-2 pr-4 font-medium">Lifetime PnL</th>
-                  <th className="py-2 font-medium">Equity</th>
-                </tr>
-              </thead>
-              <tbody>
-                {[...runs].reverse().slice(0, 10).map((run) => (
-                  <tr
-                    key={run.run_date}
-                    className="border-b border-zinc-900 last:border-0"
-                  >
-                    <td className="py-2 pr-4 tabular-nums">{run.run_date}</td>
-                    <td className="py-2 pr-4 tabular-nums">{run.total_trades}</td>
-                    <td className="py-2 pr-4 tabular-nums">{run.closed_trades}</td>
-                    <td className="py-2 pr-4 tabular-nums">
-                      {fmtPct(run.win_rate)}
-                    </td>
-                    <td
-                      className={`py-2 pr-4 tabular-nums ${pnlColor(
-                        Number(run.total_pnl ?? 0),
-                      )}`}
-                    >
-                      {fmtSignedUsd(Number(run.total_pnl ?? 0))}
-                    </td>
-                    <td className="py-2 tabular-nums">
-                      {fmtUsd(run.final_equity, 0)}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+          <div className="mt-3.5 flex gap-6 border-t border-line pt-3.5">
+            <div className="flex-1">
+              <span className="tag">Session</span>
+              <span className="num mt-1.5 block text-[15px] font-medium">
+                {liveState?.session_stats?.wins ?? 0}W{" "}
+                <span className="text-ink-3">/</span>{" "}
+                {liveState?.session_stats?.losses ?? 0}L
+              </span>
+            </div>
+            <div className="flex-1">
+              <span className="tag">Realized</span>
+              <span
+                className={clsx(
+                  "num mt-1.5 block text-[15px] font-medium",
+                  pnlColor(
+                    liveState?.session_stats?.realized_pnl != null
+                      ? Number(liveState.session_stats.realized_pnl)
+                      : null,
+                  ),
+                )}
+              >
+                {liveState?.session_stats?.realized_pnl != null
+                  ? fmtSignedUsd(Number(liveState.session_stats.realized_pnl))
+                  : "—"}
+              </span>
+            </div>
           </div>
-        ) : (
-          <EmptyState message="No sessions recorded yet." />
-        )}
-      </Card>
+
+          {!liveFresh && liveState ? (
+            <p className="mt-3 text-[11px] text-ink-3">
+              Last session · updated {relativeTime(liveAccountCapturedAt)}
+            </p>
+          ) : null}
+        </Panel>
+
+        <Panel>
+          <PanelHead
+            title="Decision ledger"
+            aside={decisionLog.runDate ?? "—"}
+          />
+          <DecisionLedger log={decisionLog} />
+          <a
+            href="/funnel"
+            className="mt-3.5 inline-flex items-center gap-1.5 text-[12px] text-ink-2 transition-colors hover:text-ink"
+          >
+            Full funnel and rejection reasons →
+          </a>
+        </Panel>
+      </aside>
     </div>
   );
 }

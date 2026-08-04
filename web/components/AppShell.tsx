@@ -3,16 +3,16 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import type { ReactNode } from "react";
-import { Activity, BarChart3, Command, Filter, LineChart, Table2 } from "lucide-react";
 import clsx from "clsx";
+import { ThemeToggle } from "@/components/ThemeToggle";
 
 const navItems = [
-  { href: "/", label: "Overview", icon: Activity },
-  { href: "/trades", label: "Trades", icon: Table2 },
-  { href: "/breakdowns", label: "Breakdowns", icon: BarChart3 },
-  { href: "/funnel", label: "Funnel", icon: Filter },
+  { href: "/", label: "Overview" },
+  { href: "/trades", label: "Trades" },
+  { href: "/breakdowns", label: "Breakdowns" },
+  { href: "/funnel", label: "Funnel" },
   ...(process.env.NEXT_PUBLIC_COMMAND_CENTER_ENABLED === "true"
-    ? [{ href: "/command-center", label: "Command Center", icon: Command }]
+    ? [{ href: "/command-center", label: "Command Center" }]
     : []),
 ];
 
@@ -21,22 +21,25 @@ export function AppShell({ children }: { children: ReactNode }) {
 
   return (
     <div className="min-h-screen">
-      <header className="sticky top-0 z-40 border-b border-zinc-800/80 bg-zinc-950/90 backdrop-blur">
-        <div className="mx-auto flex max-w-6xl items-center justify-between gap-4 px-4 py-3">
-          <Link href="/" className="flex items-center gap-2">
-            <span className="flex size-8 items-center justify-center rounded-lg bg-emerald-500/15 text-emerald-400">
-              <LineChart className="size-4" />
+      <header className="sticky top-0 z-40 border-b border-line bg-[color-mix(in_srgb,var(--paper)_86%,transparent)] backdrop-blur-lg backdrop-saturate-150">
+        <div className="mx-auto flex h-[62px] max-w-[1240px] items-center gap-7 px-5 sm:px-7">
+          <Link href="/" className="flex shrink-0 items-center gap-2.5">
+            <span
+              aria-hidden
+              className="grid size-[22px] place-items-center rounded-md border-[1.5px] border-ink font-mono text-[11px] font-semibold leading-none"
+            >
+              LA
             </span>
-            <span className="text-sm font-semibold tracking-tight">
+            <span className="hidden text-[14.5px] font-semibold tracking-[-0.012em] sm:inline">
               LLM Advisor
-              <span className="ml-2 hidden text-zinc-500 sm:inline">
-                Ops Dashboard
-              </span>
             </span>
           </Link>
-          <nav className="flex items-center gap-1 overflow-x-auto">
+
+          <nav
+            aria-label="Primary"
+            className="ml-auto flex min-w-0 items-center gap-1 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+          >
             {navItems.map((item) => {
-              const Icon = item.icon;
               const active =
                 item.href === "/"
                   ? pathname === "/"
@@ -45,33 +48,46 @@ export function AppShell({ children }: { children: ReactNode }) {
                 <Link
                   key={item.href}
                   href={item.href}
+                  aria-current={active ? "page" : undefined}
                   className={clsx(
-                    "flex items-center gap-1.5 rounded-md px-3 py-1.5 text-sm transition-colors",
+                    "whitespace-nowrap rounded-full px-2.5 py-1.5 text-[13px] transition-colors sm:px-3 sm:text-[13.5px]",
                     active
-                      ? "bg-zinc-800 text-zinc-100"
-                      : "text-zinc-400 hover:bg-zinc-900 hover:text-zinc-200",
+                      ? "bg-sunk font-medium text-ink"
+                      : "text-ink-2 hover:bg-sunk hover:text-ink",
                   )}
                 >
-                  <Icon className="size-4" />
-                  <span className="hidden sm:inline">{item.label}</span>
+                  {item.label}
                 </Link>
               );
             })}
           </nav>
+
+          <ThemeToggle />
         </div>
       </header>
-      <main className="mx-auto max-w-6xl px-4 py-8">{children}</main>
-      <footer className="mx-auto max-w-6xl px-4 pb-10 pt-4 text-xs text-zinc-600">
-        <p>
-          Paper trading only — Alpaca paper account. Signals: z-score mean
-          reversion (MR) &amp; trend continuation (TC), gated by LLM validation.{" "}
-          <a
-            href="https://www.drewboynton.com/projects/llm-advisor"
-            className="text-zinc-500 underline-offset-2 hover:text-zinc-300 hover:underline"
-          >
-            Project deep dive →
-          </a>
-        </p>
+
+      <main className="mx-auto max-w-[1240px] px-5 pb-16 pt-9 sm:px-7">
+        {children}
+      </main>
+
+      <footer className="mx-auto max-w-[1240px] px-5 sm:px-7">
+        <div className="flex flex-wrap justify-between gap-5 border-t border-line py-6 text-[12px] text-ink-3">
+          <p className="max-w-[70ch]">
+            <strong className="font-semibold text-ink-2">
+              Paper money. Real mistakes.
+            </strong>{" "}
+            Alpaca paper account — z-score mean reversion (MR) and trend
+            continuation (TC), gated by LLM validation.
+          </p>
+          <p>
+            <a
+              href="https://www.drewboynton.com/projects/llm-advisor"
+              className="border-b border-line-2 pb-px text-ink-2 transition-colors hover:text-ink"
+            >
+              Project deep dive →
+            </a>
+          </p>
+        </div>
       </footer>
     </div>
   );
