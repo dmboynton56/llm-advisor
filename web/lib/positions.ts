@@ -1,0 +1,328 @@
+import { dateEtIso, parseOccSymbol } from "@/lib/format";
+import type {
+  JsonRecord,
+  LiveOpenPosition,
+  LiveStateRow,
+  OverviewPosition,
+  PositionFill,
+  TradeLifecycleRow,
+} from "@/lib/types";
+
+function numberOrNull(value: unknown): number | null {
+  if (value === null || value === undefined || value === "") return null;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function record(value: unknown): JsonRecord {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? (value as JsonRecord)
+    : {};
+}
+
+function positive(value: number | null): number | null {
+  return value === null ? null : Math.abs(value);
+}
+
+function returnPct(
+  pnl: number | null,
+  entry: number | null,
+  initialQty: number | null,
+): number | null {
+  if (pnl === null || entry === null || initialQty === null || initialQty <= 0) {
+    return null;
+  }
+  const cost = Math.abs(entry) * Math.abs(initialQty) * 100;
+  return cost > 0 ? pnl / cost : null;
+}
+
+function fillFromRaw(
+  raw: unknown,
+  kind: PositionFill["kind"],
+  fallbackTimestamp: string | null = null,
+): PositionFill | null {
+  const value = record(raw);
+  const timestamp =
+    typeof value.timestamp === "string"
+      ? value.timestamp
+      : typeof value.event_ts === "string"
+        ? value.event_ts
+        : fallbackTimestamp;
+  const qty = numberOrNull(value.qty ?? value.filled_qty);
+  const price = numberOrNull(value.price ?? value.filled_avg_price);
+  const pnl = numberOrNull(value.pnl ?? value.realized_pnl);
+  if (!timestamp && qty === null && price === null && pnl === null) return null;
+  return {
+    kind,
+    stage: typeof value.stage === "string" ? value.stage : null,
+    timestamp,
+    qty,
+    price,
+    pnl,
+    reason: typeof value.reason === "string" ? value.reason : null,
+  };
+}
+
+function dedupeFills(fills: PositionFill[]): PositionFill[] {
+  const seen = new Set<string>();
+  return fills.filter((fill) => {
+    const key = [
+      fill.kind,
+      fill.stage ?? "",
+      fill.timestamp ?? "",
+      fill.qty ?? "",
+      fill.price ?? "",
+    ].join("|");
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+function stateFromDetails(details: JsonRecord | null): JsonRecord {
+  const root = record(details);
+  return record(root.tiered_exit_state ?? root.exit_state);
+}
+
+function partialFillsFromDetails(details: JsonRecord | null): PositionFill[] {
+  const root = record(details);
+  const raw = Array.isArray(root.tiered_partial_fills)
+    ? root.tiered_partial_fills
+    : [];
+  return raw
+    .map((fill) => fillFromRaw(fill, "partial_exit"))
+    .filter((fill): fill is PositionFill => Boolean(fill));
+}
+
+function addEntryFill(
+  fills: PositionFill[],
+  openedAt: string | null,
+  qty: number | null,
+  price: number | null,
+): PositionFill[] {
+  const entry = fillFromRaw(
+    { timestamp: openedAt, qty, price },
+    "entry",
+  );
+  return entry ? [entry, ...fills] : fills;
+}
+
+function normalizeOpenPosition(position: LiveOpenPosition): OverviewPosition {
+  const symbol = position.option_symbol ?? position.symbol;
+  const state = record(
+    (position as LiveOpenPosition & { tiered_exit_state?: JsonRecord })
+      .tiered_exit_state,
+  );
+  const initialQty =
+    numberOrNull(position.initial_qty) ?? numberOrNull(state.initial_qty) ?? positive(position.qty);
+  const remainingQty =
+    numberOrNull(position.remaining_qty) ??
+    numberOrNull(state.remaining_qty) ??
+    positive(position.qty);
+  const entryPrice = numberOrNull(position.entry_price) ?? numberOrNull(state.entry_price);
+  const realizedPnl =
+    numberOrNull(position.realized_pnl) ?? numberOrNull(state.realized_pnl) ?? 0;
+  const unrealizedPnl = numberOrNull(position.unrealized_pl) ?? 0;
+  const totalPnl = realizedPnl + unrealizedPnl;
+  const fills = Array.isArray(position.fills)
+    ? position.fills
+    : Array.isArray(state.exit_fills)
+      ? state.exit_fills
+          .map((fill) => fillFromRaw(fill, "partial_exit"))
+          .filter((fill): fill is PositionFill => Boolean(fill))
+      : [];
+
+  return {
+    id:
+      position.position_id ??
+      (typeof state.lifecycle_id === "string" ? state.lifecycle_id : null) ??
+      symbol,
+    status: "open",
+    symbol,
+    option_symbol: symbol,
+    underlying_symbol: position.underlying_symbol ?? parseOccSymbol(symbol)?.underlying ?? null,
+    side: position.side ?? null,
+    opened_at: position.opened_at ?? null,
+    closed_at: null,
+    initial_qty: initialQty,
+    remaining_qty: remainingQty,
+    entry_price: entryPrice,
+    current_price: numberOrNull(position.current_price),
+    exit_price: null,
+    realized_pnl: realizedPnl,
+    unrealized_pnl: unrealizedPnl,
+    total_pnl: totalPnl,
+    return_pct: returnPct(totalPnl, entryPrice, initialQty),
+    exit_reason: null,
+    setup_type: position.setup_type ?? null,
+    dte: numberOrNull(position.dte) ?? parseOccSymbol(symbol)?.dte ?? null,
+    fills: addEntryFill(
+      dedupeFills(fills),
+      position.opened_at ?? null,
+      initialQty,
+      entryPrice,
+    ),
+  };
+}
+
+function normalizeLifecycle(row: TradeLifecycleRow): OverviewPosition {
+  const details = record(row.details);
+  const state = stateFromDetails(row.details);
+  const partialFills = partialFillsFromDetails(row.details);
+  const initialQty =
+    numberOrNull(details.initial_qty) ??
+    numberOrNull(state.initial_qty) ??
+    positive(row.filled_qty);
+  const partialQty = partialFills.reduce((sum, fill) => sum + (fill.qty ?? 0), 0);
+  const totalPnl = numberOrNull(row.realized_pnl);
+  const partialPnl = partialFills.reduce((sum, fill) => sum + (fill.pnl ?? 0), 0);
+  const finalQty =
+    numberOrNull(details.final_exit_qty) ??
+    (row.filled_qty !== null && partialQty > 0
+      ? Math.max(0, row.filled_qty - partialQty)
+      : row.filled_qty);
+  const finalPnl =
+    totalPnl !== null && partialPnl !== 0 ? totalPnl - partialPnl : totalPnl;
+  const finalPrice =
+    numberOrNull(details.final_exit_price) ?? numberOrNull(row.exit_fill_price);
+  const finalFill = fillFromRaw(
+    {
+      timestamp: row.closed_at,
+      qty: finalQty,
+      price: finalPrice,
+      pnl: finalPnl,
+      reason: row.exit_reason,
+      stage: "final",
+    },
+    "final_exit",
+  );
+  const fills = addEntryFill(
+    dedupeFills([
+      ...partialFills,
+      ...(finalFill ? [finalFill] : []),
+    ]),
+    row.opened_at,
+    initialQty,
+    numberOrNull(row.entry_fill_price),
+  );
+
+  return {
+    id: row.lifecycle_uid,
+    status: "closed",
+    symbol: row.symbol,
+    option_symbol: row.symbol,
+    underlying_symbol: row.underlying_symbol ?? parseOccSymbol(row.symbol)?.underlying ?? null,
+    side: "long",
+    opened_at: row.opened_at,
+    closed_at: row.closed_at,
+    initial_qty: initialQty,
+    remaining_qty: 0,
+    entry_price: numberOrNull(row.entry_fill_price),
+    current_price: null,
+    exit_price: finalPrice,
+    realized_pnl: totalPnl,
+    unrealized_pnl: 0,
+    total_pnl: totalPnl,
+    return_pct: returnPct(totalPnl, numberOrNull(row.entry_fill_price), initialQty),
+    exit_reason: row.exit_reason,
+    setup_type: row.setup_type ?? null,
+    dte: row.option_dte ?? parseOccSymbol(row.symbol)?.dte ?? null,
+    fills,
+  };
+}
+
+function normalizeLiveClosed(
+  closed: NonNullable<LiveStateRow["session_stats"]["closed"]>[number],
+): OverviewPosition {
+  const symbol = closed.option_symbol ?? closed.symbol;
+  const initialQty =
+    numberOrNull(closed.initial_qty) ?? numberOrNull(closed.remaining_qty);
+  const entryPrice = numberOrNull(closed.entry_price);
+  const totalPnl = numberOrNull(closed.pnl);
+  const finalPrice = numberOrNull(closed.exit_price);
+  const finalFill = fillFromRaw(
+    {
+      timestamp: closed.closed_at,
+      qty: initialQty,
+      price: finalPrice,
+      pnl: totalPnl,
+      reason: closed.exit_reason,
+      stage: "final",
+    },
+    "final_exit",
+  );
+  return {
+    id: closed.position_id ?? symbol,
+    status: "closed",
+    symbol,
+    option_symbol: symbol,
+    underlying_symbol: closed.underlying_symbol ?? parseOccSymbol(symbol)?.underlying ?? null,
+    side: closed.side ?? "long",
+    opened_at: closed.opened_at ?? null,
+    closed_at: closed.closed_at,
+    initial_qty: initialQty,
+    remaining_qty: 0,
+    entry_price: entryPrice,
+    current_price: null,
+    exit_price: finalPrice,
+    realized_pnl: totalPnl,
+    unrealized_pnl: 0,
+    total_pnl: totalPnl,
+    return_pct: returnPct(totalPnl, entryPrice, initialQty),
+    exit_reason: closed.exit_reason,
+    setup_type: null,
+    dte: parseOccSymbol(symbol)?.dte ?? null,
+    fills: addEntryFill(
+      dedupeFills([
+        ...(closed.fills ?? []),
+        ...(finalFill ? [finalFill] : []),
+      ]),
+      closed.opened_at ?? null,
+      initialQty,
+      entryPrice,
+    ),
+  };
+}
+
+function positionIdentity(position: OverviewPosition): string {
+  return position.id || position.symbol;
+}
+
+/** Merge live open/session data with durable lifecycles closed today in ET. */
+export function getTodayOverviewPositions(
+  liveState: LiveStateRow | null,
+  lifecycles: TradeLifecycleRow[],
+  now: Date = new Date(),
+): OverviewPosition[] {
+  const today = dateEtIso(now);
+  const merged = new Map<string, OverviewPosition>();
+  for (const position of liveState?.open_positions ?? []) {
+    const normalized = normalizeOpenPosition(position);
+    merged.set(positionIdentity(normalized), normalized);
+  }
+  for (const closed of liveState?.session_stats?.closed ?? []) {
+    if (dateEtIso(closed.closed_at) !== today) continue;
+    const normalized = normalizeLiveClosed(closed);
+    merged.set(positionIdentity(normalized), normalized);
+  }
+  for (const lifecycle of lifecycles) {
+    if (dateEtIso(lifecycle.closed_at) !== today) continue;
+    const normalized = normalizeLifecycle(lifecycle);
+    const key = positionIdentity(normalized);
+    if (!merged.has(key)) merged.set(key, normalized);
+  }
+
+  return [...merged.values()].sort((a, b) => {
+    if (a.status !== b.status) return a.status === "open" ? -1 : 1;
+    const aTime = Date.parse(a.status === "open" ? a.opened_at ?? "" : a.closed_at ?? "");
+    const bTime = Date.parse(b.status === "open" ? b.opened_at ?? "" : b.closed_at ?? "");
+    return (Number.isFinite(bTime) ? bTime : 0) - (Number.isFinite(aTime) ? aTime : 0);
+  });
+}
+
+export function formatPositionStatus(position: OverviewPosition): string {
+  if (position.status === "open") {
+    return `${position.remaining_qty ?? "—"} left`;
+  }
+  return position.exit_reason?.replaceAll("_", " ") ?? "closed";
+}
