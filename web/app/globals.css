@@ -203,8 +203,10 @@
    sheet on a phone, where the rail itself has no spare width. */
 .position-dialog {
   margin: auto;
+  width: min(760px, calc(100vw - 16px));
   max-width: min(760px, calc(100vw - 16px));
   max-height: calc(100dvh - 16px);
+  box-sizing: border-box;
 }
 
 .position-dialog::backdrop {

@@ -98,12 +98,27 @@ export function PositionDetailDialog({
   const dialogRef = useRef<HTMLDialogElement>(null);
   const [chart, setChart] = useState<ChartResponse | null>(null);
   const [loading, setLoading] = useState(false);
+  const [chartReady, setChartReady] = useState(false);
 
   useEffect(() => {
     const dialog = dialogRef.current;
     if (!dialog) return;
-    if (position && !dialog.open) dialog.showModal();
-    if (!position && dialog.open) dialog.close();
+    let frame: number | null = null;
+
+    if (position) {
+      // A native dialog is display:none until showModal(). Mounting Recharts
+      // before that point lets ResponsiveContainer cache a zero-width parent.
+      setChartReady(false);
+      if (!dialog.open) dialog.showModal();
+      frame = window.requestAnimationFrame(() => setChartReady(true));
+    } else {
+      setChartReady(false);
+      if (dialog.open) dialog.close();
+    }
+
+    return () => {
+      if (frame !== null) window.cancelAnimationFrame(frame);
+    };
   }, [position]);
 
   useEffect(() => {
@@ -209,16 +224,22 @@ export function PositionDetailDialog({
               </p>
             ) : null}
 
-            <div className="mt-5 overflow-hidden rounded-xl border border-line bg-paper/35 p-2 sm:p-3">
+            <div className="mt-5 min-w-0 overflow-hidden rounded-xl border border-line bg-paper/35 p-2 sm:p-3">
               <div className="flex items-center justify-between gap-3 px-1 pb-2">
                 <p className="tag">Option price · 1 min</p>
                 {chart?.source ? <span className="tag">{chart.source}</span> : null}
               </div>
               {loading ? (
-                <div className="grid h-[220px] place-items-center text-[12px] text-ink-3">Loading contract history…</div>
-              ) : chartBars.length > 0 ? (
-                <div className="h-[220px] w-full sm:h-[260px]">
-                  <ResponsiveContainer width="100%" height="100%">
+                <div className="grid h-64 place-items-center text-[12px] text-ink-3">Loading contract history…</div>
+              ) : chartBars.length > 0 && chartReady ? (
+                <div className="h-64 w-full min-w-0">
+                  <ResponsiveContainer
+                    width="100%"
+                    height="100%"
+                    minWidth={0}
+                    minHeight={0}
+                    debounce={80}
+                  >
                     <LineChart data={chartBars} margin={{ top: 12, right: 10, bottom: 2, left: 2 }}>
                       <CartesianGrid stroke={GRID_STROKE} strokeDasharray="3 4" vertical={false} />
                       <XAxis
@@ -279,8 +300,10 @@ export function PositionDetailDialog({
                     </LineChart>
                   </ResponsiveContainer>
                 </div>
+              ) : chartBars.length > 0 ? (
+                <div className="grid h-64 place-items-center text-[12px] text-ink-3">Preparing chart...</div>
               ) : (
-                <div className="grid h-[220px] place-items-center px-6 text-center text-[12px] text-ink-3">
+                <div className="grid h-64 place-items-center px-6 text-center text-[12px] text-ink-3">
                   {chart?.error ?? "No option bars were available for this holding window."}
                 </div>
               )}
@@ -323,4 +346,3 @@ export function PositionDetailDialog({
     </dialog>
   );
 }
-
