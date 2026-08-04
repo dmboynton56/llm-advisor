@@ -90,14 +90,27 @@ OPTION_DTE_MIN=7
 OPTION_DTE_MAX=14
 OPTION_DELTA_MIN=0.35
 OPTION_DELTA_MAX=0.55
-MAX_RISK_PER_TRADE_PERCENT=2.0
-MAX_CONCURRENT_TRADES=3
-MAX_OPTION_PREMIUM_PER_TRADE=2000
+MAX_RISK_PER_TRADE_PERCENT=3.0
+MAX_CONCURRENT_TRADES=2
+MAX_OPTION_PREMIUM_PER_TRADE=3000
 MAX_OPTION_BID_ASK_SPREAD_PCT=0.15
 MIN_OPTION_OPEN_INTEREST=100
 OPTION_STRIKE_WINDOW_PCT=0.10
 OPTION_PROFIT_TARGET_PCT=0.25
 OPTION_STOP_LOSS_PCT=0.35
+OPTION_TIERED_EXIT_ENABLED=false  # set true only for the paper trial
+OPTION_TIERED_EXIT_UNDERLYINGS=SPY,QQQ
+OPTION_TIERED_MIN_CONTRACTS=4
+OPTION_TIERED_TP1_RETURN_PCT=0.25
+OPTION_TIERED_TP1_FRACTION=0.50
+OPTION_TIERED_TP2_RETURN_PCT=0.50
+OPTION_TIERED_TP2_FRACTION=0.25
+OPTION_TIERED_POST_TP1_STOP_RETURN_PCT=-0.05
+OPTION_TIERED_RUNNER_FLOOR_RETURN_PCT=0.25
+OPTION_TIERED_RUNNER_GIVEBACK_PCT=0.25
+OPTION_TIERED_EXIT_FILL_TIMEOUT_SECONDS=120
+OPTION_TIERED_EMERGENCY_FLATTEN=false
+OPTION_FALLBACK_MAX_PREMIUM_PER_TRADE=3000
 OPTION_MAX_HOLD_MINUTES=2880
 OPTION_CLOSE_AT_ENTRY_WINDOW_END=false
 OPTION_ALLOW_OVERNIGHT=true
@@ -150,10 +163,12 @@ To refresh the portfolio artifact (`personal-portfolio/public/data/llm_advisor_b
   `TRADING_INSTRUMENT=options`, `OPTIONS_PAPER_ONLY=true`, and
   `ALPACA_PAPER_TRADING=true`. STDEV stock signals are mapped to 7-14 DTE long
   calls or long puts after delta, bid/ask spread, open interest, and premium
-  checks. The $100k paper profile risks at most 2% ($2,000) of equity premium
-  per trade and permits three concurrent positions: about 6% worst-case total
-  premium at risk. This makes results strategy-sized while retaining a clear
-  per-trade and portfolio cap.
+  checks. The current paper sizing trial budgets at most 3% (about $3,000) of
+  equity premium per trade and permits two concurrent positions: about 6%
+  gross planned premium exposure. This increases contract counts for the
+  tiered-exit experiment without increasing the prior portfolio-level premium
+  budget. Keep `OPTIONS_PAPER_ONLY=true`; this sizing change is not approved
+  for live capital.
 - **Stock Paper Trading**: Set `TRADING_INSTRUMENT=stocks` and
   `ALLOW_STOCK_FALLBACK=true` to use the legacy stock bracket order manager.
 - **Live Trading**: The options engine refuses live mode while
@@ -177,7 +192,8 @@ Agentic Trading (MCP) execution rollout, see
 
 ### Optional
 
-- `MAX_CONCURRENT_TRADES` (default `3`) caps simultaneous open positions before new entries are sent.
+- `MAX_CONCURRENT_TRADES` caps simultaneous open positions before new entries
+  are sent. The current paper sizing trial sets it to `2`.
 
 ## Testing
 

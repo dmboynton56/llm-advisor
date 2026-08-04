@@ -27,6 +27,7 @@ CREATE TABLE IF NOT EXISTS premarket_snapshots (
     symbol VARCHAR(32) NOT NULL,
     htf_stats JSONB,  -- {ema_slope_daily, ema_slope_hourly, hh_ll_tag, atr_percentile_daily}
     bands_5m JSONB,   -- {mu, sigma, atr_5m, k}
+    levels JSONB,      -- shadow-only ATR/prior-day/entry bands
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     UNIQUE(date, symbol)
 );
@@ -146,6 +147,7 @@ CREATE TABLE IF NOT EXISTS positions (
     take_profit DECIMAL(10, 2),
     qty INTEGER,
     unrealized_pnl DECIMAL(10, 2),
+    exit_state JSONB,
     last_updated TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     UNIQUE(trade_id)
 );

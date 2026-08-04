@@ -79,3 +79,52 @@ def test_builds_fill_aware_lifecycle_and_daily_reconciliation() -> None:
     assert reconciliation.booked_realized_pnl == 483
     assert reconciliation.pnl_gap == 0
     assert reconciliation.status == "ok"
+
+
+def test_partial_tier_fills_stay_on_one_lifecycle() -> None:
+    events = [
+        _event(
+            "option_protective_stop_submitted",
+            "2026-07-29T17:00:00+00:00",
+            {
+                "entry_order_id": "entry-tier-1",
+                "stop_order_id": "stop-1",
+                "actual_filled_qty": 4,
+                "actual_entry_price": 2.0,
+                "stop_price": 1.3,
+            },
+        ),
+        _event(
+            "option_partial_exit_filled",
+            "2026-07-29T17:10:00+00:00",
+            {
+                "entry_order_id": "entry-tier-1",
+                "stage": "tp1",
+                "filled_qty": 2,
+                "filled_avg_price": 2.5,
+                "realized_pnl": 100,
+                "tiered_exit_state": {"lifecycle_id": "101"},
+            },
+        ),
+        _event(
+            "option_exit_filled",
+            "2026-07-29T18:00:00+00:00",
+            {
+                "entry_order_id": "entry-tier-1",
+                "reason": "runner_trail",
+                "actual_filled_qty": 4,
+                "actual_exit_price": 2.75,
+                "realized_pnl": 300,
+                "exit_order": {"order_id": "exit-final", "status": "filled"},
+            },
+        ),
+    ]
+    lifecycles = build_trade_lifecycles(events)
+    assert len(lifecycles) == 1
+    assert lifecycles[0].realized_pnl == 300
+    assert len(lifecycles[0].details["tiered_partial_fills"]) == 1
+    reconciliation = build_broker_reconciliations(
+        ["2026-07-29"], events, []
+    )[0]
+    assert reconciliation.booked_realized_pnl == 300
+    assert reconciliation.lifecycle_exit_count == 1

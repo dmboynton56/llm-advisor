@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
 import json
+import hashlib
 from pathlib import Path
 import re
 from typing import Any, Dict, List, Optional
@@ -18,7 +19,12 @@ from alpaca.trading.enums import (
     QueryOrderStatus,
     TimeInForce,
 )
-from alpaca.trading.requests import GetOrdersRequest, LimitOrderRequest, StopOrderRequest
+from alpaca.trading.requests import (
+    GetOrdersRequest,
+    LimitOrderRequest,
+    MarketOrderRequest,
+    StopOrderRequest,
+)
 
 from src.core.config import OptionsSettings, RiskSettings, Settings
 from src.data.alpaca_options_client import AlpacaOptionsClient
@@ -43,6 +49,7 @@ _ACTIVE_ORDER_STATUSES = {
 }
 _TERMINAL_CANCEL_STATUSES = {"canceled", "expired", "rejected", "replaced"}
 _PROTECTIVE_STOP_PREFIX = "llma-stop-"
+_TIERED_EXIT_PREFIX = "llma-tier-"
 
 
 class OptionsOrderManager:
@@ -124,8 +131,56 @@ class OptionsOrderManager:
                 raise
             return []
 
+    def _find_order_by_client_order_id(
+        self, symbol: str, client_order_id: str
+    ) -> Optional[Any]:
+        """Find an open or recently closed order by deterministic client id."""
+        try:
+            candidates = self.get_open_orders([symbol], raise_on_error=True)
+            request = GetOrdersRequest(
+                status=QueryOrderStatus.CLOSED,
+                limit=500,
+                nested=True,
+                symbols=[symbol],
+            )
+            candidates.extend(list(self.trading_client.get_orders(filter=request)))
+        except Exception:
+            raise
+        for order in candidates:
+            if (
+                str(getattr(order, "symbol", "")).upper() == str(symbol).upper()
+                and str(getattr(order, "client_order_id", "") or "") == str(client_order_id)
+            ):
+                return order
+        return None
+
     def close_position(self, symbol: str) -> bool:
         """Cancel the protective stop, confirm it is inactive, then request a close."""
+        tier_cancel = self.cancel_pending_tier_orders(symbol)
+        if tier_cancel.get("status") == "filled":
+            try:
+                still_open = any(
+                    str(pos.get("symbol", "")).upper() == str(symbol).upper()
+                    and abs(float(pos.get("qty") or 0)) > 0
+                    for pos in self.get_open_positions()
+                )
+            except Exception:
+                still_open = True
+            if not still_open:
+                self._risk_events.append(
+                    {
+                        "event_type": "option_exit_already_filled",
+                        "symbol": symbol,
+                        "details": tier_cancel,
+                    }
+                )
+                return True
+        if tier_cancel.get("status") not in ("absent", "canceled"):
+            print(
+                f"  ! Pending tier close for {symbol} is not safely canceled "
+                f"({tier_cancel.get('status')}); deferring full close"
+            )
+            return False
         cancel_result = self.cancel_protective_stop(symbol)
         if cancel_result["status"] == "filled":
             self._risk_events.append(
@@ -152,6 +207,205 @@ class OptionsOrderManager:
         except Exception as exc:
             print(f"  ! Failed to close position {symbol}: {exc}")
             return False
+
+    def close_position_quantity(
+        self,
+        symbol: str,
+        qty: int,
+        *,
+        client_order_id: Optional[str] = None,
+        stage: Optional[str] = None,
+        lifecycle_id: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """Submit an idempotent paper sell-to-close market order for exact qty.
+
+        Tiered exits must use an explicit quantity order so a partial close does
+        not liquidate the entire net broker position. The protective stop is
+        canceled and confirmed before this order is submitted; the tracker
+        re-attaches protection after the fill is observed.
+        """
+        symbol = str(symbol).upper()
+        qty = int(qty)
+        if qty <= 0:
+            return {"success": False, "error": "invalid_close_quantity", "symbol": symbol}
+        client_order_id = client_order_id or self._tiered_client_order_id(
+            symbol, stage or "exit", lifecycle_id=lifecycle_id
+        )
+        # Recovery/idempotency: a restart or duplicate poll must reuse the
+        # broker order already submitted for this deterministic client id.
+        try:
+            existing = self._find_order_by_client_order_id(symbol, client_order_id)
+        except Exception as exc:
+            return {
+                "success": False,
+                "error": "tiered_exit_order_lookup_failed",
+                "symbol": symbol,
+                "qty": qty,
+                "stage": stage,
+                "detail": str(exc),
+            }
+        if existing is not None:
+            order_id = str(getattr(existing, "id", "") or "")
+            if order_id:
+                if not hasattr(self, "_last_exit_orders"):
+                    self._last_exit_orders = {}
+                self._last_exit_orders[symbol] = order_id
+            return {
+                "success": True,
+                "symbol": symbol,
+                "qty": qty,
+                "stage": stage,
+                "order_id": order_id,
+                "client_order_id": client_order_id,
+                "status": self._order_status(existing),
+                "recovered": True,
+            }
+        cancel_result = self.cancel_protective_stop(symbol)
+        if cancel_result.get("status") == "filled":
+            stop_order_id = str(cancel_result.get("stop_order_id") or "")
+            if stop_order_id:
+                self._last_exit_orders[symbol] = stop_order_id
+            self._risk_events.append(
+                {
+                    "event_type": "option_exit_already_filled",
+                    "symbol": symbol,
+                    "details": {**cancel_result, "stage": stage, "qty": qty},
+                }
+            )
+            return {
+                "success": True,
+                "already_filled": True,
+                "symbol": symbol,
+                "qty": qty,
+                "stage": stage,
+            }
+        if cancel_result.get("status") not in ("absent", "canceled"):
+            return {
+                "success": False,
+                "error": "protective_stop_not_canceled",
+                "symbol": symbol,
+                "qty": qty,
+                "stage": stage,
+                "cancel_result": cancel_result,
+            }
+        request = MarketOrderRequest(
+            symbol=symbol,
+            qty=qty,
+            side=OrderSide.SELL,
+            type=OrderType.MARKET,
+            time_in_force=TimeInForce.DAY,
+            order_class=OrderClass.SIMPLE,
+            position_intent=PositionIntent.SELL_TO_CLOSE,
+            client_order_id=client_order_id,
+        )
+        try:
+            order = self.trading_client.submit_order(order_data=request)
+            order_id = str(getattr(order, "id", "") or "")
+            if order_id:
+                if not hasattr(self, "_last_exit_orders"):
+                    self._last_exit_orders = {}
+                self._last_exit_orders[symbol] = order_id
+            return {
+                "success": True,
+                "symbol": symbol,
+                "qty": qty,
+                "stage": stage,
+                "order_id": order_id,
+                "client_order_id": client_order_id,
+                "status": self._order_status(order),
+            }
+        except Exception as exc:
+            return {
+                "success": False,
+                "error": "tiered_exit_submit_failed",
+                "symbol": symbol,
+                "qty": qty,
+                "stage": stage,
+                "client_order_id": client_order_id,
+                "detail": str(exc),
+            }
+
+    def cancel_exit_order(self, symbol: str, order_id: Optional[str]) -> Dict[str, Any]:
+        """Cancel a pending tier close and confirm its terminal broker status."""
+        symbol = str(symbol).upper()
+        if not order_id:
+            return {"status": "absent", "symbol": symbol}
+        try:
+            order = self.trading_client.get_order_by_id(str(order_id))
+            status = self._order_status(order)
+        except Exception as exc:
+            return {"status": "query_failed", "symbol": symbol, "order_id": str(order_id), "error": str(exc)}
+        if status == "filled":
+            return {"status": "filled", "symbol": symbol, "order_id": str(order_id)}
+        if status in _TERMINAL_CANCEL_STATUSES:
+            return {"status": status, "symbol": symbol, "order_id": str(order_id)}
+        try:
+            self.trading_client.cancel_order_by_id(str(order_id))
+            refreshed = self.trading_client.get_order_by_id(str(order_id))
+            status = self._order_status(refreshed)
+        except Exception as exc:
+            return {"status": "cancel_failed", "symbol": symbol, "order_id": str(order_id), "error": str(exc)}
+        return {"status": status or "pending_cancel", "symbol": symbol, "order_id": str(order_id)}
+
+    def cancel_pending_tier_orders(self, symbol: str) -> Dict[str, Any]:
+        """Cancel any open tier close before a forced/full lifecycle close."""
+        symbol = str(symbol).upper()
+        try:
+            orders = self.get_open_orders([symbol], raise_on_error=True)
+        except Exception as exc:
+            return {"status": "query_failed", "symbol": symbol, "error": str(exc)}
+        tier_orders = [
+            order
+            for order in orders
+            if str(getattr(order, "symbol", "")).upper() == symbol
+            and str(getattr(order, "client_order_id", "") or "").startswith(_TIERED_EXIT_PREFIX)
+        ]
+        if not tier_orders:
+            return {"status": "absent", "symbol": symbol}
+        for order in tier_orders:
+            order_id = str(getattr(order, "id", "") or "")
+            status = self._order_status(order)
+            if status == "filled":
+                return {"status": "filled", "symbol": symbol, "order_id": order_id}
+            try:
+                self.trading_client.cancel_order_by_id(order_id)
+                refreshed = self.trading_client.get_order_by_id(order_id)
+                status = self._order_status(refreshed)
+            except Exception as exc:
+                return {"status": "cancel_failed", "symbol": symbol, "order_id": order_id, "error": str(exc)}
+            if status == "filled":
+                return {"status": "filled", "symbol": symbol, "order_id": order_id}
+            if status not in _TERMINAL_CANCEL_STATUSES:
+                return {"status": status or "pending_cancel", "symbol": symbol, "order_id": order_id}
+        return {"status": "canceled", "symbol": symbol}
+
+    def get_exit_order_status(
+        self,
+        symbol: str,
+        order_id: Optional[str] = None,
+        client_order_id: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """Recover a persisted tier close after a process restart."""
+        order = None
+        if order_id:
+            try:
+                order = self.trading_client.get_order_by_id(str(order_id))
+            except Exception as exc:
+                return {"status": "query_failed", "error": str(exc)}
+        elif client_order_id:
+            try:
+                order = self._find_order_by_client_order_id(str(symbol).upper(), client_order_id)
+            except Exception as exc:
+                return {"status": "query_failed", "error": str(exc)}
+        if order is None:
+            return {"status": "absent"}
+        return {
+            "status": self._order_status(order),
+            "order_id": str(getattr(order, "id", "") or ""),
+            "client_order_id": str(getattr(order, "client_order_id", "") or ""),
+            "filled_qty": self._float_or_none(getattr(order, "filled_qty", None)),
+            "filled_avg_price": self._float_or_none(getattr(order, "filled_avg_price", None)),
+        }
 
     def execute_signal_trade(self, signal: Any, state: Any) -> Optional[Dict[str, Any]]:
         """Build and submit an option order for a stock signal."""
@@ -366,6 +620,35 @@ class OptionsOrderManager:
             if not symbol or qty <= 0 or not entry_price:
                 continue
 
+            meta = order_meta.get(symbol, {})
+            state = (
+                (meta.get("tiered_exit_state") or meta.get("exit_state"))
+                if isinstance(meta, dict)
+                else None
+            )
+            if hasattr(state, "to_dict"):
+                state = state.to_dict()
+            elif isinstance(state, str):
+                try:
+                    state = json.loads(state)
+                except json.JSONDecodeError:
+                    state = None
+            if isinstance(state, dict) and state.get("pending_stage") and int(state.get("pending_qty") or 0) > 0:
+                # The tier sequence owns protection while a close is pending;
+                # re-attachment happens only after confirmed fill/cancel.
+                continue
+            desired_stop = None
+            if isinstance(state, dict):
+                desired_stop = self._float_or_none(state.get("active_stop_price"))
+            tiered_state_present = isinstance(state, dict) and bool(
+                state.get("policy_version") == "tiered_v1"
+            )
+            stop_price = self._round_option_price(
+                desired_stop
+                if desired_stop is not None and desired_stop > 0
+                else entry_price * (1.0 - float(self.options_settings.stop_loss_pct))
+            )
+
             matching = [
                 order
                 for order in open_orders
@@ -377,7 +660,17 @@ class OptionsOrderManager:
                     abs(self._float_or_none(getattr(order, "qty", None)) or 0.0)
                     for order in matching
                 )
-                if abs(protected_qty - qty) < 1e-9:
+                existing_prices = [
+                    self._float_or_none(getattr(order, "stop_price", None))
+                    for order in matching
+                ]
+                has_correct_price = any(
+                    price is not None and abs(price - stop_price) < 0.005
+                    for price in existing_prices
+                )
+                if abs(protected_qty - qty) < 1e-9 and (
+                    has_correct_price or not tiered_state_present
+                ):
                     continue
                 cancel_result = self.cancel_protective_stop(symbol)
                 if cancel_result.get("status") not in ("absent", "canceled"):
@@ -396,9 +689,6 @@ class OptionsOrderManager:
                     self._risk_events.append(event)
                     continue
 
-            stop_price = self._round_option_price(
-                entry_price * (1.0 - float(self.options_settings.stop_loss_pct))
-            )
             client_order_id = self._protective_client_order_id(symbol)
             request = StopOrderRequest(
                 symbol=symbol,
@@ -413,7 +703,6 @@ class OptionsOrderManager:
             )
             try:
                 order = self.trading_client.submit_order(order_data=request)
-                meta = order_meta.get(symbol, {})
                 details = {
                     "stop_order_id": str(getattr(order, "id", "") or ""),
                     "entry_order_id": str(meta.get("order_id", "") or ""),
@@ -422,6 +711,8 @@ class OptionsOrderManager:
                     "position": pos,
                     "stop_price": stop_price,
                     "stop_loss_pct": float(self.options_settings.stop_loss_pct),
+                    "tiered_active_stop_price": desired_stop,
+                    "protection_replacement": bool(matching),
                     "time_in_force": "day",
                 }
                 event = {
@@ -536,6 +827,15 @@ class OptionsOrderManager:
             "filled_at": str(getattr(order, "filled_at", "") or ""),
             "is_protective_stop": protective or self._is_protective_stop(order),
         }
+
+    @staticmethod
+    def _tiered_client_order_id(
+        symbol: str, stage: str, lifecycle_id: Optional[str] = None
+    ) -> str:
+        digest = hashlib.sha1(
+            f"{lifecycle_id or symbol}:{str(stage).lower()}".encode("utf-8")
+        ).hexdigest()[:14]
+        return f"{_TIERED_EXIT_PREFIX}{str(stage).lower()}-{digest}"[:48]
 
     def pop_risk_events(self) -> List[Dict[str, Any]]:
         events = list(self._risk_events)

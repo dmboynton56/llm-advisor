@@ -250,6 +250,10 @@ class SQLiteStorage(StorageAdapter):
                 "asset_class": "TEXT",
                 "underlying_symbol": "TEXT",
                 "option_symbol": "TEXT",
+                "exit_state": "JSON",
+            },
+            "premarket_snapshots": {
+                "levels": "JSON",
             },
         }
         for table, columns in expected.items():
@@ -321,13 +325,14 @@ class SQLiteStorage(StorageAdapter):
         try:
             conn.execute("""
                 INSERT OR REPLACE INTO premarket_snapshots 
-                (date, symbol, htf_stats, bands_5m)
-                VALUES (?, ?, ?, ?)
+                (date, symbol, htf_stats, bands_5m, levels)
+                VALUES (?, ?, ?, ?, ?)
             """, (
                 date.isoformat(),
                 symbol,
                 self._json_dumps(snapshot.get("htf")),
-                self._json_dumps(snapshot.get("bands_5m"))
+                self._json_dumps(snapshot.get("bands_5m")),
+                self._json_dumps(snapshot.get("levels")),
             ))
             conn.commit()
         finally:
@@ -350,6 +355,7 @@ class SQLiteStorage(StorageAdapter):
                 "symbol": row["symbol"],
                 "htf": self._json_loads(row["htf_stats"]),
                 "bands_5m": self._json_loads(row["bands_5m"]),
+                "levels": self._json_loads(row["levels"]),
                 "created_at": row["created_at"]
             }
         finally:
@@ -518,8 +524,9 @@ class SQLiteStorage(StorageAdapter):
             conn.execute("""
                 INSERT OR REPLACE INTO positions 
                 (trade_id, symbol, asset_class, underlying_symbol, option_symbol, side,
-                 entry_price, current_price, stop_loss, take_profit, qty, unrealized_pnl)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                 entry_price, current_price, stop_loss, take_profit, qty, unrealized_pnl,
+                 exit_state)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """, (
                 position.get("trade_id"),
                 position.get("symbol", ""),
@@ -532,7 +539,8 @@ class SQLiteStorage(StorageAdapter):
                 position.get("stop_loss"),
                 position.get("take_profit"),
                 position.get("qty", 0),
-                position.get("unrealized_pnl", 0.0)
+                position.get("unrealized_pnl", 0.0),
+                self._json_dumps(position.get("exit_state")),
             ))
             conn.commit()
         finally:
@@ -702,16 +710,18 @@ class PostgreSQLStorage(StorageAdapter):
             with conn.cursor() as cur:
                 cur.execute("""
                     INSERT INTO premarket_snapshots 
-                    (date, symbol, htf_stats, bands_5m)
-                    VALUES (%s, %s, %s, %s)
+                    (date, symbol, htf_stats, bands_5m, levels)
+                    VALUES (%s, %s, %s, %s, %s)
                     ON CONFLICT (date, symbol) DO UPDATE SET
                         htf_stats = EXCLUDED.htf_stats,
-                        bands_5m = EXCLUDED.bands_5m
+                        bands_5m = EXCLUDED.bands_5m,
+                        levels = EXCLUDED.levels
                 """, (
                     date,
                     symbol,
                     json.dumps(snapshot.get("htf")) if snapshot.get("htf") else None,
-                    json.dumps(snapshot.get("bands_5m")) if snapshot.get("bands_5m") else None
+                    json.dumps(snapshot.get("bands_5m")) if snapshot.get("bands_5m") else None,
+                    json.dumps(snapshot.get("levels")) if snapshot.get("levels") else None,
                 ))
     
     def get_premarket_snapshot(self, date: date, symbol: str) -> Optional[Dict[str, Any]]:
@@ -900,11 +910,16 @@ class PostgreSQLStorage(StorageAdapter):
                 cur.execute("""
                     INSERT INTO positions 
                     (trade_id, symbol, asset_class, underlying_symbol, option_symbol, side,
-                     entry_price, current_price, stop_loss, take_profit, qty, unrealized_pnl)
-                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                     entry_price, current_price, stop_loss, take_profit, qty, unrealized_pnl,
+                     exit_state)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                     ON CONFLICT (trade_id) DO UPDATE SET
                         current_price = EXCLUDED.current_price,
+                        stop_loss = EXCLUDED.stop_loss,
+                        take_profit = EXCLUDED.take_profit,
+                        qty = EXCLUDED.qty,
                         unrealized_pnl = EXCLUDED.unrealized_pnl,
+                        exit_state = EXCLUDED.exit_state,
                         last_updated = CURRENT_TIMESTAMP
                 """, (
                     position.get("trade_id"),
@@ -918,7 +933,8 @@ class PostgreSQLStorage(StorageAdapter):
                     position.get("stop_loss"),
                     position.get("take_profit"),
                     position.get("qty", 0),
-                    position.get("unrealized_pnl", 0.0)
+                    position.get("unrealized_pnl", 0.0),
+                    json.dumps(position.get("exit_state")) if position.get("exit_state") is not None else None,
                 ))
     
     def delete_position_by_trade_pk(self, trade_pk: int) -> None:

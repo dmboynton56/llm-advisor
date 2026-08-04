@@ -35,9 +35,11 @@ jobs:
       OPTION_DTE_MAX: 14
       OPTION_DELTA_MIN: 0.35
       OPTION_DELTA_MAX: 0.55
-      MAX_RISK_PER_TRADE_PERCENT: 2.0
-      MAX_CONCURRENT_TRADES: 3
-      MAX_OPTION_PREMIUM_PER_TRADE: 2000
+      # Paper sizing trial: larger individual orders while keeping gross
+      # planned premium exposure near the prior 2% x 3 = 6% profile.
+      MAX_RISK_PER_TRADE_PERCENT: 3.0
+      MAX_CONCURRENT_TRADES: 2
+      MAX_OPTION_PREMIUM_PER_TRADE: 3000
       MAX_OPTION_BID_ASK_SPREAD_PCT: 0.15
       MIN_OPTION_OPEN_INTEREST: 100
       OPTION_STRIKE_WINDOW_PCT: 0.10
@@ -47,13 +49,27 @@ jobs:
       OPTION_FALLBACK_DTE_MAX: 21
       OPTION_FALLBACK_DELTA_MIN: 0.25
       OPTION_FALLBACK_DELTA_MAX: 0.65
-      OPTION_FALLBACK_MAX_PREMIUM_PER_TRADE: 2500
+      OPTION_FALLBACK_MAX_PREMIUM_PER_TRADE: 3000
       OPTION_FALLBACK_MAX_BID_ASK_SPREAD_PCT: 0.25
       OPTION_FALLBACK_MIN_OPEN_INTEREST: 25
       OPTION_FALLBACK_STRIKE_WINDOW_PCT: 0.15
       OPTION_FALLBACK_CONTRACT_LIMIT: 250
       OPTION_PROFIT_TARGET_PCT: 0.25
       OPTION_STOP_LOSS_PCT: 0.35
+      # Paper-only RR trial: enroll only newly filled SPY/QQQ option positions
+      # with at least four contracts.  Emergency flatten remains opt-in.
+      OPTION_TIERED_EXIT_ENABLED: true
+      OPTION_TIERED_EXIT_UNDERLYINGS: SPY,QQQ
+      OPTION_TIERED_MIN_CONTRACTS: 4
+      OPTION_TIERED_TP1_RETURN_PCT: 0.25
+      OPTION_TIERED_TP1_FRACTION: 0.50
+      OPTION_TIERED_TP2_RETURN_PCT: 0.50
+      OPTION_TIERED_TP2_FRACTION: 0.25
+      OPTION_TIERED_POST_TP1_STOP_RETURN_PCT: -0.05
+      OPTION_TIERED_RUNNER_FLOOR_RETURN_PCT: 0.25
+      OPTION_TIERED_RUNNER_GIVEBACK_PCT: 0.25
+      OPTION_TIERED_EXIT_FILL_TIMEOUT_SECONDS: 120
+      OPTION_TIERED_EMERGENCY_FLATTEN: false
       OPTION_MAX_HOLD_MINUTES: 2880
       OPTION_CLOSE_AT_ENTRY_WINDOW_END: false
       # Safety gate: do not restore overnight until the kill-loop protection test passes.
@@ -90,6 +106,29 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
+
+      - name: Tiered exit paper preflight
+        run: |
+          python -m pytest -q tests/unit/test_tiered_exit.py
+          python - <<'PY'
+          from src.core.config import Settings
+          settings = Settings.load()
+          if not settings.options.paper_only:
+              raise SystemExit("Tiered exit preflight requires OPTIONS_PAPER_ONLY=true")
+          if not settings.options.tiered_exit_enabled:
+              raise SystemExit("Tiered exit paper trial is not enabled")
+          if settings.risk.max_risk_per_trade_percent != 3.0:
+              raise SystemExit("Sizing trial requires MAX_RISK_PER_TRADE_PERCENT=3.0")
+          if settings.trading.max_concurrent_trades != 2:
+              raise SystemExit("Sizing trial requires MAX_CONCURRENT_TRADES=2")
+          if settings.options.max_premium_per_trade != 3000.0:
+              raise SystemExit("Sizing trial requires MAX_OPTION_PREMIUM_PER_TRADE=3000")
+          if settings.options.fallback_max_premium_per_trade != 3000.0:
+              raise SystemExit(
+                  "Sizing trial requires OPTION_FALLBACK_MAX_PREMIUM_PER_TRADE=3000"
+              )
+          print("Tiered exit paper preflight passed")
+          PY
 
       - name: Check market open
         run: python scripts/check_market_open.py

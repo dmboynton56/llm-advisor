@@ -495,6 +495,47 @@ def build_trade_lifecycles(
         symbol_open_uid[event.symbol] = uid
 
     for event in sorted(order_events, key=lambda row: row.event_ts):
+        if event.event_type != "option_partial_exit_filled":
+            continue
+        details = event.details
+        state = details.get("tiered_exit_state") if isinstance(details.get("tiered_exit_state"), dict) else {}
+        entry_order_id = str(details.get("entry_order_id") or "").strip() or None
+        uid = str(entry_order_id or symbol_open_uid.get(event.symbol) or state.get("lifecycle_id") or "")
+        if not uid:
+            uid = f"{event.run_date}:{event.symbol}:reconciled"
+        row = by_uid.get(uid)
+        if row is None:
+            row = TradeLifecycleRow(
+                lifecycle_uid=uid,
+                entry_order_id=entry_order_id,
+                exit_order_id=None,
+                symbol=event.symbol,
+                underlying_symbol=_underlying_from_occ(event.symbol),
+                opened_at=None,
+                closed_at=None,
+                filled_qty=None,
+                entry_fill_price=None,
+                exit_fill_price=None,
+                protective_stop_order_id=None,
+                protective_stop_price=None,
+                exit_reason=None,
+                realized_pnl=0.0,
+                status="open",
+                details={},
+            )
+            by_uid[uid] = row
+        row.details.setdefault("tiered_partial_fills", []).append(
+            {
+                "event_uid": event.event_uid,
+                "event_ts": event.event_ts,
+                "stage": details.get("stage"),
+                "filled_qty": _as_float(details.get("filled_qty")),
+                "filled_avg_price": _as_float(details.get("filled_avg_price")),
+                "realized_pnl": _as_float(details.get("realized_pnl")),
+            }
+        )
+
+    for event in sorted(order_events, key=lambda row: row.event_ts):
         if event.event_type != "option_exit_filled":
             continue
         details = event.details

@@ -46,6 +46,9 @@ class SymbolSnapshot:
     symbol: str
     htf: HTFStats
     bands_5m: Bands5m
+    # Observational levels carried into entry metadata.  They are intentionally
+    # separate from the live option stop/target policy.
+    levels: Optional[Dict[str, Optional[float]]] = None
 
 
 def _ema_slope(series: pd.Series, span: int = 20) -> float:
@@ -164,7 +167,34 @@ def build_premarket_snapshot(symbol: str,
                              k_mr=cfg.get("k1", 1.2),
                              k_tc=cfg.get("k2", 1.8),
                              k_filter=cfg.get("k3", 0.6))
-    return SymbolSnapshot(symbol=symbol, htf=htf, bands_5m=bands)
+    latest_close = float(m5["close"].iloc[-1]) if not m5.empty else float("nan")
+    atr = float(bands.atr_5m or 0.0)
+    # Use the last completed daily bar when available.  This remains shadow
+    # telemetry and never enters the option exit decision path.
+    prior = daily.iloc[-2] if len(daily) >= 2 else (daily.iloc[-1] if len(daily) else None)
+    prior_high = float(prior["high"]) if prior is not None else None
+    prior_low = float(prior["low"]) if prior is not None else None
+    prior_close = float(prior["close"]) if prior is not None else None
+    rr = float(cfg.get("min_rr_ratio", 1.5))
+    levels: Dict[str, Optional[float]] = {
+        "entry_mean": float(bands.mu),
+        "entry_sigma": float(bands.sigma),
+        "atr_5m": atr,
+        "atr_1r": atr,
+        "atr_2r": 2.0 * atr,
+        "long_atr_stop": latest_close - atr if latest_close == latest_close else None,
+        "long_atr_target": latest_close + rr * atr if latest_close == latest_close else None,
+        "long_1r": latest_close + atr if latest_close == latest_close else None,
+        "long_2r": latest_close + 2.0 * atr if latest_close == latest_close else None,
+        "short_atr_stop": latest_close + atr if latest_close == latest_close else None,
+        "short_atr_target": latest_close - rr * atr if latest_close == latest_close else None,
+        "short_1r": latest_close - atr if latest_close == latest_close else None,
+        "short_2r": latest_close - 2.0 * atr if latest_close == latest_close else None,
+        "prior_day_high": prior_high,
+        "prior_day_low": prior_low,
+        "prior_day_close": prior_close,
+    }
+    return SymbolSnapshot(symbol=symbol, htf=htf, bands_5m=bands, levels=levels)
 
 
 def assemble_snapshot(symbol_snapshots: Iterable[SymbolSnapshot], 
@@ -186,6 +216,7 @@ def assemble_snapshot(symbol_snapshots: Iterable[SymbolSnapshot],
                 "symbol": snap.symbol,
                 "htf": asdict(snap.htf),
                 "bands_5m": asdict(snap.bands_5m),
+                "levels": snap.levels or {},
             }
             for snap in symbol_snapshots
         ],
@@ -196,7 +227,8 @@ def assemble_snapshot(symbol_snapshots: Iterable[SymbolSnapshot],
         for snap in symbol_snapshots:
             snapshot_data = {
                 "htf": asdict(snap.htf),
-                "bands_5m": asdict(snap.bands_5m)
+                "bands_5m": asdict(snap.bands_5m),
+                "levels": snap.levels or {},
             }
             storage.save_premarket_snapshot(trading_date, snap.symbol, snapshot_data)
     
