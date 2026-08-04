@@ -608,6 +608,22 @@ def build_trade_lifecycles(
                 "exit_event_uid": event.event_uid,
                 "exit_order_status": exit_order.get("status"),
                 "protective_stop_fill": bool(exit_order.get("is_protective_stop")),
+                "initial_qty": _as_float(
+                    (details.get("tiered_exit_state") or {}).get("initial_qty")
+                )
+                if isinstance(details.get("tiered_exit_state"), dict)
+                else row.details.get("initial_qty"),
+                "final_exit_qty": max(
+                    0.0,
+                    (_as_float(details.get("actual_filled_qty")) or 0.0)
+                    - sum(
+                        (_as_float(fill.get("filled_qty")) or 0.0)
+                        for fill in row.details.get("tiered_partial_fills", [])
+                        if isinstance(fill, dict)
+                    ),
+                ),
+                "final_exit_price": _as_float(details.get("actual_exit_price")),
+                "tiered_exit_state": details.get("tiered_exit_state"),
             }
         )
 
