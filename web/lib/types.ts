@@ -20,6 +20,20 @@ export type RunRow = {
   final_equity: number | null;
 };
 
+export type JsonRecord = Record<string, unknown>;
+
+export type TradePosition = "long" | "short";
+export type OptionContractType = "call" | "put";
+export type TradeBias = "bullish" | "bearish";
+export type TradeEntryAction = "buy_to_open" | "sell_to_open";
+
+export type TradeDirection = {
+  position_side: TradePosition | null;
+  contract_type: OptionContractType | null;
+  signal_bias: TradeBias | null;
+  entry_action: TradeEntryAction | null;
+};
+
 export type Heartbeat = {
   source_date: string;
   heartbeat_ts: string;
@@ -28,7 +42,7 @@ export type Heartbeat = {
   backtest: boolean;
 };
 
-export type TradeRow = {
+export type TradeRow = TradeDirection & {
   trade_uid: string;
   run_date: string;
   order_id: string | null;
@@ -67,6 +81,7 @@ export type TradeLifecycleRow = {
   exit_reason: string | null;
   realized_pnl: number | null;
   status: string;
+  details: JsonRecord | null;
 };
 
 export type CellStats = {

@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react";
 import clsx from "clsx";
-import type { TradeRow } from "@/lib/types";
+import type { TradePosition, TradeRow } from "@/lib/types";
 import {
   dateEtIso,
   fmtDateTime,
@@ -27,6 +27,39 @@ function dteBucket(dte: number | null): string {
 }
 
 const DTE_OPTIONS = ["0", "1-3", "4-7", "8-14", "15+"];
+
+function positionForTrade(trade: TradeRow): TradePosition | "unknown" {
+  if (trade.position_side) return trade.position_side;
+  if (
+    trade.entry_action === "buy_to_open" ||
+    trade.side === "buy" ||
+    trade.side === "long"
+  ) {
+    return "long";
+  }
+  if (trade.entry_action === "sell_to_open" || trade.side === "short") return "short";
+  return "unknown";
+}
+
+function entryActionLabel(action: TradeRow["entry_action"]): string {
+  if (action === "buy_to_open") return "Buy to open";
+  if (action === "sell_to_open") return "Sell to open";
+  return "Unknown entry";
+}
+
+function badgeClass(
+  kind: "long" | "short" | "call" | "put" | "bullish" | "bearish" | "unknown",
+) {
+  if (kind === "long" || kind === "bullish") {
+    return "bg-emerald-500/10 text-emerald-400";
+  }
+  if (kind === "short" || kind === "bearish") {
+    return "bg-rose-500/10 text-rose-400";
+  }
+  if (kind === "call") return "bg-sky-500/10 text-sky-400";
+  if (kind === "put") return "bg-amber-500/10 text-amber-400";
+  return "bg-zinc-800 text-zinc-400";
+}
 
 function FilterSelect({
   label,
@@ -60,7 +93,9 @@ function FilterSelect({
 
 export function TradesTable({ trades }: { trades: TradeRow[] }) {
   const [underlying, setUnderlying] = useState("");
-  const [side, setSide] = useState("");
+  const [position, setPosition] = useState("");
+  const [contractType, setContractType] = useState("");
+  const [bias, setBias] = useState("");
   const [setup, setSetup] = useState("");
   const [dte, setDte] = useState("");
   const [entryDate, setEntryDate] = useState("");
@@ -90,20 +125,16 @@ export function TradesTable({ trades }: { trades: TradeRow[] }) {
     () =>
       trades.filter((t) => {
         if (underlying && (t.underlying_symbol ?? "") !== underlying) return false;
-        const normalizedSide =
-          t.side === "buy" || t.side === "long"
-            ? "long"
-            : t.side === "sell" || t.side === "short"
-              ? "short"
-              : (t.side ?? "");
-        if (side && normalizedSide !== side) return false;
+        if (position && positionForTrade(t) !== position) return false;
+        if (contractType && (t.contract_type ?? "") !== contractType) return false;
+        if (bias && (t.signal_bias ?? "") !== bias) return false;
         if (setup && (t.setup_type ?? "") !== setup) return false;
         if (dte && dteBucket(t.option_dte) !== dte) return false;
         if (entryDate && t.run_date !== entryDate) return false;
         if (exitDate && dateEtIso(t.exit_time) !== exitDate) return false;
         return true;
       }),
-    [trades, underlying, side, setup, dte, entryDate, exitDate],
+    [trades, underlying, position, contractType, bias, setup, dte, entryDate, exitDate],
   );
 
   const filteredPnl = filtered.reduce((acc, t) => acc + Number(t.pnl ?? 0), 0);
@@ -130,10 +161,22 @@ export function TradesTable({ trades }: { trades: TradeRow[] }) {
           options={underlyings}
         />
         <FilterSelect
-          label="Side"
-          value={side}
-          onChange={setSide}
+          label="Position"
+          value={position}
+          onChange={setPosition}
           options={["long", "short"]}
+        />
+        <FilterSelect
+          label="Contract"
+          value={contractType}
+          onChange={setContractType}
+          options={["call", "put"]}
+        />
+        <FilterSelect
+          label="Bias"
+          value={bias}
+          onChange={setBias}
+          options={["bullish", "bearish"]}
         />
         <FilterSelect
           label="Setup"
@@ -149,6 +192,9 @@ export function TradesTable({ trades }: { trades: TradeRow[] }) {
           </span>
         </span>
       </div>
+      <p className="text-xs text-zinc-500">
+        Position means whether we bought or sold the option. Contract means call or put. Bias means the expected stock direction.
+      </p>
 
       <div className="overflow-x-auto">
         <table className="w-full text-sm">
@@ -157,7 +203,9 @@ export function TradesTable({ trades }: { trades: TradeRow[] }) {
               <th className="py-2 pr-4 font-medium">Entry</th>
               <th className="py-2 pr-4 font-medium">Exit</th>
               <th className="py-2 pr-4 font-medium">Symbol</th>
-              <th className="py-2 pr-4 font-medium">Side</th>
+              <th className="py-2 pr-4 font-medium">Position</th>
+              <th className="py-2 pr-4 font-medium">Contract</th>
+              <th className="py-2 pr-4 font-medium">Bias</th>
               <th className="py-2 pr-4 font-medium">Setup</th>
               <th className="py-2 pr-4 font-medium">DTE</th>
               <th className="py-2 pr-4 font-medium">Qty</th>
@@ -190,15 +238,39 @@ export function TradesTable({ trades }: { trades: TradeRow[] }) {
                   ) : null}
                 </td>
                 <td className="py-2 pr-4">
+                  <div className="space-y-1">
+                    <span
+                      className={clsx(
+                        "rounded px-1.5 py-0.5 text-xs capitalize",
+                        badgeClass(positionForTrade(t)),
+                      )}
+                      title="Long means the option was bought to open; short means it was sold to open."
+                    >
+                      {positionForTrade(t)}
+                    </span>
+                    <div className="text-[10px] text-zinc-500">
+                      {entryActionLabel(t.entry_action)}
+                    </div>
+                  </div>
+                </td>
+                <td className="py-2 pr-4">
                   <span
                     className={clsx(
-                      "rounded px-1.5 py-0.5 text-xs",
-                      t.side === "buy" || t.side === "long"
-                        ? "bg-emerald-500/10 text-emerald-400"
-                        : "bg-rose-500/10 text-rose-400",
+                      "rounded px-1.5 py-0.5 text-xs capitalize",
+                      badgeClass(t.contract_type ?? "unknown"),
                     )}
                   >
-                    {t.side === "buy" || t.side === "long" ? "long" : "short"}
+                    {t.contract_type ?? "Unknown"}
+                  </span>
+                </td>
+                <td className="py-2 pr-4">
+                  <span
+                    className={clsx(
+                      "rounded px-1.5 py-0.5 text-xs capitalize",
+                      badgeClass(t.signal_bias ?? "unknown"),
+                    )}
+                  >
+                    {t.signal_bias ?? "Unknown"}
                   </span>
                 </td>
                 <td className="py-2 pr-4 text-zinc-300">{t.setup_type ?? "—"}</td>

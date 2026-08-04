@@ -60,7 +60,12 @@ class LLMClient:
 class OpenAILLMClient(LLMClient):
     """OpenAI API client."""
     
-    def __init__(self, model: str = "gpt-4o-mini", api_key: Optional[str] = None):
+    def __init__(
+        self,
+        model: str = "gpt-5.4-nano",
+        api_key: Optional[str] = None,
+        reasoning_effort: Optional[str] = None,
+    ):
         try:
             import openai
         except ImportError:
@@ -68,17 +73,22 @@ class OpenAILLMClient(LLMClient):
         
         self.client = openai.OpenAI(api_key=api_key or os.getenv("OPENAI_API_KEY"))
         self.model = model
+        self.reasoning_effort = reasoning_effort or os.getenv("OPENAI_REASONING_EFFORT", "low")
     
     def call_structured(self, prompt: str, schema: Dict[str, Any], timeout: Optional[float] = None) -> LLMResponse:
         """Call OpenAI with structured output."""
         start_time = time.time()
         
-        response = self.client.chat.completions.create(
-            model=self.model,
-            messages=[{"role": "user", "content": prompt}],
-            response_format={"type": "json_object"},
-            timeout=timeout,
-        )
+        request = {
+            "model": self.model,
+            "messages": [{"role": "user", "content": prompt}],
+            "response_format": {"type": "json_object"},
+            "timeout": timeout,
+        }
+        if self.reasoning_effort and self.model.startswith(("gpt-5", "o1", "o3", "o4")):
+            request["reasoning_effort"] = self.reasoning_effort
+
+        response = self.client.chat.completions.create(**request)
         
         latency_ms = (time.time() - start_time) * 1000
         content = json.loads(response.choices[0].message.content)
@@ -252,7 +262,7 @@ class GrokLLMClient(LLMClient):
 def create_llm_client(provider: str = "openai", model: Optional[str] = None) -> LLMClient:
     """Factory function to create LLM client."""
     if provider.lower() == "openai":
-        return OpenAILLMClient(model=model or "gpt-4o-mini")
+        return OpenAILLMClient(model=model or "gpt-5.4-nano")
     elif provider.lower() == "anthropic":
         return AnthropicLLMClient(model=model or "claude-3-haiku-20240307")
     elif provider.lower() == "google":
@@ -261,4 +271,3 @@ def create_llm_client(provider: str = "openai", model: Optional[str] = None) -> 
         return GrokLLMClient(model=model or "grok-beta")
     else:
         raise ValueError(f"Unknown provider: {provider}. Supported: openai, anthropic, google, grok")
-
