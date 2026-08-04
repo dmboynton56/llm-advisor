@@ -56,6 +56,57 @@ export async function getTrades(days = 90): Promise<TradeRow[]> {
   return rows ?? [];
 }
 
+type TradeEnrichmentRow = {
+  trade_uid: string;
+  run_date: string;
+  order_id: string | null;
+  symbol: string;
+  entry_time: string | null;
+  setup_type: string | null;
+  option_dte: number | null;
+  option_metadata: JsonRecord | null;
+};
+
+function asJsonRecord(value: unknown): JsonRecord | null {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? (value as JsonRecord)
+    : null;
+}
+
+function firstString(...values: unknown[]): string | null {
+  for (const value of values) {
+    if (typeof value === "string" && value.trim()) return value.trim();
+  }
+  return null;
+}
+
+function firstNumber(...values: unknown[]): number | null {
+  for (const value of values) {
+    if (typeof value === "number" && Number.isFinite(value)) return value;
+    if (typeof value === "string" && value.trim()) {
+      const parsed = Number(value);
+      if (Number.isFinite(parsed)) return parsed;
+    }
+  }
+  return null;
+}
+
+function optionDteFromSymbol(symbol: string, entryAt: string | null): number | null {
+  const match = /^([A-Z0-9.]{1,10})(\d{6})[CP]\d{8}$/i.exec(
+    symbol.replace(/\s+/g, "").toUpperCase(),
+  );
+  const entryDate = entryAt?.slice(0, 10);
+  if (!match || !entryDate) return null;
+
+  const expiry = match[2];
+  const expiryMs = Date.parse(
+    `20${expiry.slice(0, 2)}-${expiry.slice(2, 4)}-${expiry.slice(4, 6)}T00:00:00Z`,
+  );
+  const entryMs = Date.parse(`${entryDate}T00:00:00Z`);
+  if (!Number.isFinite(expiryMs) || !Number.isFinite(entryMs)) return null;
+  return Math.round((expiryMs - entryMs) / 86_400_000);
+}
+
 export async function getTradeLifecycles(
   days = 30,
 ): Promise<TradeLifecycleRow[]> {
@@ -64,11 +115,12 @@ export async function getTradeLifecycles(
     event_ts: string | null;
     order_id: string | null;
     symbol: string;
+    setup_type: string | null;
     side: string | null;
     details: JsonRecord | null;
   };
 
-  const [rows, executionEvents] = await Promise.all([
+  const [rows, executionEvents, tradeRows] = await Promise.all([
     supabaseSelect<TradeLifecycleRow>(
       "llm_advisor_trade_lifecycles",
       `select=lifecycle_uid,entry_order_id,exit_order_id,symbol,underlying_symbol,opened_at,closed_at,filled_qty,entry_fill_price,exit_fill_price,exit_reason,realized_pnl,status,details&closed_at=gte.${daysAgoIso(days)}T00:00:00Z&order=closed_at.desc&limit=1000`,
@@ -78,23 +130,36 @@ export async function getTradeLifecycles(
     // though the lifecycle table predates those columns.
     supabaseSelect<ExecutionEvent>(
       "llm_advisor_order_events",
-      `select=event_type,event_ts,order_id,symbol,side,details&event_type=eq.execution_succeeded&run_date=gte.${daysAgoIso(days)}&order=event_ts.desc&limit=2000`,
+      `select=event_type,event_ts,order_id,symbol,setup_type,side,details&event_type=eq.execution_succeeded&run_date=gte.${daysAgoIso(days)}&order=event_ts.desc&limit=2000`,
+    ),
+    // Some legacy lifecycle rows have no entry order id. The enriched trade
+    // row is the second historical source for setup/DTE in those cases.
+    supabaseSelect<TradeEnrichmentRow>(
+      "llm_advisor_backtest_trades",
+      `select=trade_uid,run_date,order_id,symbol,entry_time,setup_type,option_dte,option_metadata&run_date=gte.${daysAgoIso(days)}&order=run_date.desc,entry_time.desc&limit=1000`,
     ),
   ]);
 
   const eventsByOrderId = new Map<string, ExecutionEvent>();
   const eventsBySymbol = new Map<string, ExecutionEvent[]>();
+  const tradesByOrderId = new Map<string, TradeEnrichmentRow>();
+  const tradesBySymbol = new Map<string, TradeEnrichmentRow[]>();
+
+  for (const trade of tradeRows ?? []) {
+    if (trade.order_id) tradesByOrderId.set(trade.order_id, trade);
+    const symbol = trade.symbol.toUpperCase();
+    tradesBySymbol.set(symbol, [...(tradesBySymbol.get(symbol) ?? []), trade]);
+  }
+
+  function optionPlanFromEvent(event: ExecutionEvent | null): JsonRecord | null {
+    if (!event) return null;
+    const details = event.details ?? {};
+    const order = asJsonRecord(details.order);
+    return asJsonRecord(order?.option_plan) ?? asJsonRecord(details.option_plan);
+  }
 
   function optionSymbolFromEvent(event: ExecutionEvent): string | null {
-    const details = event.details ?? {};
-    const order = details.order;
-    if (!order || typeof order !== "object" || Array.isArray(order)) return null;
-    const optionPlan = (order as JsonRecord).option_plan;
-    if (!optionPlan || typeof optionPlan !== "object" || Array.isArray(optionPlan)) {
-      return null;
-    }
-    const optionSymbol = (optionPlan as JsonRecord).option_symbol;
-    return typeof optionSymbol === "string" ? optionSymbol : null;
+    return firstString(optionPlanFromEvent(event)?.option_symbol);
   }
 
   for (const event of executionEvents ?? []) {
@@ -121,46 +186,82 @@ export async function getTradeLifecycles(
     }, null as ExecutionEvent | null);
   }
 
+  function matchingTradeEnrichment(row: TradeLifecycleRow): TradeEnrichmentRow | null {
+    if (row.entry_order_id) {
+      const exact = tradesByOrderId.get(row.entry_order_id);
+      if (exact) return exact;
+    }
+
+    const candidates = tradesBySymbol.get(row.symbol.toUpperCase()) ?? [];
+    if (!candidates.length) return null;
+    const target = Date.parse(row.opened_at ?? row.closed_at ?? "");
+    return candidates.reduce((best, candidate) => {
+      if (!best) return candidate;
+      if (!Number.isFinite(target)) return best;
+      const bestDistance = Math.abs(Date.parse(best.entry_time ?? "") - target);
+      const candidateDistance = Math.abs(
+        Date.parse(candidate.entry_time ?? "") - target,
+      );
+      return candidateDistance < bestDistance ? candidate : best;
+    }, null as TradeEnrichmentRow | null);
+  }
+
   return (rows ?? []).map((row) => {
     const event = matchingExecutionEvent(row);
-    if (!event) return row;
+    const trade = matchingTradeEnrichment(row);
+    if (!event && !trade) return row;
 
-    const eventDetails = event.details ?? {};
-    const order = eventDetails.order;
-    const optionPlan =
-      order && typeof order === "object" && !Array.isArray(order)
-        ? (order as JsonRecord).option_plan
-        : null;
+    const eventDetails = event?.details ?? {};
+    const order = asJsonRecord(eventDetails.order);
+    const optionPlan = optionPlanFromEvent(event);
+    const metadata = trade?.option_metadata;
+    const tradePlan = asJsonRecord(eventDetails.trade_plan);
+    const optionSymbol =
+      firstString(optionPlan?.option_symbol, metadata?.option_symbol, row.symbol) ??
+      row.symbol;
     const direction = deriveTradeDirection({
       symbol: row.symbol,
-      side:
-        order && typeof order === "object" && !Array.isArray(order)
-          ? (order as JsonRecord).side
-          : null,
+      side: firstString(order?.side, optionPlan?.side, metadata?.side, event?.side),
       details: {
         trade_direction: {
-          position_side:
-            order && typeof order === "object" && !Array.isArray(order)
-              ? (order as JsonRecord).side
-              : null,
-          contract_type:
-            optionPlan && typeof optionPlan === "object" && !Array.isArray(optionPlan)
-              ? (optionPlan as JsonRecord).contract_type
-              : null,
-          signal_bias:
-            optionPlan && typeof optionPlan === "object" && !Array.isArray(optionPlan)
-              ? (optionPlan as JsonRecord).signal_side
-              : event.side,
-          entry_action:
-            optionPlan && typeof optionPlan === "object" && !Array.isArray(optionPlan)
-              ? (optionPlan as JsonRecord).position_intent
-              : null,
+          position_side: firstString(order?.side, optionPlan?.side, metadata?.side),
+          contract_type: firstString(
+            optionPlan?.contract_type,
+            metadata?.contract_type,
+          ),
+          signal_bias: firstString(
+            optionPlan?.signal_side,
+            metadata?.signal_side,
+            event?.side,
+          ),
+          entry_action: firstString(
+            optionPlan?.position_intent,
+            metadata?.position_intent,
+          ),
         },
       },
     });
 
+    const setupType = firstString(
+      row.setup_type,
+      trade?.setup_type,
+      optionPlan?.setup_type,
+      event?.setup_type,
+      metadata?.setup_type,
+      tradePlan?.setup,
+    );
+    const optionDte =
+      firstNumber(
+        row.option_dte,
+        trade?.option_dte,
+        optionPlan?.dte,
+        metadata?.dte,
+      ) ?? optionDteFromSymbol(optionSymbol, row.opened_at);
+
     return {
       ...row,
+      setup_type: setupType,
+      option_dte: optionDte,
       details: {
         ...(row.details ?? {}),
         trade_direction: tradeDirectionDetails(direction),

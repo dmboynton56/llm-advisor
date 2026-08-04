@@ -81,6 +81,7 @@ class TieredExitState:
     realized_pnl: float = 0.0
     realized_exit_qty: int = 0
     weighted_exit_value: float = 0.0
+    exit_fills: list[Dict[str, Any]] = field(default_factory=list)
     pending_stage: Optional[str] = None
     pending_qty: int = 0
     pending_order_id: Optional[str] = None
@@ -234,6 +235,17 @@ class TieredExitState:
         self.realized_exit_qty += qty
         self.weighted_exit_value += float(exit_price) * qty
         self.remaining_qty -= qty
+        self.exit_fills.append(
+            {
+                "kind": "partial_exit",
+                "stage": str(stage),
+                "timestamp": _utc_iso(now),
+                "qty": qty,
+                "price": float(exit_price),
+                "pnl": pnl,
+                "remaining_qty": self.remaining_qty,
+            }
+        )
         pending_stage = self.pending_stage
         pending_order_id = self.pending_order_id
         pending_client_order_id = self.pending_client_order_id
@@ -312,6 +324,7 @@ class TieredExitState:
             "partial_realized_pnl": self.realized_pnl,
             "realized_exit_qty": self.realized_exit_qty,
             "weighted_exit_value": self.weighted_exit_value,
+            "exit_fills": self.exit_fills,
             "pending_stage": self.pending_stage,
             "pending_qty": self.pending_qty,
             "pending_order_id": self.pending_order_id,

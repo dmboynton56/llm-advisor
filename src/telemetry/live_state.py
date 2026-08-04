@@ -137,6 +137,7 @@ def build_live_state_row(
     unrealized_total = 0.0
     for symbol, pos in positions_map.items():
         meta = order_meta.get(symbol, {})
+        tiered_state = _tiered_state_payload(meta)
         upl = float(pos.get("unrealized_pl") or 0.0)
         unrealized_total += upl
         asset_class = str(pos.get("asset_class") or "")
@@ -147,11 +148,18 @@ def build_live_state_row(
         open_positions.append(
             {
                 "symbol": symbol,
+                "position_id": (tiered_state or {}).get("lifecycle_id")
+                or meta.get("order_id")
+                or symbol,
                 "option_symbol": option_symbol,
                 "underlying_symbol": meta.get("underlying_symbol")
                 or (pos.get("underlying_symbol")),
                 "asset_class": asset_class or None,
                 "qty": float(pos.get("qty") or 0),
+                "initial_qty": (tiered_state or {}).get("initial_qty")
+                or float(pos.get("qty") or 0),
+                "remaining_qty": (tiered_state or {}).get("remaining_qty")
+                or float(pos.get("qty") or 0),
                 "side": str(pos.get("side") or ""),
                 "entry_price": pos.get("entry_price")
                 if pos.get("entry_price") is not None
@@ -159,10 +167,12 @@ def build_live_state_row(
                 "current_price": pos.get("current_price"),
                 "unrealized_pl": upl,
                 "unrealized_plpc": float(pos.get("unrealized_plpc") or 0.0),
+                "realized_pnl": (tiered_state or {}).get("realized_pnl") or 0.0,
                 "opened_at": _opened_at_iso(meta),
                 "setup_type": _setup_type_from_meta(meta),
                 "dte": dte,
-                "tiered_exit_state": _tiered_state_payload(meta),
+                "fills": (tiered_state or {}).get("exit_fills") or [],
+                "tiered_exit_state": tiered_state,
             }
         )
 

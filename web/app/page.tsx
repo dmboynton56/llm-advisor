@@ -3,6 +3,7 @@ import { DecisionLedger } from "@/components/DecisionLedger";
 import { Disclosure } from "@/components/Disclosure";
 import { EquityCurve } from "@/components/charts/EquityCurve";
 import { DailyPnlBars } from "@/components/charts/DailyPnlBars";
+import { PositionRail } from "@/components/PositionRail";
 import {
   EmptyState,
   Meter,
@@ -21,15 +22,14 @@ import {
   getRuns,
   getTradeLifecycles,
 } from "@/lib/data";
+import { getTodayOverviewPositions } from "@/lib/positions";
 import { supabaseConfigured, checkSupabaseAccess } from "@/lib/supabase";
 import {
   fmtDate,
   fmtPct,
   fmtSignedUsd,
   fmtUsd,
-  formatOccLabel,
   isRegularSessionEt,
-  normalizePlpc,
   pnlColor,
   relativeTime,
   dateEtIso,
@@ -139,6 +139,14 @@ export default async function OverviewPage() {
   const won30d = runs.reduce((acc, run) => acc + (run.winning_trades ?? 0), 0);
   const winRate30d = closed30d > 0 ? won30d / closed30d : null;
   const cohortPnl = runs.reduce((acc, run) => acc + Number(run.total_pnl ?? 0), 0);
+  // BQ-backed run rows often have no final_equity, while the account snapshot
+  // captured on the same entry date is the authoritative cohort fallback.
+  const snapshotEquityByDate = new Map<string, number>();
+  for (const snapshot of snapshots) {
+    if (snapshot.equity == null) continue;
+    const equity = Number(snapshot.equity);
+    if (Number.isFinite(equity)) snapshotEquityByDate.set(snapshot.snapshot_date, equity);
+  }
 
   const liveFresh = liveStateFresh(liveState);
   const inSession = isRegularSessionEt();
@@ -170,7 +178,7 @@ export default async function OverviewPage() {
         .filter(Boolean)
         .join(" · ");
 
-  const openPositions = liveState?.open_positions ?? [];
+  const todayPositions = getTodayOverviewPositions(liveState, lifecycles);
 
   return (
     <div className="grid items-start gap-9 lg:grid-cols-[minmax(0,1fr)_316px] lg:gap-11">
@@ -391,7 +399,12 @@ export default async function OverviewPage() {
                             {fmtSignedUsd(Number(run.total_pnl ?? 0))}
                           </td>
                           <td className="num whitespace-nowrap px-[18px] py-3 text-right text-ink-2">
-                            {fmtUsd(run.final_equity, 0)}
+                            {fmtUsd(
+                              run.final_equity ??
+                                snapshotEquityByDate.get(run.run_date) ??
+                                null,
+                              0,
+                            )}
                           </td>
                         </tr>
                       ))}
@@ -412,83 +425,12 @@ export default async function OverviewPage() {
         aria-label="Current session"
         className="flex flex-col gap-4.5 lg:sticky lg:top-[82px]"
       >
-        <Panel>
-          <PanelHead
-            title="Open positions"
-            aside={`${liveState?.open_position_count ?? 0} held`}
-          />
-          <p
-            className={clsx(
-              "num text-[24px] font-medium tracking-[-0.03em]",
-              pnlColor(liveState?.unrealized_pnl ?? null),
-            )}
-          >
-            {fmtSignedUsd(liveState?.unrealized_pnl ?? null)}
-          </p>
-
-          {openPositions.length > 0 ? (
-            <ul className="mt-3.5 flex flex-col">
-              {openPositions.map((position) => (
-                <li
-                  key={position.symbol}
-                  className="-mx-2.5 flex items-baseline justify-between gap-2.5 rounded-lg px-2.5 py-2 transition-colors hover:bg-sunk"
-                >
-                  <span className="num text-[12px] text-ink-2">
-                    {formatOccLabel(position.symbol)}
-                  </span>
-                  <span
-                    className={clsx(
-                      "num text-[12.5px] font-medium",
-                      pnlColor(position.unrealized_plpc),
-                    )}
-                  >
-                    {fmtPct(normalizePlpc(position.unrealized_plpc), 1)}
-                  </span>
-                </li>
-              ))}
-            </ul>
-          ) : (
-            <p className="mt-3 text-[12.5px] text-ink-3">
-              {liveState
-                ? "Flat — no open positions."
-                : "No live state recorded yet."}
-            </p>
-          )}
-
-          <div className="mt-3.5 flex gap-6 border-t border-line pt-3.5">
-            <div className="flex-1">
-              <span className="tag">Session</span>
-              <span className="num mt-1.5 block text-[15px] font-medium">
-                {liveState?.session_stats?.wins ?? 0}W{" "}
-                <span className="text-ink-3">/</span>{" "}
-                {liveState?.session_stats?.losses ?? 0}L
-              </span>
-            </div>
-            <div className="flex-1">
-              <span className="tag">Realized</span>
-              <span
-                className={clsx(
-                  "num mt-1.5 block text-[15px] font-medium",
-                  pnlColor(
-                    liveState?.session_stats?.realized_pnl != null
-                      ? Number(liveState.session_stats.realized_pnl)
-                      : null,
-                  ),
-                )}
-              >
-                {liveState?.session_stats?.realized_pnl != null
-                  ? fmtSignedUsd(Number(liveState.session_stats.realized_pnl))
-                  : "—"}
-              </span>
-            </div>
-          </div>
-
-          {!liveFresh && liveState ? (
-            <p className="mt-3 text-[11px] text-ink-3">
-              Last session · updated {relativeTime(liveAccountCapturedAt)}
-            </p>
-          ) : null}
-        </Panel>
+        <PositionRail
+          positions={todayPositions}
+          liveState={liveState}
+          liveFresh={liveFresh}
+          capturedAt={liveAccountCapturedAt}
+        />
 
         <Panel>
           <PanelHead

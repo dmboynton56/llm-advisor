@@ -111,6 +111,22 @@
 }
 
 @layer components {
+  .brand-logo-full {
+    display: block;
+  }
+
+  .brand-logo-mark {
+    display: none;
+  }
+
+  [data-theme="dark"] .brand-logo-full {
+    display: none;
+  }
+
+  [data-theme="dark"] .brand-logo-mark {
+    display: block;
+  }
+
   /* Hairline-separated figures. Written as plain CSS rather than a stack of
      Tailwind child variants so the responsive border resets stay legible and
      cannot fight each other on specificity. */
@@ -180,5 +196,27 @@
     animation-duration: 0.001ms !important;
     animation-iteration-count: 1 !important;
     transition-duration: 0.001ms !important;
+  }
+}
+
+/* Position detail keeps the chart roomy on desktop and becomes an edge-to-edge
+   sheet on a phone, where the rail itself has no spare width. */
+.position-dialog {
+  margin: auto;
+  max-width: min(760px, calc(100vw - 16px));
+  max-height: calc(100dvh - 16px);
+}
+
+.position-dialog::backdrop {
+  background: color-mix(in srgb, var(--ink) 42%, transparent);
+  backdrop-filter: blur(2px);
+}
+
+@media (max-width: 640px) {
+  .position-dialog {
+    width: calc(100vw - 12px);
+    max-width: none;
+    max-height: calc(100dvh - 12px);
+    border-radius: 16px;
   }
 }

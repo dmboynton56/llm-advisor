@@ -112,6 +112,44 @@ export type TradeLifecycleRow = {
   realized_pnl: number | null;
   status: string;
   details: JsonRecord | null;
+  /** Recovered from entry telemetry for legacy lifecycle rows. */
+  setup_type?: string | null;
+  option_dte?: number | null;
+};
+
+export type PositionFill = {
+  kind: "entry" | "partial_exit" | "final_exit";
+  stage?: string | null;
+  timestamp: string | null;
+  qty: number | null;
+  price: number | null;
+  pnl: number | null;
+  reason?: string | null;
+};
+
+/** Shared position shape for the overview list and detail dialog. */
+export type OverviewPosition = {
+  id: string;
+  status: "open" | "closed";
+  symbol: string;
+  option_symbol: string;
+  underlying_symbol: string | null;
+  side: string | null;
+  opened_at: string | null;
+  closed_at: string | null;
+  initial_qty: number | null;
+  remaining_qty: number | null;
+  entry_price: number | null;
+  current_price: number | null;
+  exit_price: number | null;
+  realized_pnl: number | null;
+  unrealized_pnl: number | null;
+  total_pnl: number | null;
+  return_pct: number | null;
+  exit_reason: string | null;
+  setup_type: string | null;
+  dte: number | null;
+  fills: PositionFill[];
 };
 
 export type CellStats = {
@@ -176,16 +214,21 @@ export type LiveExitPolicy = {
 
 export type LiveOpenPosition = {
   symbol: string;
+  position_id?: string | null;
   option_symbol?: string | null;
   underlying_symbol?: string | null;
   asset_class?: string | null;
   qty: number;
+  initial_qty?: number | null;
+  remaining_qty?: number | null;
   side: string;
   entry_price: number | null;
   current_price: number | null;
   unrealized_pl: number;
   unrealized_plpc: number;
   opened_at?: string | null;
+  realized_pnl?: number | null;
+  fills?: PositionFill[];
   setup_type?: string | null;
   dte?: number | null;
   stop_mark?: number | null;
@@ -234,10 +277,20 @@ export type LiveStateRow = {
     wins?: number;
     losses?: number;
     closed?: Array<{
+      position_id?: string;
       symbol: string;
+      option_symbol?: string | null;
+      underlying_symbol?: string | null;
+      side?: string | null;
+      opened_at?: string | null;
+      initial_qty?: number | null;
+      remaining_qty?: number | null;
+      entry_price?: number | null;
+      exit_price?: number | null;
       pnl: number;
       exit_reason: string;
       closed_at: string;
+      fills?: PositionFill[];
     }>;
     session_end_reason?: string;
   };

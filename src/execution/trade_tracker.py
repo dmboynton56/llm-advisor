@@ -18,6 +18,15 @@ logger = logging.getLogger(__name__)
 _OCC_OPTION_RE = re.compile(r"^[A-Z0-9.]{1,10}(?P<expiry>\d{6})[CP]\d{8}$")
 
 
+def _opened_at_iso(meta: Dict[str, Any]) -> Optional[str]:
+    value = meta.get("opened_at")
+    if isinstance(value, datetime):
+        if value.tzinfo is None:
+            value = value.replace(tzinfo=timezone.utc)
+        return value.astimezone(timezone.utc).isoformat()
+    return str(value) if isinstance(value, str) and value else None
+
+
 def option_expiration_date(symbol: str) -> Optional[date]:
     """Extract the YYMMDD expiration encoded in an OCC option symbol."""
     match = _OCC_OPTION_RE.fullmatch(str(symbol).upper().replace(" ", ""))
@@ -190,6 +199,17 @@ class TradeTracker:
                 if tier_state.stage != "fail_safe":
                     tier_state.stage = "closed"
                 tier_state.clear_pending(now)
+                tier_state.exit_fills.append(
+                    {
+                        "kind": "final_exit",
+                        "stage": "final",
+                        "timestamp": (fill or {}).get("filled_at") or now.isoformat(),
+                        "qty": exit_qty or old_pos.get("qty"),
+                        "price": exit_px or total_exit_price,
+                        "pnl": float(pnl),
+                        "remaining_qty": 0,
+                    }
+                )
             reason = str(context.get("reason") or "position_closed")
             if not context and (fill or {}).get("is_protective_stop"):
                 reason = "option_stop_loss"
@@ -198,6 +218,22 @@ class TradeTracker:
                 symbol=symbol,
                 pnl=total_pnl,
                 exit_reason=reason,
+                position=old_pos,
+                meta=meta,
+                tier_state=tier_state,
+                exit_price=exit_px or total_exit_price,
+                exit_qty=exit_qty or old_pos.get("qty"),
+                initial_qty=(
+                    tier_state.initial_qty
+                    if tier_state is not None
+                    else old_pos.get("qty")
+                ),
+                entry_price=(
+                    tier_state.entry_price
+                    if tier_state is not None
+                    else old_pos.get("entry_price") or old_pos.get("avg_entry_price")
+                ),
+                closed_at=(fill or {}).get("filled_at") or now.isoformat(),
             )
             if self._is_option_position(old_pos):
                 self._exit_events.append(
@@ -965,13 +1001,46 @@ class TradeTracker:
         """Closed trades accrued during this process lifetime (for live-state telemetry)."""
         return list(self.session_closed)
 
-    def _record_session_closed(self, symbol: str, pnl: float, exit_reason: str) -> None:
+    def _record_session_closed(
+        self,
+        symbol: str,
+        pnl: float,
+        exit_reason: str,
+        *,
+        position: Optional[Dict[str, Any]] = None,
+        meta: Optional[Dict[str, Any]] = None,
+        tier_state: Optional[TieredExitState] = None,
+        exit_price: Any = None,
+        exit_qty: Any = None,
+        initial_qty: Any = None,
+        entry_price: Any = None,
+        closed_at: Optional[str] = None,
+    ) -> None:
+        meta = meta or {}
+        state = tier_state.to_dict() if tier_state is not None else None
+        lifecycle_id = (
+            (state or {}).get("lifecycle_id")
+            or meta.get("order_id")
+            or meta.get("trade_pk")
+            or symbol
+        )
         self.session_closed.append(
             {
+                "position_id": str(lifecycle_id),
                 "symbol": symbol,
+                "option_symbol": meta.get("option_symbol") or symbol,
+                "underlying_symbol": meta.get("underlying_symbol")
+                or (position or {}).get("underlying_symbol"),
+                "side": (position or {}).get("side") or "long",
+                "opened_at": _opened_at_iso(meta),
+                "initial_qty": initial_qty,
+                "remaining_qty": 0,
+                "entry_price": entry_price,
+                "exit_price": exit_price,
                 "pnl": float(pnl),
                 "exit_reason": exit_reason,
-                "closed_at": datetime.now(timezone.utc).isoformat(),
+                "closed_at": closed_at or datetime.now(timezone.utc).isoformat(),
+                "fills": list((state or {}).get("exit_fills") or []),
             }
         )
 

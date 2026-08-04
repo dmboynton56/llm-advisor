@@ -8,7 +8,7 @@ import json
 import logging
 import os
 import sys
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
@@ -381,6 +381,29 @@ def dedupe_account_snapshots(rows: list[AccountSnapshotRow]) -> list[AccountSnap
     return sorted(by_key.values(), key=lambda x: (x.snapshot_date, x.captured_at))
 
 
+def backfill_run_equity_from_snapshots(
+    runs: list[RunRow], snapshots: list[AccountSnapshotRow]
+) -> list[RunRow]:
+    """Use the latest same-day account snapshot for missing cohort equity."""
+    latest: dict[str, AccountSnapshotRow] = {}
+    for snapshot in snapshots:
+        if snapshot.equity is None:
+            continue
+        previous = latest.get(snapshot.snapshot_date)
+        if previous is None or snapshot.captured_at > previous.captured_at:
+            latest[snapshot.snapshot_date] = snapshot
+
+    return [
+        replace(
+            run,
+            final_equity=latest[run.run_date].equity,
+        )
+        if run.final_equity is None and run.run_date in latest
+        else run
+        for run in runs
+    ]
+
+
 def dedupe_order_events(rows: list[OrderEventRow]) -> list[OrderEventRow]:
     by_uid: dict[str, OrderEventRow] = {}
     for row in rows:
@@ -585,6 +608,22 @@ def build_trade_lifecycles(
                 "exit_event_uid": event.event_uid,
                 "exit_order_status": exit_order.get("status"),
                 "protective_stop_fill": bool(exit_order.get("is_protective_stop")),
+                "initial_qty": _as_float(
+                    (details.get("tiered_exit_state") or {}).get("initial_qty")
+                )
+                if isinstance(details.get("tiered_exit_state"), dict)
+                else row.details.get("initial_qty"),
+                "final_exit_qty": max(
+                    0.0,
+                    (_as_float(details.get("actual_filled_qty")) or 0.0)
+                    - sum(
+                        (_as_float(fill.get("filled_qty")) or 0.0)
+                        for fill in row.details.get("tiered_partial_fills", [])
+                        if isinstance(fill, dict)
+                    ),
+                ),
+                "final_exit_price": _as_float(details.get("actual_exit_price")),
+                "tiered_exit_state": details.get("tiered_exit_state"),
             }
         )
 
@@ -1080,7 +1119,7 @@ def upsert_runs(cur, rows: list[RunRow], now_iso: str) -> int:
           total_pnl = EXCLUDED.total_pnl,
           average_win = EXCLUDED.average_win,
           average_loss = EXCLUDED.average_loss,
-          final_equity = EXCLUDED.final_equity,
+          final_equity = COALESCE(EXCLUDED.final_equity, llm_advisor_backtest_runs.final_equity),
           return_pct = EXCLUDED.return_pct,
           daily_return_pct = EXCLUDED.daily_return_pct,
           win_rate = EXCLUDED.win_rate,
@@ -1476,6 +1515,7 @@ def main() -> None:
     heartbeats = dedupe_heartbeats(heartbeats)
     order_events = dedupe_order_events(order_events)
     account_snapshots = dedupe_account_snapshots(account_snapshots)
+    runs = backfill_run_equity_from_snapshots(runs, account_snapshots)
     reconciliation_tolerance = float(
         os.getenv("BROKER_RECONCILIATION_TOLERANCE", "50")
     )
