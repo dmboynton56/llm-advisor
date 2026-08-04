@@ -45,6 +45,20 @@ export function fmtDateTime(value: string | null | undefined): string {
   }
 }
 
+export function fmtTimeEt(value: string | null | undefined): string {
+  if (!value) return "—";
+  try {
+    return new Date(value).toLocaleTimeString("en-US", {
+      timeZone: "America/New_York",
+      hour: "2-digit",
+      minute: "2-digit",
+      hour12: false,
+    });
+  } catch {
+    return "—";
+  }
+}
+
 export function dateEtIso(
   value: Date | string | null | undefined = new Date(),
 ): string {
@@ -77,8 +91,8 @@ export function relativeTime(value: string | null | undefined): string {
 }
 
 export function pnlColor(value: number | null | undefined): string {
-  if (value === null || value === undefined || value === 0) return "text-zinc-400";
-  return value > 0 ? "text-emerald-400" : "text-rose-400";
+  if (value === null || value === undefined || value === 0) return "text-ink-2";
+  return value > 0 ? "text-gain" : "text-loss";
 }
 
 /** OCC option symbol: ROOT + YYMMDD + C/P + strike*1000 (8 digits). */

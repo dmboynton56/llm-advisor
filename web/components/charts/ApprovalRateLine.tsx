@@ -9,6 +9,13 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
+import {
+  AXIS_LINE,
+  AXIS_TICK,
+  GRID_STROKE,
+  TOOLTIP_CONTENT_STYLE,
+  TOOLTIP_LABEL_STYLE,
+} from "./chartTheme";
 
 export type ApprovalPoint = {
   label: string;
@@ -21,16 +28,16 @@ export function ApprovalRateLine({ data }: { data: ApprovalPoint[] }) {
     <div className="h-64 w-full">
       <ResponsiveContainer width="100%" height="100%">
         <LineChart data={data} margin={{ top: 8, right: 8, bottom: 0, left: 8 }}>
-          <CartesianGrid stroke="#27272a" strokeDasharray="3 3" vertical={false} />
+          <CartesianGrid stroke={GRID_STROKE} strokeDasharray="3 4" vertical={false} />
           <XAxis
             dataKey="label"
-            tick={{ fill: "#71717a", fontSize: 11 }}
+            tick={AXIS_TICK}
             tickLine={false}
-            axisLine={{ stroke: "#27272a" }}
+            axisLine={{ stroke: AXIS_LINE }}
             minTickGap={30}
           />
           <YAxis
-            tick={{ fill: "#71717a", fontSize: 11 }}
+            tick={AXIS_TICK}
             tickLine={false}
             axisLine={false}
             width={48}
@@ -38,13 +45,8 @@ export function ApprovalRateLine({ data }: { data: ApprovalPoint[] }) {
             tickFormatter={(v: number) => `${Math.round(v * 100)}%`}
           />
           <Tooltip
-            contentStyle={{
-              backgroundColor: "#18181b",
-              border: "1px solid #3f3f46",
-              borderRadius: 8,
-              fontSize: 12,
-            }}
-            labelStyle={{ color: "#a1a1aa" }}
+            contentStyle={TOOLTIP_CONTENT_STYLE}
+            labelStyle={TOOLTIP_LABEL_STYLE}
             formatter={(value, name) => {
               if (name === "approvalRate") {
                 return [`${(Number(value) * 100).toFixed(0)}%`, "Approval rate"];
@@ -52,12 +54,14 @@ export function ApprovalRateLine({ data }: { data: ApprovalPoint[] }) {
               return [String(value), "Decisions"];
             }}
           />
+          {/* The gate's own behaviour is not a P&L quantity, so it stays achromatic. */}
           <Line
             type="monotone"
             dataKey="approvalRate"
-            stroke="#a78bfa"
+            stroke="var(--ink)"
             strokeWidth={2}
-            dot={{ r: 3, fill: "#a78bfa" }}
+            dot={{ r: 2.5, fill: "var(--ink)", strokeWidth: 0 }}
+            activeDot={{ r: 4, fill: "var(--card)", stroke: "var(--ink)", strokeWidth: 2 }}
           />
         </LineChart>
       </ResponsiveContainer>

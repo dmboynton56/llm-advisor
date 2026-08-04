@@ -1,6 +1,9 @@
 import { supabaseSelect } from "@/lib/supabase";
 import type {
   AccountSnapshot,
+  Decision,
+  DecisionEvent,
+  DecisionLog,
   Heartbeat,
   JsonRecord,
   LiveStateRow,
@@ -180,6 +183,87 @@ export async function getValidationEvents(days = 30): Promise<ValidationEvent[]>
     `select=run_date,event_type&event_type=in.(validation_approved,validation_rejected)&run_date=gte.${daysAgoIso(days)}&order=run_date.asc&limit=5000`,
   );
   return rows ?? [];
+}
+
+const DECISION_EVENT_TYPES = [
+  "signal_detected",
+  "validation_approved",
+  "validation_rejected",
+  "validation_error",
+  "execution_succeeded",
+] as const;
+
+function decisionText(details: JsonRecord | null, keys: string[]): string | null {
+  if (!details) return null;
+  for (const key of keys) {
+    const value = details[key];
+    if (typeof value === "string" && value.trim()) return value.trim();
+  }
+  return null;
+}
+
+/**
+ * The most recent session's signals and the verdict the model gave each one.
+ * Scoped to a single run_date so the ledger always describes one session
+ * rather than blending days.
+ */
+export async function getDecisionLog(limit = 12): Promise<DecisionLog> {
+  const rows = await supabaseSelect<DecisionEvent>(
+    "llm_advisor_order_events",
+    `select=run_date,event_ts,event_type,symbol,setup_type,side,details&event_type=in.(${DECISION_EVENT_TYPES.join(
+      ",",
+    )})&run_date=gte.${daysAgoIso(7)}&order=event_ts.desc&limit=500`,
+  );
+
+  const empty: DecisionLog = {
+    runDate: null,
+    decisions: [],
+    signals: 0,
+    approved: 0,
+    filled: 0,
+  };
+  if (!rows?.length) return empty;
+
+  const runDate = rows.reduce(
+    (latest, row) => (row.run_date > latest ? row.run_date : latest),
+    rows[0].run_date,
+  );
+  const sessionRows = rows.filter((row) => row.run_date === runDate);
+
+  const decisions: Decision[] = sessionRows
+    .filter(
+      (row) =>
+        row.event_type === "validation_approved" ||
+        row.event_type === "validation_rejected" ||
+        row.event_type === "validation_error",
+    )
+    .slice(0, limit)
+    .map((row, index) => {
+      const confidence = row.details?.confidence;
+      return {
+        key: `${row.event_ts ?? row.run_date}-${row.symbol}-${index}`,
+        eventTs: row.event_ts,
+        symbol: row.symbol,
+        setupType: row.setup_type,
+        verdict:
+          row.event_type === "validation_approved" ? "approved" : "vetoed",
+        // Approved and rejected events both carry the model's `reasoning`;
+        // validation_error carries `reason`/`error` instead.
+        reason: decisionText(row.details, ["reasoning", "reason", "error"]),
+        confidence: typeof confidence === "number" ? confidence : null,
+      };
+    });
+
+  const countOf = (eventType: string) =>
+    sessionRows.filter((row) => row.event_type === eventType).length;
+
+  return {
+    runDate,
+    decisions,
+    signals: countOf("signal_detected"),
+    approved: countOf("validation_approved"),
+    filled: countOf("execution_succeeded"),
+  };
 }
 
 export async function getLiveState(

@@ -1,5 +1,6 @@
 import { LockKeyhole } from "lucide-react";
 import { notFound } from "next/navigation";
+import { Panel } from "@/components/ui";
 import { unlockCommandCenter } from "../actions";
 
 export const dynamic = "force-dynamic";
@@ -14,38 +15,47 @@ export default async function CommandCenterLogin({
   const passwordConfigured = Boolean(process.env.COMMAND_CENTER_PASSWORD);
 
   return (
-    <div className="mx-auto max-w-md rounded-xl border border-zinc-800 bg-zinc-900/60 p-6 shadow-2xl shadow-black/20">
-      <div className="flex size-10 items-center justify-center rounded-lg bg-emerald-500/10 text-emerald-400">
+    <Panel className="mx-auto max-w-md p-6">
+      <div className="grid size-10 place-items-center rounded-panel border border-line-2 text-ink">
         <LockKeyhole className="size-5" />
       </div>
-      <h1 className="mt-4 text-xl font-semibold">Private command center</h1>
-      <p className="mt-2 text-sm text-zinc-400">
+      <h1 className="mt-4 text-[22px] font-semibold tracking-[-0.022em]">
+        Private command center
+      </h1>
+      <p className="mt-2 text-[13px] text-ink-2">
         Enter the shared operator password. This lightweight gate is a scaffold;
         use identity-backed authentication before connecting a brokerage account.
       </p>
-      <form action={unlockCommandCenter} className="mt-6 space-y-3">
-        <label className="block text-xs font-medium uppercase tracking-wide text-zinc-500">
+
+      <form action={unlockCommandCenter} className="mt-6 flex flex-col gap-3">
+        <label className="tag block">
           Password
           <input
             type="password"
             name="password"
             required
             disabled={!passwordConfigured}
-            className="mt-2 w-full rounded-md border border-zinc-700 bg-zinc-950 px-3 py-2 text-sm text-zinc-100 outline-none focus:border-emerald-500"
+            className="mt-2 w-full rounded-lg border border-line-2 bg-paper px-3 py-2 font-sans text-[13px] normal-case tracking-normal text-ink outline-none transition-colors focus:border-ink-3 disabled:opacity-50"
           />
         </label>
-        {error ? <p className="text-sm text-rose-400">Password not accepted.</p> : null}
-        {!passwordConfigured ? (
-          <p className="text-sm text-amber-400">COMMAND_CENTER_PASSWORD is not configured.</p>
+
+        {error ? (
+          <p className="text-[13px] text-loss">Password not accepted.</p>
         ) : null}
+        {!passwordConfigured ? (
+          <p className="text-[13px] text-ink-2">
+            COMMAND_CENTER_PASSWORD is not configured.
+          </p>
+        ) : null}
+
         <button
           type="submit"
           disabled={!passwordConfigured}
-          className="w-full rounded-md bg-emerald-500 px-3 py-2 text-sm font-medium text-zinc-950 hover:bg-emerald-400 disabled:cursor-not-allowed disabled:opacity-40"
+          className="w-full rounded-lg bg-ink px-3 py-2.5 text-[13px] font-medium text-paper transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40"
         >
           Unlock
         </button>
       </form>
-    </div>
+    </Panel>
   );
 }

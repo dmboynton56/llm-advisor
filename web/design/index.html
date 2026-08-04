@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>LLM Advisor — overview directions</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+:root { color-scheme: dark; --bg:#0D0F12; --card:#15181D; --line:rgba(255,255,255,.1); --t:#ECEEEA; --t2:#9AA096; --t3:#7C8279; }
+*,*::before,*::after { box-sizing:border-box; }
+body { margin:0; background:var(--bg); color:var(--t); font-family:'Instrument Sans',system-ui,sans-serif; line-height:1.5; -webkit-font-smoothing:antialiased; }
+.wrap { max-width:900px; margin:0 auto; padding:72px 28px 80px; }
+.tag { font-family:'IBM Plex Mono',monospace; font-size:10.5px; letter-spacing:.11em; text-transform:uppercase; color:var(--t3); }
+h1 { margin:14px 0 0; font-size:30px; font-weight:600; letter-spacing:-.025em; }
+.lede { margin-top:12px; color:var(--t2); font-size:15px; max-width:60ch; }
+.grid { display:grid; grid-template-columns:1fr 1fr; gap:18px; margin-top:40px; }
+.card { display:block; text-decoration:none; color:inherit; background:var(--card); border:1px solid var(--line); border-radius:16px; padding:24px; transition:border-color .18s ease, transform .18s ease; }
+.card:hover { border-color:rgba(255,255,255,.26); transform:translateY(-2px); }
+.card h2 { margin:10px 0 0; font-size:19px; font-weight:600; letter-spacing:-.02em; }
+.card p { margin:10px 0 0; font-size:13.5px; color:var(--t2); }
+.swatches { display:flex; gap:6px; margin-top:18px; }
+.sw { width:26px; height:26px; border-radius:7px; border:1px solid var(--line); }
+dl { margin:18px 0 0; font-size:12.5px; }
+dt { font-family:'IBM Plex Mono',monospace; font-size:10px; letter-spacing:.09em; text-transform:uppercase; color:var(--t3); margin-top:10px; }
+dd { margin:2px 0 0; color:var(--t2); }
+.go { display:inline-block; margin-top:20px; font-family:'IBM Plex Mono',monospace; font-size:12px; color:var(--t); border-bottom:1px solid var(--line); padding-bottom:2px; }
+@media (max-width:720px) { .grid { grid-template-columns:1fr; } .wrap { padding-top:48px; } }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <p class="tag">Overview page · two directions</p>
+  <h1>Pick a theme, then it carries across the site.</h1>
+  <p class="lede">Same data, same information density, two different points of view about what this dashboard is for. Both ship dark and light modes — use the toggle in each header.</p>
+
+  <div class="grid">
+    <a class="card" href="overview-mock.html">
+      <p class="tag">Direction A</p>
+      <h2>Tape</h2>
+      <p>The balance leads. A brokerage-style hero number over a scrubbable equity curve, with the trading day drawn as a single track under the header — fills appear on it as notches as the session runs.</p>
+      <div class="swatches">
+        <span class="sw" style="background:#0A0C12"></span>
+        <span class="sw" style="background:#17C98F"></span>
+        <span class="sw" style="background:#FF5D5D"></span>
+        <span class="sw" style="background:#8B7CFF"></span>
+      </div>
+      <dl>
+        <dt>Type</dt><dd>Archivo display · Inter body · JetBrains Mono</dd>
+        <dt>Surface</dt><dd>Dark-first, hairline borders, compact</dd>
+        <dt>Signature</dt><dd>The session ribbon</dd>
+      </dl>
+      <span class="go">Open direction A →</span>
+    </a>
+
+    <a class="card" href="overview-mock-b.html">
+      <p class="tag">Direction B</p>
+      <h2>Ledger</h2>
+      <p>The decisions lead. A sticky rail keeps today's signals and the model's verdicts beside the numbers, and the equity curve carries a dotted baseline showing what taking every signal would have done.</p>
+      <div class="swatches">
+        <span class="sw" style="background:#F3F4F1"></span>
+        <span class="sw" style="background:#131512"></span>
+        <span class="sw" style="background:#00805A"></span>
+        <span class="sw" style="background:#C0392B"></span>
+      </div>
+      <dl>
+        <dt>Type</dt><dd>Instrument Sans · IBM Plex Mono for every number</dd>
+        <dt>Surface</dt><dd>Light-first, soft elevation, roomier</dd>
+        <dt>Signature</dt><dd>The decision ledger</dd>
+      </dl>
+      <span class="go">Open direction B →</span>
+    </a>
+  </div>
+</div>
+</body>
+</html>

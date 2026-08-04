@@ -3,20 +3,29 @@
 import {
   Bar,
   BarChart,
-  CartesianGrid,
   Cell,
+  LabelList,
   ResponsiveContainer,
   Tooltip,
   XAxis,
   YAxis,
 } from "recharts";
+import {
+  AXIS_LINE,
+  AXIS_TICK,
+  TOOLTIP_CONTENT_STYLE,
+  TOOLTIP_CURSOR_FILL,
+  TOOLTIP_LABEL_STYLE,
+} from "./chartTheme";
 
 export type FunnelStage = {
   stage: string;
   count: number;
 };
 
-const STAGE_COLORS = ["#60a5fa", "#a78bfa", "#fbbf24", "#34d399"];
+// An ink ramp rather than four hues: the darker the bar, the further the
+// signal survived.
+const STAGE_FILLS = ["var(--ink-3)", "var(--ink-3)", "var(--ink-2)", "var(--ink)"];
 
 export function FunnelBars({ data }: { data: FunnelStage[] }) {
   return (
@@ -25,38 +34,41 @@ export function FunnelBars({ data }: { data: FunnelStage[] }) {
         <BarChart
           data={data}
           layout="vertical"
-          margin={{ top: 8, right: 24, bottom: 0, left: 8 }}
+          margin={{ top: 8, right: 40, bottom: 0, left: 8 }}
         >
-          <CartesianGrid stroke="#27272a" strokeDasharray="3 3" horizontal={false} />
           <XAxis
             type="number"
-            tick={{ fill: "#71717a", fontSize: 11 }}
+            tick={AXIS_TICK}
             tickLine={false}
-            axisLine={{ stroke: "#27272a" }}
+            axisLine={{ stroke: AXIS_LINE }}
             allowDecimals={false}
           />
           <YAxis
             type="category"
             dataKey="stage"
-            tick={{ fill: "#a1a1aa", fontSize: 12 }}
+            tick={{ ...AXIS_TICK, fill: "var(--ink-2)", fontFamily: undefined, fontSize: 12 }}
             tickLine={false}
             axisLine={false}
             width={150}
           />
           <Tooltip
-            cursor={{ fill: "rgba(63,63,70,0.25)" }}
-            contentStyle={{
-              backgroundColor: "#18181b",
-              border: "1px solid #3f3f46",
-              borderRadius: 8,
-              fontSize: 12,
-            }}
-            labelStyle={{ color: "#a1a1aa" }}
+            cursor={{ fill: TOOLTIP_CURSOR_FILL }}
+            contentStyle={TOOLTIP_CONTENT_STYLE}
+            labelStyle={TOOLTIP_LABEL_STYLE}
           />
-          <Bar dataKey="count" radius={[0, 3, 3, 0]} barSize={26}>
+          <Bar dataKey="count" radius={[0, 4, 4, 0]} barSize={26}>
             {data.map((point, i) => (
-              <Cell key={point.stage} fill={STAGE_COLORS[i % STAGE_COLORS.length]} />
+              <Cell key={point.stage} fill={STAGE_FILLS[i % STAGE_FILLS.length]} />
             ))}
+            <LabelList
+              dataKey="count"
+              position="right"
+              style={{
+                fill: "var(--ink-2)",
+                fontSize: 11,
+                fontFamily: "var(--font-plex-mono)",
+              }}
+            />
           </Bar>
         </BarChart>
       </ResponsiveContainer>

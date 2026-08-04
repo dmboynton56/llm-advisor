@@ -1,0 +1,1015 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>LLM Advisor — Overview (design mock)</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@100..125,400..700&family=Inter:wght@400..600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+/* ============================================================
+   TOKENS
+   ============================================================ */
+:root {
+  --ground:      #0A0C12;
+  --surface:     #11141C;
+  --surface-2:   #171B25;
+  --line:        #20252F;
+  --line-strong: #2C323D;
+  --text:        #EDEFF3;
+  --text-2:      #98A0AD;
+  --text-3:      #808894;
+
+  --gain:        #17C98F;
+  --gain-soft:   rgba(23, 201, 143, 0.13);
+  --loss:        #FF5D5D;
+  --loss-soft:   rgba(255, 93, 93, 0.13);
+  --model:       #8B7CFF;
+  --model-soft:  rgba(139, 124, 255, 0.14);
+
+  --shadow: 0 1px 2px rgba(0,0,0,.4), 0 8px 24px -12px rgba(0,0,0,.6);
+
+  --r-sm: 6px;
+  --r:    10px;
+  --r-lg: 14px;
+
+  --font-display: 'Archivo', system-ui, sans-serif;
+  --font-body:    'Inter', system-ui, sans-serif;
+  --font-mono:    'JetBrains Mono', ui-monospace, monospace;
+
+  --page: 1120px;
+}
+
+[data-theme="light"] {
+  --ground:      #FBFBFA;
+  --surface:     #FFFFFF;
+  --surface-2:   #F5F5F3;
+  --line:        #E7E7E2;
+  --line-strong: #D6D6D0;
+  --text:        #14161C;
+  --text-2:      #5C6270;
+  --text-3:      #676E7C;
+
+  --gain:        #007A5A;
+  --gain-soft:   rgba(0, 122, 90, 0.10);
+  --loss:        #C62F2F;
+  --loss-soft:   rgba(198, 47, 47, 0.09);
+  --model:       #6A4FFF;
+  --model-soft:  rgba(106, 79, 255, 0.10);
+
+  --shadow: 0 1px 2px rgba(16,18,24,.04), 0 8px 24px -14px rgba(16,18,24,.14);
+}
+
+/* ============================================================
+   BASE
+   ============================================================ */
+*, *::before, *::after { box-sizing: border-box; }
+/* clip, not hidden — `hidden` would break the sticky masthead */
+html { -webkit-text-size-adjust: 100%; overflow-x: clip; }
+body {
+  margin: 0;
+  background: var(--ground);
+  color: var(--text);
+  font-family: var(--font-body);
+  font-size: 14px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+  transition: background-color .28s ease, color .28s ease;
+}
+h1, h2, h3 { margin: 0; font-family: var(--font-display); font-weight: 600; font-stretch: 112%; letter-spacing: -0.012em; }
+p  { margin: 0; }
+ul { margin: 0; padding: 0; list-style: none; }
+a  { color: inherit; }
+button { font: inherit; color: inherit; background: none; border: none; padding: 0; cursor: pointer; }
+:focus-visible { outline: 2px solid var(--model); outline-offset: 2px; border-radius: 4px; }
+
+.mono { font-family: var(--font-mono); font-feature-settings: "zero" 1; }
+.num  { font-variant-numeric: tabular-nums; }
+.pos  { color: var(--gain); }
+.neg  { color: var(--loss); }
+.dim  { color: var(--text-2); }
+.dimmer { color: var(--text-3); }
+
+.wrap { max-width: var(--page); margin: 0 auto; padding: 0 24px; }
+
+/* Small caps utility label — used for every field name in the app. */
+.eyebrow {
+  font-family: var(--font-body);
+  font-size: 10.5px;
+  font-weight: 500;
+  letter-spacing: .09em;
+  text-transform: uppercase;
+  color: var(--text-3);
+}
+
+/* ============================================================
+   HEADER
+   ============================================================ */
+.masthead {
+  position: sticky; top: 0; z-index: 40;
+  background: color-mix(in srgb, var(--ground) 88%, transparent);
+  backdrop-filter: blur(14px) saturate(140%);
+  border-bottom: 1px solid var(--line);
+}
+.masthead-inner {
+  display: flex; align-items: center; gap: 24px;
+  height: 58px;
+}
+.brand { display: flex; align-items: center; gap: 10px; text-decoration: none; flex-shrink: 0; }
+.brand-mark {
+  width: 26px; height: 26px; border-radius: 8px;
+  background: var(--model-soft);
+  color: var(--model);
+  display: grid; place-items: center;
+}
+.brand-name {
+  font-family: var(--font-display); font-weight: 700; font-stretch: 116%;
+  font-size: 14px; letter-spacing: -.01em;
+}
+
+.nav {
+  display: flex; align-items: center; gap: 2px; margin-left: auto;
+  min-width: 0; overflow-x: auto;
+  scrollbar-width: none; -ms-overflow-style: none;
+}
+.nav::-webkit-scrollbar { display: none; }
+.nav-link {
+  position: relative;
+  padding: 7px 12px;
+  border-radius: var(--r-sm);
+  font-size: 13.5px;
+  color: var(--text-2);
+  text-decoration: none;
+  transition: color .16s ease, background-color .16s ease;
+  white-space: nowrap;
+}
+.nav-link:hover { color: var(--text); background: var(--surface-2); }
+.nav-link[aria-current="page"] { color: var(--text); font-weight: 500; }
+.nav-link[aria-current="page"]::after {
+  content: ""; position: absolute; left: 12px; right: 12px; bottom: -1px;
+  height: 2px; background: var(--text); border-radius: 2px 2px 0 0;
+}
+
+.theme-toggle {
+  margin-left: 8px; flex-shrink: 0;
+  width: 32px; height: 32px; border-radius: 999px;
+  border: 1px solid var(--line);
+  display: grid; place-items: center;
+  color: var(--text-2);
+  transition: color .16s ease, border-color .16s ease, background-color .16s ease;
+}
+.theme-toggle:hover { color: var(--text); border-color: var(--line-strong); background: var(--surface-2); }
+.theme-toggle .icon-sun  { display: none; }
+[data-theme="light"] .theme-toggle .icon-sun  { display: block; }
+[data-theme="light"] .theme-toggle .icon-moon { display: none; }
+
+/* ============================================================
+   SIGNATURE: SESSION RIBBON
+   the trading day, 9:30 -> 16:00, as a single track.
+   ============================================================ */
+.ribbon { border-bottom: 1px solid var(--line); background: var(--surface); }
+.ribbon-inner { padding: 12px 24px 0; max-width: var(--page); margin: 0 auto; }
+
+.ribbon-row {
+  display: flex; align-items: center; gap: 10px;
+  flex-wrap: wrap;
+  padding-bottom: 10px;
+}
+.pulse {
+  position: relative; width: 7px; height: 7px; border-radius: 999px;
+  background: var(--gain); flex-shrink: 0;
+}
+.pulse::after {
+  content: ""; position: absolute; inset: -4px; border-radius: 999px;
+  border: 1px solid var(--gain);
+  animation: ping 2.4s cubic-bezier(0,0,.2,1) infinite;
+}
+@keyframes ping {
+  0%   { transform: scale(.55); opacity: .9; }
+  75%, 100% { transform: scale(1.7); opacity: 0; }
+}
+.ribbon-state {
+  font-family: var(--font-display); font-weight: 700; font-stretch: 118%;
+  font-size: 11px; letter-spacing: .1em; text-transform: uppercase;
+  color: var(--gain);
+}
+.ribbon-meta { font-size: 12.5px; color: var(--text-2); }
+.ribbon-sep { color: var(--text-3); }
+.ribbon-positions { display: flex; gap: 6px; margin-left: auto; flex-wrap: wrap; }
+
+.holding {
+  display: inline-flex; align-items: baseline; gap: 7px;
+  padding: 3px 9px; border-radius: 999px;
+  border: 1px solid var(--line);
+  background: var(--ground);
+  font-size: 11.5px;
+}
+.holding-sym { font-family: var(--font-mono); color: var(--text-2); }
+.holding-pl  { font-weight: 500; font-variant-numeric: tabular-nums; }
+
+/* the track itself */
+.track { position: relative; height: 22px; }
+.track-rail {
+  position: absolute; left: 0; right: 0; top: 9px; height: 3px;
+  background: var(--surface-2); border-radius: 999px; overflow: hidden;
+}
+[data-theme="light"] .track-rail { background: #EBEBE6; }
+.track-fill {
+  position: absolute; inset: 0 auto 0 0; width: 0;
+  background: linear-gradient(90deg, color-mix(in srgb, var(--text-3) 55%, transparent), var(--text-2));
+  border-radius: 999px;
+  transition: width .8s cubic-bezier(.4,0,.2,1);
+}
+.track-head {
+  position: absolute; top: 6px; width: 9px; height: 9px; border-radius: 999px;
+  background: var(--gain);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--gain) 22%, transparent);
+  transform: translateX(-50%);
+  transition: left .8s cubic-bezier(.4,0,.2,1);
+}
+/* notches = real fills that happened today */
+.notch {
+  position: absolute; top: 4px; width: 2px; height: 13px; border-radius: 2px;
+  transform: translateX(-50%);
+  cursor: default;
+}
+.notch[data-kind="entry"] { background: var(--text-2); opacity: .85; }
+.notch[data-kind="win"]   { background: var(--gain); }
+.notch[data-kind="loss"]  { background: var(--loss); }
+.notch:hover { height: 17px; top: 2px; }
+.notch-tip {
+  position: absolute; bottom: 20px; left: 50%; transform: translateX(-50%);
+  padding: 5px 8px; border-radius: var(--r-sm);
+  background: var(--text); color: var(--ground);
+  font-family: var(--font-mono); font-size: 10.5px; white-space: nowrap;
+  opacity: 0; pointer-events: none; transition: opacity .12s ease;
+  z-index: 3;
+}
+.notch:hover .notch-tip { opacity: 1; }
+
+.track-scale {
+  display: flex; justify-content: space-between;
+  padding: 2px 0 9px;
+  font-family: var(--font-mono); font-size: 10px; color: var(--text-3);
+}
+
+/* closed-market variant */
+.ribbon[data-live="false"] .pulse { background: var(--text-3); }
+.ribbon[data-live="false"] .pulse::after { display: none; }
+.ribbon[data-live="false"] .ribbon-state { color: var(--text-3); }
+.ribbon[data-live="false"] .track-head { display: none; }
+.ribbon[data-live="false"] .track-fill { opacity: .45; }
+
+/* ============================================================
+   HERO
+   ============================================================ */
+main { padding-bottom: 64px; }
+
+.hero { padding: 44px 0 8px; }
+.hero-label { margin-bottom: 10px; }
+.hero-figure {
+  display: flex; align-items: baseline; gap: 18px; flex-wrap: wrap;
+}
+.hero-value {
+  font-family: var(--font-display);
+  font-weight: 700; font-stretch: 118%;
+  font-size: clamp(38px, 6.4vw, 58px);
+  line-height: 1;
+  letter-spacing: -0.028em;
+  font-variant-numeric: tabular-nums;
+}
+.hero-delta {
+  display: inline-flex; align-items: center; gap: 7px;
+  font-size: 15px; font-weight: 500;
+  font-variant-numeric: tabular-nums;
+  padding-bottom: 4px;
+}
+.hero-delta-caret { font-size: 11px; }
+.hero-context {
+  margin-top: 12px; font-size: 13px; color: var(--text-2);
+  min-height: 20px;
+}
+
+/* ============================================================
+   EQUITY CHART
+   ============================================================ */
+.chart-shell { position: relative; margin-top: 20px; }
+.chart-svg { display: block; width: 100%; height: 240px; overflow: visible; touch-action: pan-y; }
+.chart-line { fill: none; stroke: var(--gain); stroke-width: 1.75; stroke-linejoin: round; stroke-linecap: round; }
+.chart-line[data-trend="down"] { stroke: var(--loss); }
+.chart-area { stroke: none; }
+.chart-baseline { stroke: var(--line-strong); stroke-width: 1; stroke-dasharray: 3 4; }
+.chart-cursor { stroke: var(--text-3); stroke-width: 1; opacity: 0; }
+.chart-dot {
+  fill: var(--ground); stroke: var(--gain); stroke-width: 2.5; r: 4.5; opacity: 0;
+}
+.chart-dot[data-trend="down"] { stroke: var(--loss); }
+.chart-shell.is-scrubbing .chart-cursor,
+.chart-shell.is-scrubbing .chart-dot { opacity: 1; }
+
+.chart-foot {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 16px; margin-top: 14px; flex-wrap: wrap;
+}
+.range { display: inline-flex; gap: 2px; padding: 3px; background: var(--surface-2); border-radius: 999px; }
+.range-btn {
+  padding: 5px 13px; border-radius: 999px;
+  font-size: 12px; font-weight: 500; color: var(--text-2);
+  transition: color .16s ease, background-color .16s ease;
+}
+.range-btn:hover { color: var(--text); }
+.range-btn[aria-pressed="true"] { background: var(--surface); color: var(--text); box-shadow: var(--shadow); }
+[data-theme="light"] .range-btn[aria-pressed="true"] { background: #FFF; }
+.chart-note { font-size: 12px; color: var(--text-3); }
+
+/* ============================================================
+   STAT STRIP  (no boxes — hairlines only)
+   ============================================================ */
+.strip {
+  display: grid; grid-template-columns: repeat(4, 1fr);
+  margin-top: 40px;
+  border-top: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+}
+.stat { padding: 18px 20px; border-left: 1px solid var(--line); }
+.stat:first-child { border-left: none; padding-left: 0; }
+.stat-value {
+  margin-top: 7px;
+  font-family: var(--font-display); font-weight: 600; font-stretch: 110%;
+  font-size: 22px; letter-spacing: -.015em;
+  font-variant-numeric: tabular-nums;
+}
+.stat-hint { margin-top: 4px; font-size: 11.5px; color: var(--text-3); }
+.stat-hint .mono { font-size: 11px; }
+
+/* ============================================================
+   SECTIONS
+   ============================================================ */
+.section { margin-top: 48px; }
+.section-head {
+  display: flex; align-items: flex-end; justify-content: space-between;
+  gap: 16px; margin-bottom: 18px; flex-wrap: wrap;
+}
+.section-title { font-size: 16px; }
+.section-sub { margin-top: 4px; font-size: 12.5px; color: var(--text-3); max-width: 60ch; }
+.section-metric {
+  font-family: var(--font-display); font-weight: 600; font-stretch: 110%;
+  font-size: 19px; letter-spacing: -.015em; font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+/* bar chart */
+.bars { display: flex; align-items: flex-end; gap: 3px; height: 150px; }
+.bar-col {
+  flex: 1; display: flex; flex-direction: column; justify-content: flex-end;
+  height: 100%; position: relative; min-width: 0;
+}
+.bar {
+  border-radius: 3px 3px 0 0;
+  background: var(--gain);
+  transition: opacity .16s ease, transform .16s ease;
+  transform-origin: bottom;
+}
+.bar[data-sign="neg"] { background: var(--loss); border-radius: 0 0 3px 3px; }
+.bar-col:hover .bar { opacity: .78; }
+.bar-tip {
+  position: absolute; bottom: calc(100% + 8px); left: 50%; transform: translateX(-50%);
+  padding: 6px 9px; border-radius: var(--r-sm);
+  background: var(--text); color: var(--ground);
+  font-family: var(--font-mono); font-size: 10.5px; white-space: nowrap;
+  opacity: 0; pointer-events: none; transition: opacity .12s ease; z-index: 3;
+}
+.bar-col:hover .bar-tip { opacity: 1; }
+.bars-axis {
+  display: flex; justify-content: space-between; margin-top: 8px;
+  font-family: var(--font-mono); font-size: 10px; color: var(--text-3);
+}
+.bars-zero { height: 1px; background: var(--line); margin-top: 0; }
+
+/* ============================================================
+   DISCLOSURE  (entry-date cohorts)
+   ============================================================ */
+.disclosure {
+  border: 1px solid var(--line); border-radius: var(--r);
+  background: var(--surface);
+  overflow: hidden;
+}
+.disclosure-summary {
+  display: flex; align-items: center; gap: 14px;
+  width: 100%; padding: 16px 18px; text-align: left;
+  transition: background-color .16s ease;
+}
+.disclosure-summary:hover { background: var(--surface-2); }
+.chevron { color: var(--text-3); transition: transform .22s cubic-bezier(.4,0,.2,1); flex-shrink: 0; }
+.disclosure[data-open="true"] .chevron { transform: rotate(90deg); }
+.disclosure-title { font-family: var(--font-display); font-weight: 600; font-stretch: 110%; font-size: 14px; }
+.disclosure-sub { margin-top: 2px; font-size: 12px; color: var(--text-3); }
+.disclosure-aggregate {
+  margin-left: auto; display: flex; align-items: center; gap: 20px;
+  font-variant-numeric: tabular-nums;
+}
+.agg { text-align: right; }
+.agg-value { font-family: var(--font-display); font-weight: 600; font-stretch: 110%; font-size: 15px; }
+
+.disclosure-body {
+  display: grid; grid-template-rows: 0fr;
+  transition: grid-template-rows .3s cubic-bezier(.4,0,.2,1);
+}
+.disclosure[data-open="true"] .disclosure-body { grid-template-rows: 1fr; }
+.disclosure-body > div { overflow: hidden; }
+.table-scroll { overflow-x: auto; border-top: 1px solid var(--line); }
+
+table { width: 100%; border-collapse: collapse; font-size: 13px; }
+thead th {
+  padding: 11px 16px; text-align: left; white-space: nowrap;
+  font-family: var(--font-body); font-size: 10.5px; font-weight: 500;
+  letter-spacing: .09em; text-transform: uppercase; color: var(--text-3);
+  border-bottom: 1px solid var(--line);
+  background: var(--surface);
+}
+tbody td {
+  padding: 11px 16px; white-space: nowrap;
+  border-bottom: 1px solid var(--line);
+  font-variant-numeric: tabular-nums;
+}
+tbody tr:last-child td { border-bottom: none; }
+tbody tr { transition: background-color .12s ease; }
+tbody tr:hover { background: var(--surface-2); }
+th.ta-r, td.ta-r { text-align: right; }
+
+/* tiny inline win-rate meter */
+.meter {
+  display: inline-flex; align-items: center; gap: 8px;
+}
+.meter-rail { width: 44px; height: 4px; border-radius: 999px; background: var(--surface-2); overflow: hidden; }
+[data-theme="light"] .meter-rail { background: #EBEBE6; }
+.meter-fill { height: 100%; border-radius: 999px; background: var(--text-2); }
+
+/* ============================================================
+   FOOTER
+   ============================================================ */
+.footer {
+  margin-top: 72px; padding-top: 22px;
+  border-top: 1px solid var(--line);
+  display: flex; gap: 18px; justify-content: space-between; flex-wrap: wrap;
+  font-size: 12px; color: var(--text-3);
+}
+.footer strong { font-family: var(--font-display); font-weight: 600; font-stretch: 112%; color: var(--text-2); font-size: 12px; }
+.footer a { color: var(--text-2); text-decoration: none; border-bottom: 1px solid var(--line-strong); padding-bottom: 1px; }
+.footer a:hover { color: var(--text); }
+
+/* ============================================================
+   MOCK-ONLY CONTROLS  (not part of the design)
+   ============================================================ */
+.mockbar {
+  position: fixed; left: 50%; bottom: 18px; transform: translateX(-50%);
+  z-index: 60;
+  display: flex; align-items: center; gap: 10px;
+  padding: 7px 8px 7px 14px; border-radius: 999px;
+  background: var(--surface); border: 1px dashed var(--line-strong);
+  box-shadow: var(--shadow);
+  font-size: 11.5px; color: var(--text-3);
+}
+.mockbar button {
+  padding: 5px 11px; border-radius: 999px;
+  border: 1px solid var(--line); font-size: 11.5px; color: var(--text-2);
+}
+.mockbar button:hover { color: var(--text); border-color: var(--line-strong); }
+
+/* ============================================================
+   RESPONSIVE
+   ============================================================ */
+@media (max-width: 860px) {
+  .strip { grid-template-columns: repeat(2, 1fr); }
+  .stat { border-left: 1px solid var(--line); }
+  .stat:nth-child(odd) { border-left: none; padding-left: 0; }
+  .stat:nth-child(n+3) { border-top: 1px solid var(--line); }
+}
+@media (max-width: 660px) {
+  .wrap, .ribbon-inner { padding-left: 16px; padding-right: 16px; }
+  .masthead-inner { gap: 10px; }
+  .nav-link { padding: 7px 7px; font-size: 12.5px; }
+  .brand-name { display: none; }
+  .ribbon-positions { margin-left: 0; width: 100%; }
+  .hero { padding-top: 30px; }
+  .disclosure-aggregate { display: none; }
+  .chart-svg { height: 190px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: .001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: .001ms !important;
+  }
+}
+</style>
+</head>
+<body>
+
+<header class="masthead">
+  <div class="wrap masthead-inner">
+    <a class="brand" href="#">
+      <span class="brand-mark" aria-hidden="true">
+        <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M1.5 11.5 5 7l3 2.5L14.5 3"/><path d="M10.5 3h4v4"/>
+        </svg>
+      </span>
+      <span class="brand-name">LLM Advisor</span>
+    </a>
+
+    <nav class="nav" aria-label="Primary">
+      <a class="nav-link" href="#" aria-current="page">Overview</a>
+      <a class="nav-link" href="#">Trades</a>
+      <a class="nav-link" href="#">Breakdowns</a>
+      <a class="nav-link" href="#">Funnel</a>
+    </nav>
+
+    <button class="theme-toggle" id="themeToggle" aria-label="Switch to light theme">
+      <svg class="icon-moon" width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M13.5 9.5A5.8 5.8 0 0 1 6.5 2.5a5.8 5.8 0 1 0 7 7Z"/></svg>
+      <svg class="icon-sun" width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><circle cx="8" cy="8" r="3"/><path d="M8 1v1.5M8 13.5V15M15 8h-1.5M2.5 8H1M12.9 3.1l-1 1M4.1 11.9l-1 1M12.9 12.9l-1-1M4.1 4.1l-1-1"/></svg>
+    </button>
+  </div>
+</header>
+
+<!-- ============ SIGNATURE: SESSION RIBBON ============ -->
+<div class="ribbon" id="ribbon" data-live="true">
+  <div class="ribbon-inner">
+    <div class="ribbon-row">
+      <span class="pulse" aria-hidden="true"></span>
+      <span class="ribbon-state" id="ribbonState">Live</span>
+      <span class="ribbon-meta" id="ribbonMeta">
+        tick <span class="mono num">412</span>
+        <span class="ribbon-sep">·</span> heartbeat <span class="mono">8s</span> ago
+        <span class="ribbon-sep">·</span> <span class="mono">11:42 ET</span>
+      </span>
+
+      <div class="ribbon-positions" id="ribbonPositions">
+        <span class="holding">
+          <span class="holding-sym">SPY 08-05 640C</span>
+          <span class="holding-pl pos num">+12.4%</span>
+        </span>
+        <span class="holding">
+          <span class="holding-sym">QQQ 08-06 585P</span>
+          <span class="holding-pl neg num">−4.1%</span>
+        </span>
+      </div>
+    </div>
+
+    <div class="track" id="track">
+      <div class="track-rail"><div class="track-fill" id="trackFill"></div></div>
+      <div class="track-head" id="trackHead"></div>
+      <!-- notches injected by script: today's actual fills -->
+    </div>
+
+    <div class="track-scale">
+      <span>9:30</span><span>11:00</span><span>12:30</span><span>14:00</span><span>16:00</span>
+    </div>
+  </div>
+</div>
+
+<main class="wrap">
+
+  <!-- ============ HERO ============ -->
+  <section class="hero">
+    <p class="eyebrow hero-label" id="heroLabel">Account equity</p>
+    <div class="hero-figure">
+      <span class="hero-value" id="heroValue">$97,910.92</span>
+      <span class="hero-delta" id="heroDelta">
+        <span class="hero-delta-caret">▲</span>
+        <span class="num">+$318.40</span>
+        <span class="num">+0.33%</span>
+      </span>
+    </div>
+    <p class="hero-context" id="heroContext">
+      Today, as of <span class="mono">11:42 ET</span> · <span class="neg num">−$2,089.08</span> since the $100,000 open
+    </p>
+
+    <div class="chart-shell" id="chartShell">
+      <svg class="chart-svg" id="chart" preserveAspectRatio="none" role="img"
+           aria-label="Account equity over the selected period">
+        <defs>
+          <linearGradient id="fillUp" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%"   stop-color="var(--gain)" stop-opacity=".17"/>
+            <stop offset="100%" stop-color="var(--gain)" stop-opacity="0"/>
+          </linearGradient>
+          <linearGradient id="fillDown" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%"   stop-color="var(--loss)" stop-opacity=".15"/>
+            <stop offset="100%" stop-color="var(--loss)" stop-opacity="0"/>
+          </linearGradient>
+        </defs>
+        <line class="chart-baseline" id="baseline" x1="0" x2="1000" y1="0" y2="0"/>
+        <path class="chart-area" id="area"/>
+        <path class="chart-line" id="line"/>
+        <line class="chart-cursor" id="cursor" y1="0" y2="240"/>
+        <circle class="chart-dot" id="dot" cx="0" cy="0"/>
+      </svg>
+    </div>
+
+    <div class="chart-foot">
+      <div class="range" role="group" aria-label="Chart range">
+        <button class="range-btn" data-range="7"  aria-pressed="false">1W</button>
+        <button class="range-btn" data-range="30" aria-pressed="true">1M</button>
+        <button class="range-btn" data-range="90" aria-pressed="false">3M</button>
+      </div>
+      <p class="chart-note">Dashed line marks the $100,000 starting balance.</p>
+    </div>
+  </section>
+
+  <!-- ============ STAT STRIP ============ -->
+  <div class="strip">
+    <div class="stat">
+      <p class="eyebrow">Open P&amp;L</p>
+      <p class="stat-value pos">+$142.10</p>
+      <p class="stat-hint">2 positions held</p>
+    </div>
+    <div class="stat">
+      <p class="eyebrow">Session</p>
+      <p class="stat-value">3W <span class="dimmer">/</span> 1L</p>
+      <p class="stat-hint">realized <span class="pos num">+$88.20</span> today</p>
+    </div>
+    <div class="stat">
+      <p class="eyebrow">Opened today</p>
+      <p class="stat-value">6</p>
+      <p class="stat-hint">from 14 signals</p>
+    </div>
+    <div class="stat">
+      <p class="eyebrow">LLM approval</p>
+      <p class="stat-value" style="color: var(--model)">64%</p>
+      <p class="stat-hint">9 approved <span class="dimmer">·</span> 5 rejected</p>
+    </div>
+  </div>
+
+  <!-- ============ PNL BY EXIT DATE ============ -->
+  <section class="section">
+    <div class="section-head">
+      <div>
+        <h2 class="section-title">Strategy P&amp;L by exit date</h2>
+        <p class="section-sub">Broker-position lifecycle P&amp;L, grouped by the ET date each position closed.</p>
+      </div>
+      <span class="section-metric neg" id="pnlTotal">−$1,204.30</span>
+    </div>
+    <div class="bars" id="bars"></div>
+    <div class="bars-zero"></div>
+    <div class="bars-axis" id="barsAxis"></div>
+  </section>
+
+  <!-- ============ COHORTS (collapsed) ============ -->
+  <section class="section">
+    <div class="disclosure" id="cohorts" data-open="false">
+      <button class="disclosure-summary" id="cohortsToggle" aria-expanded="false" aria-controls="cohortsBody">
+        <svg class="chevron" width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 3.5 10.5 8 6 12.5"/></svg>
+        <span>
+          <span class="disclosure-title">Entry-date cohorts</span>
+          <span class="disclosure-sub">Trades and full-lifecycle P&amp;L grouped by the day each position opened</span>
+        </span>
+        <span class="disclosure-aggregate">
+          <span class="agg">
+            <span class="eyebrow">Sessions</span>
+            <span class="agg-value" style="display:block">10</span>
+          </span>
+          <span class="agg">
+            <span class="eyebrow">Win rate</span>
+            <span class="agg-value" style="display:block">47%</span>
+          </span>
+          <span class="agg">
+            <span class="eyebrow">Lifetime P&amp;L</span>
+            <span class="agg-value neg" style="display:block">−$1,204</span>
+          </span>
+        </span>
+      </button>
+
+      <div class="disclosure-body" id="cohortsBody">
+        <div>
+          <div class="table-scroll">
+            <table>
+              <thead>
+                <tr>
+                  <th>Entry date</th>
+                  <th class="ta-r">Opened</th>
+                  <th class="ta-r">Closed</th>
+                  <th>Win rate</th>
+                  <th class="ta-r">Lifetime P&amp;L</th>
+                  <th class="ta-r">Equity</th>
+                </tr>
+              </thead>
+              <tbody id="cohortRows"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <footer class="footer">
+    <p><strong>Paper money. Real mistakes.</strong> Alpaca paper account — z-score mean reversion and trend continuation, gated by LLM validation.</p>
+    <p><a href="#">Project deep dive →</a></p>
+  </footer>
+</main>
+
+<div class="mockbar">
+  <span>mock controls — not part of the design</span>
+  <button id="flipState">Show market closed</button>
+</div>
+
+<script>
+/* ------------------------------------------------------------
+   THEME
+   ------------------------------------------------------------ */
+const root = document.documentElement;
+const stored = localStorage.getItem("theme");
+if (stored) root.dataset.theme = stored;
+else if (window.matchMedia("(prefers-color-scheme: light)").matches) root.dataset.theme = "light";
+
+const themeToggle = document.getElementById("themeToggle");
+function syncToggleLabel() {
+  const next = root.dataset.theme === "dark" ? "light" : "dark";
+  themeToggle.setAttribute("aria-label", `Switch to ${next} theme`);
+}
+syncToggleLabel();
+themeToggle.addEventListener("click", () => {
+  root.dataset.theme = root.dataset.theme === "dark" ? "light" : "dark";
+  localStorage.setItem("theme", root.dataset.theme);
+  syncToggleLabel();
+  draw();
+});
+
+/* ------------------------------------------------------------
+   DATA  — shaped to the real account: $100,000 open, ~$97,911 now
+   ------------------------------------------------------------ */
+function mulberry32(a) {
+  return function () {
+    a |= 0; a = a + 0x6D2B79F5 | 0;
+    let t = Math.imul(a ^ a >>> 15, 1 | a);
+    t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t;
+    return ((t ^ t >>> 14) >>> 0) / 4294967296;
+  };
+}
+const rand = mulberry32(20260804);
+
+const SERIES = (() => {
+  const out = [];
+  const end = new Date("2026-08-04T16:00:00Z");
+  let equity = 100000;
+  for (let i = 89; i >= 0; i--) {
+    const d = new Date(end); d.setDate(d.getDate() - i);
+    const day = d.getDay();
+    if (day !== 0 && day !== 6) {
+      const shock = (rand() - 0.535) * 620;
+      equity += shock;
+    }
+    out.push({ date: d.toISOString().slice(0, 10), equity });
+  }
+  // pin the final value to the real one
+  const drift = 97910.92 - out[out.length - 1].equity;
+  out.forEach((p, i) => { p.equity += drift * (i / (out.length - 1)); });
+  return out;
+})();
+
+const fmtUsd = (v, digits = 2) => v.toLocaleString("en-US", {
+  style: "currency", currency: "USD",
+  minimumFractionDigits: digits, maximumFractionDigits: digits
+});
+const fmtSigned = (v) => (v > 0 ? "+" : v < 0 ? "−" : "") + fmtUsd(Math.abs(v));
+const fmtDay = (iso) => new Date(iso + "T12:00:00Z")
+  .toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: "UTC" });
+
+/* ------------------------------------------------------------
+   EQUITY CHART  — scrub to read any day
+   ------------------------------------------------------------ */
+const svg = document.getElementById("chart");
+const shell = document.getElementById("chartShell");
+const pathLine = document.getElementById("line");
+const pathArea = document.getElementById("area");
+const baseline = document.getElementById("baseline");
+const cursor = document.getElementById("cursor");
+const dot = document.getElementById("dot");
+
+const heroValue = document.getElementById("heroValue");
+const heroDelta = document.getElementById("heroDelta");
+const heroContext = document.getElementById("heroContext");
+
+let range = 30;
+let view = [];
+let pts = [];
+
+const LIVE = { equity: 97910.92, dayDelta: 318.40, dayPct: 0.0033, time: "11:42 ET" };
+
+function draw() {
+  const w = svg.clientWidth || 900;
+  const h = svg.clientHeight || 240;
+  svg.setAttribute("viewBox", `0 0 ${w} ${h}`);
+
+  view = SERIES.slice(-range);
+  const vals = view.map(p => p.equity).concat([100000]);
+  const min = Math.min(...vals), max = Math.max(...vals);
+  const pad = (max - min) * 0.16 || 1;
+  const lo = min - pad, hi = max + pad;
+
+  const x = i => (i / (view.length - 1)) * w;
+  const y = v => h - ((v - lo) / (hi - lo)) * h;
+
+  pts = view.map((p, i) => ({ ...p, x: x(i), y: y(p.equity) }));
+
+  const d = pts.map((p, i) => `${i ? "L" : "M"}${p.x.toFixed(2)},${p.y.toFixed(2)}`).join(" ");
+  const up = view[view.length - 1].equity >= view[0].equity;
+
+  pathLine.setAttribute("d", d);
+  pathLine.dataset.trend = up ? "up" : "down";
+  pathArea.setAttribute("d", `${d} L${w},${h} L0,${h} Z`);
+  pathArea.setAttribute("fill", up ? "url(#fillUp)" : "url(#fillDown)");
+  dot.dataset.trend = up ? "up" : "down";
+
+  const by = y(100000);
+  baseline.setAttribute("x1", 0); baseline.setAttribute("x2", w);
+  baseline.setAttribute("y1", by); baseline.setAttribute("y2", by);
+  cursor.setAttribute("y1", 0); cursor.setAttribute("y2", h);
+}
+
+function showLive() {
+  shell.classList.remove("is-scrubbing");
+  document.getElementById("heroLabel").textContent = "Account equity";
+  heroValue.textContent = fmtUsd(LIVE.equity);
+  heroDelta.className = "hero-delta pos";
+  heroDelta.innerHTML = `<span class="hero-delta-caret">▲</span><span class="num">+${fmtUsd(LIVE.dayDelta)}</span><span class="num">+0.33%</span>`;
+  heroContext.innerHTML = `Today, as of <span class="mono">${LIVE.time}</span> · <span class="neg num">−${fmtUsd(100000 - LIVE.equity)}</span> since the $100,000 open`;
+}
+
+function showPoint(p, i) {
+  shell.classList.add("is-scrubbing");
+  const prev = i > 0 ? view[i - 1].equity : p.equity;
+  const delta = p.equity - prev;
+  const vsOpen = p.equity - 100000;
+  document.getElementById("heroLabel").textContent = "Equity on " + fmtDay(p.date);
+  heroValue.textContent = fmtUsd(p.equity);
+  heroDelta.className = "hero-delta " + (delta >= 0 ? "pos" : "neg");
+  heroDelta.innerHTML =
+    `<span class="hero-delta-caret">${delta >= 0 ? "▲" : "▼"}</span>` +
+    `<span class="num">${fmtSigned(delta)}</span>` +
+    `<span class="num">${(delta / prev * 100).toFixed(2)}%</span>`;
+  heroContext.innerHTML =
+    `Day close · <span class="${vsOpen >= 0 ? "pos" : "neg"} num">${fmtSigned(vsOpen)}</span> vs the $100,000 open`;
+
+  cursor.setAttribute("x1", p.x); cursor.setAttribute("x2", p.x);
+  dot.setAttribute("cx", p.x); dot.setAttribute("cy", p.y);
+}
+
+function scrub(clientX) {
+  const box = svg.getBoundingClientRect();
+  const rel = Math.max(0, Math.min(box.width, clientX - box.left));
+  let best = 0, bestD = Infinity;
+  pts.forEach((p, i) => { const dd = Math.abs(p.x - rel); if (dd < bestD) { bestD = dd; best = i; } });
+  showPoint(pts[best], best);
+}
+
+shell.addEventListener("pointermove", e => scrub(e.clientX));
+shell.addEventListener("pointerleave", showLive);
+shell.addEventListener("pointerdown", e => scrub(e.clientX));
+
+document.querySelectorAll(".range-btn").forEach(btn => {
+  btn.addEventListener("click", () => {
+    document.querySelectorAll(".range-btn").forEach(b => b.setAttribute("aria-pressed", "false"));
+    btn.setAttribute("aria-pressed", "true");
+    range = Number(btn.dataset.range);
+    draw(); showLive();
+  });
+});
+
+/* ------------------------------------------------------------
+   SESSION RIBBON  — 9:30 -> 16:00, filled to now, notched by fills
+   ------------------------------------------------------------ */
+const OPEN_MIN = 9 * 60 + 30, CLOSE_MIN = 16 * 60;
+const NOW_MIN = 11 * 60 + 42;
+const FILLS = [
+  { at: "09:34", kind: "entry", text: "SPY 640C  ·  opened 2 @ $1.44" },
+  { at: "09:58", kind: "entry", text: "IWM 232P  ·  opened 3 @ $0.91" },
+  { at: "10:21", kind: "win",   text: "IWM 232P  ·  target  +$66.00" },
+  { at: "10:47", kind: "entry", text: "QQQ 585P  ·  opened 2 @ $2.10" },
+  { at: "11:03", kind: "loss",  text: "SPY 638C  ·  stop  −$48.00" },
+  { at: "11:29", kind: "win",   text: "SPY 641C  ·  trail  +$70.20" },
+];
+const pctOf = mins => ((mins - OPEN_MIN) / (CLOSE_MIN - OPEN_MIN)) * 100;
+
+const track = document.getElementById("track");
+FILLS.forEach(f => {
+  const [hh, mm] = f.at.split(":").map(Number);
+  const el = document.createElement("span");
+  el.className = "notch";
+  el.dataset.kind = f.kind;
+  el.style.left = pctOf(hh * 60 + mm) + "%";
+  el.innerHTML = `<span class="notch-tip">${f.at} ET  ·  ${f.text}</span>`;
+  track.appendChild(el);
+});
+
+function setSession(live) {
+  const ribbon = document.getElementById("ribbon");
+  ribbon.dataset.live = String(live);
+  const fill = document.getElementById("trackFill");
+  const head = document.getElementById("trackHead");
+  if (live) {
+    document.getElementById("ribbonState").textContent = "Live";
+    document.getElementById("ribbonMeta").innerHTML =
+      `tick <span class="mono num">412</span> <span class="ribbon-sep">·</span> heartbeat <span class="mono">8s</span> ago <span class="ribbon-sep">·</span> <span class="mono">11:42 ET</span>`;
+    document.getElementById("ribbonPositions").style.display = "";
+    fill.style.width = pctOf(NOW_MIN) + "%";
+    head.style.left = pctOf(NOW_MIN) + "%";
+  } else {
+    document.getElementById("ribbonState").textContent = "Closed";
+    document.getElementById("ribbonMeta").innerHTML =
+      `Session ended <span class="mono">16:00 ET</span> <span class="ribbon-sep">·</span> 412 ticks <span class="ribbon-sep">·</span> opens in <span class="mono">17h 18m</span>`;
+    document.getElementById("ribbonPositions").style.display = "none";
+    fill.style.width = "100%";
+  }
+}
+setSession(true);
+
+let live = true;
+document.getElementById("flipState").addEventListener("click", e => {
+  live = !live;
+  setSession(live);
+  e.target.textContent = live ? "Show market closed" : "Show market live";
+});
+
+/* ------------------------------------------------------------
+   PNL BARS
+   ------------------------------------------------------------ */
+const PNL = [
+  ["07-07", -142.5], ["07-08", 88.2], ["07-09", -61.0], ["07-10", 213.4],
+  ["07-11", -308.7], ["07-14", 44.0], ["07-15", -96.3], ["07-16", 152.8],
+  ["07-17", -221.4], ["07-18", 19.6], ["07-21", -178.0], ["07-22", 267.1],
+  ["07-23", -55.2], ["07-24", -134.9], ["07-25", 96.4], ["07-28", -246.8],
+  ["07-29", 71.3], ["07-30", -118.6], ["07-31", 184.2], ["08-01", -92.7],
+  ["08-04", 88.2]
+];
+const barsEl = document.getElementById("bars");
+const peak = Math.max(...PNL.map(([, v]) => Math.abs(v)));
+PNL.forEach(([label, v]) => {
+  const col = document.createElement("div");
+  col.className = "bar-col";
+  const bar = document.createElement("div");
+  bar.className = "bar";
+  bar.dataset.sign = v >= 0 ? "pos" : "neg";
+  bar.style.height = Math.max((Math.abs(v) / peak) * 100, 2) + "%";
+  const tip = document.createElement("span");
+  tip.className = "bar-tip";
+  tip.textContent = `${label}  ·  ${fmtSigned(v)}`;
+  col.append(bar, tip);
+  barsEl.appendChild(col);
+});
+const axis = document.getElementById("barsAxis");
+[0, 5, 10, 15, 20].forEach(i => {
+  const s = document.createElement("span");
+  s.textContent = PNL[i] ? PNL[i][0] : "";
+  axis.appendChild(s);
+});
+
+/* ------------------------------------------------------------
+   COHORTS
+   ------------------------------------------------------------ */
+const COHORTS = [
+  ["2026-08-04", 6, 4, 0.50,   88.20, 97910.92],
+  ["2026-08-01", 5, 5, 0.40,  -92.70, 97822.72],
+  ["2026-07-31", 7, 7, 0.57,  184.20, 97915.42],
+  ["2026-07-30", 4, 4, 0.25, -118.60, 97731.22],
+  ["2026-07-29", 6, 6, 0.50,   71.30, 97849.82],
+  ["2026-07-28", 8, 8, 0.38, -246.80, 97778.52],
+  ["2026-07-25", 5, 5, 0.60,   96.40, 98025.32],
+  ["2026-07-24", 6, 6, 0.33, -134.90, 97928.92],
+  ["2026-07-23", 4, 4, 0.50,  -55.20, 98063.82],
+  ["2026-07-22", 7, 7, 0.71,  267.10, 98119.02],
+];
+document.getElementById("cohortRows").innerHTML = COHORTS.map(
+  ([date, opened, closed, wr, pnl, eq]) => `
+  <tr>
+    <td class="mono">${date}</td>
+    <td class="ta-r">${opened}</td>
+    <td class="ta-r">${closed}</td>
+    <td>
+      <span class="meter">
+        <span class="meter-rail"><span class="meter-fill" style="width:${wr * 100}%"></span></span>
+        <span class="num dim">${(wr * 100).toFixed(0)}%</span>
+      </span>
+    </td>
+    <td class="ta-r ${pnl >= 0 ? "pos" : "neg"}">${fmtSigned(pnl)}</td>
+    <td class="ta-r dim">${fmtUsd(eq, 0)}</td>
+  </tr>`).join("");
+
+const cohorts = document.getElementById("cohorts");
+const cohortsToggle = document.getElementById("cohortsToggle");
+cohortsToggle.addEventListener("click", () => {
+  const open = cohorts.dataset.open === "true";
+  cohorts.dataset.open = String(!open);
+  cohortsToggle.setAttribute("aria-expanded", String(!open));
+});
+
+/* ------------------------------------------------------------ */
+draw(); showLive();
+let raf;
+window.addEventListener("resize", () => {
+  cancelAnimationFrame(raf);
+  raf = requestAnimationFrame(() => { draw(); showLive(); });
+});
+</script>
+</body>
+</html>

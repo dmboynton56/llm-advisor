@@ -67,6 +67,36 @@ export type ValidationEvent = {
   event_type: string;
 };
 
+/** Raw order-event row backing the decision ledger. */
+export type DecisionEvent = {
+  run_date: string;
+  event_ts: string | null;
+  event_type: string;
+  symbol: string;
+  setup_type: string | null;
+  side: string | null;
+  details: JsonRecord | null;
+};
+
+/** One signal and the verdict the model gave it. */
+export type Decision = {
+  key: string;
+  eventTs: string | null;
+  symbol: string;
+  setupType: string | null;
+  verdict: "approved" | "vetoed";
+  reason: string | null;
+  confidence: number | null;
+};
+
+export type DecisionLog = {
+  runDate: string | null;
+  decisions: Decision[];
+  signals: number;
+  approved: number;
+  filled: number;
+};
+
 export type TradeLifecycleRow = {
   lifecycle_uid: string;
   entry_order_id: string | null;

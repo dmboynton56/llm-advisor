@@ -1,5 +1,6 @@
-import { Card, EmptyState } from "@/components/MetricCard";
+import clsx from "clsx";
 import { TradesTable } from "@/components/TradesTable";
+import { EmptyState, PageHeader, Panel, Section } from "@/components/ui";
 import { getLatestOpsMetrics, getTradeLifecycles } from "@/lib/data";
 import { supabaseConfigured } from "@/lib/supabase";
 import { fmtSignedUsd } from "@/lib/format";
@@ -54,73 +55,81 @@ export default async function TradesPage() {
   const losers = opsMetrics?.payload?.biggest_losers ?? [];
 
   return (
-    <div className="space-y-6">
-      <div>
-        <h1 className="text-xl font-semibold tracking-tight">Trades</h1>
-        <p className="mt-1 text-sm text-zinc-500">
-          Broker-position lifecycles over the last 90 days, using actual fills
-          when available and showing position, option contract, and market bias
-          separately.
-        </p>
-      </div>
+    <div>
+      <PageHeader title="Trades">
+        Broker-position lifecycles over the last 90 days, using actual fills when
+        available and showing position, option contract, and market bias
+        separately.
+      </PageHeader>
 
       {!supabaseConfigured() ? (
-        <EmptyState message="Supabase is not configured. Set NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY." />
+        <div className="mb-8">
+          <EmptyState message="Supabase is not configured. Set NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY." />
+        </div>
       ) : null}
 
-      <Card>
+      <Panel padded={false} className="overflow-hidden">
         {trades.length > 0 ? (
           <TradesTable trades={trades} />
         ) : (
-          <EmptyState message="No trades recorded in the last 90 days." />
+          <div className="p-5">
+            <EmptyState message="No trades recorded in the last 90 days." />
+          </div>
         )}
-      </Card>
+      </Panel>
 
-      <Card
+      <Section
         title="Biggest losers"
-        subtitle="Legacy entry-lot analysis with the LLM's validation reasoning; canonical PnL is the lifecycle table above"
+        subtitle="Legacy entry-lot analysis with the model's validation reasoning. Canonical P&L is the lifecycle table above."
       >
         {losers.length > 0 ? (
-          <div className="space-y-3">
+          <div className="flex flex-col gap-3">
             {losers.map((loser) => (
-              <div
+              <Panel
                 key={loser.trade_uid ?? `${loser.run_date}-${loser.symbol}`}
-                className="rounded-lg border border-zinc-800 bg-zinc-950/60 p-3"
+                className="p-4"
               >
-                <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm">
-                  <span className="font-semibold text-rose-400">
+                <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 text-[13px]">
+                  <span className="num font-medium text-loss">
                     {fmtSignedUsd(loser.pnl)}
                   </span>
-                  <span className="font-medium">
+                  <span className="num font-medium">
                     {loser.underlying_symbol ?? loser.symbol}
                   </span>
-                  <span className="text-zinc-400">
+                  <span className="text-ink-2">
                     {loser.side ?? "?"} · {loser.setup_type ?? "?"}
                     {loser.option_dte != null ? ` · ${loser.option_dte} DTE` : ""}
                   </span>
-                  <span className="text-xs text-zinc-500">{loser.run_date}</span>
+                  <span className="num text-[11.5px] text-ink-3">
+                    {loser.run_date}
+                  </span>
                   {loser.exit_reason ? (
-                    <span className="rounded bg-zinc-800 px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-zinc-400">
+                    <span
+                      className={clsx(
+                        "num rounded border border-line-2 px-1.5 py-0.5",
+                        "text-[9.5px] font-medium uppercase tracking-[0.08em] text-ink-3",
+                      )}
+                    >
                       {loser.exit_reason}
                     </span>
                   ) : null}
                 </div>
                 {loser.validation_reasoning ? (
-                  <p className="mt-2 border-l-2 border-zinc-700 pl-3 text-xs leading-relaxed text-zinc-400">
+                  <p className="mt-2.5 border-l-2 border-line-2 pl-3 text-[12px] leading-relaxed text-ink-2">
                     {loser.validation_reasoning}
                   </p>
                 ) : (
-                  <p className="mt-2 text-xs text-zinc-600">
+                  <p className="mt-2.5 text-[12px] text-ink-3">
                     No validation reasoning captured for this trade.
                   </p>
                 )}
-              </div>
+              </Panel>
             ))}
           </div>
         ) : (
           <EmptyState message="No losing trades in the current metrics window (or ops metrics haven't been computed yet)." />
         )}
-      </Card>
+      </Section>
     </div>
   );
 }
