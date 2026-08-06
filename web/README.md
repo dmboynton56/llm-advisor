@@ -9,7 +9,7 @@ modeled on the sports-edge ops dashboard. Intended deploy: Vercel at
 | Route | Contents |
 |---|---|
 | `/` | Equity curve, daily PnL bars, current equity/buying power, trades today, live-loop heartbeat freshness, recent sessions |
-| `/trades` | Filterable trade table (date / underlying / position / contract / bias / setup / DTE) + biggest losers with LLM validation reasoning |
+| `/trades` | Filterable trade table (date / underlying / contract / daily bias / setup / DTE) + biggest losers with LLM validation reasoning |
 | `/breakdowns` | Win rate / PnL / RR grids per underlying, long vs short, MR vs TC, DTE buckets (cells with n < 10 greyed out) |
 | `/funnel` | Signal → validation → execution funnel, rejection-reason histogram, LLM approval rate over time |
 | `/command-center` | Env-gated private surface: **live Alpaca paper blotter** (positions, open orders, software stop/TP, loop-health banner), watchlist mocks, Robinhood MCP status |
@@ -31,6 +31,8 @@ Tables read:
 - `llm_advisor_order_events` — validation decisions for the approval-rate chart
 - `llm_advisor_ops_metrics_daily` — precomputed rollup payload from `scripts/compute_ops_metrics.py`
 - `llm_advisor_live_state` — single upserted intraday row from the live loop (`sql/005_live_state.sql`); powers the overview "Live session" card and the blotter loop-health banner
+
+The `llm_advisor_daily_bias` table stores the ML-primary daily bias plus the separate LLM opinion and disagreement fields.
 
 ## Local dev
 
@@ -85,6 +87,7 @@ Verification sketch (paper session):
 
 1. Import the repo in Vercel with root directory `web/`.
 2. Set `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_ANON_KEY`.
-3. For the blotter: `ALPACA_API_KEY`, `ALPACA_SECRET_KEY`, `ALPACA_PAPER_TRADING=true`, plus command-center password flags above.
-4. Add the `llm-advisor.drewboynton.com` domain to the project and create the
+3. Set server-only `ALPACA_API_KEY`, `ALPACA_SECRET_KEY`, and `ALPACA_PAPER_TRADING=true`; these power both the private blotter and open-position option history. If option history still returns an error, inspect the request ID in Vercel logs and verify the production credentials are present in the Production environment.
+4. For the private blotter, add the command-center password flags above.
+5. Add the `llm-advisor.drewboynton.com` domain to the project and create the
    CNAME on the drewboynton.com DNS zone.

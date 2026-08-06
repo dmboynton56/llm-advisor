@@ -85,6 +85,23 @@ class AccountSnapshotRow:
 
 
 @dataclass
+class DailyBiasRow:
+    bias_date: str
+    symbol: str
+    ml_bias: str
+    ml_confidence: float | None
+    llm_bias: str | None
+    llm_confidence: float | None
+    agreement: str
+    bias_available: bool
+    bias_error: str | None
+    llm_reasoning: str | None
+    context_version: str | None
+    generated_at: str | None
+    source_artifact: str
+
+
+@dataclass
 class HeartbeatRow:
     source_date: str
     heartbeat_ts: str
@@ -379,6 +396,13 @@ def dedupe_account_snapshots(rows: list[AccountSnapshotRow]) -> list[AccountSnap
     for row in rows:
         by_key[(row.snapshot_date, row.captured_at)] = row
     return sorted(by_key.values(), key=lambda x: (x.snapshot_date, x.captured_at))
+
+
+def dedupe_daily_bias(rows: list[DailyBiasRow]) -> list[DailyBiasRow]:
+    by_key: dict[tuple[str, str], DailyBiasRow] = {}
+    for row in rows:
+        by_key[(row.bias_date, row.symbol.upper())] = row
+    return sorted(by_key.values(), key=lambda x: (x.bias_date, x.symbol))
 
 
 def backfill_run_equity_from_snapshots(
@@ -947,6 +971,79 @@ def parse_account_snapshots(run_date: str, snapshot_path: Path) -> list[AccountS
     return rows
 
 
+def _normalize_bias(value: Any) -> str:
+    normalized = str(value or "").strip().lower()
+    return normalized if normalized in {"bullish", "bearish", "choppy"} else "unavailable"
+
+
+def parse_daily_bias(run_date: str, context_path: Path) -> list[DailyBiasRow]:
+    """Extract the ML-primary bias and LLM opinion from premarket telemetry."""
+    if not context_path.exists():
+        return []
+    try:
+        payload = json.loads(context_path.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError):
+        return []
+    if not isinstance(payload, dict):
+        return []
+    context = payload.get("premarket_context")
+    if not isinstance(context, dict):
+        context = payload
+    symbols = context.get("symbols")
+    if not isinstance(symbols, dict):
+        return []
+    try:
+        generated_at = datetime.fromtimestamp(
+            context_path.stat().st_mtime, tz=timezone.utc
+        ).isoformat()
+    except OSError:
+        generated_at = None
+
+    rows: list[DailyBiasRow] = []
+    for symbol, raw in symbols.items():
+        if not isinstance(raw, dict):
+            continue
+        model_output = raw.get("model_output")
+        if not isinstance(model_output, dict):
+            model_output = {}
+        llm_validation = model_output.get("llm_validation")
+        if not isinstance(llm_validation, dict):
+            llm_validation = {}
+        ml_bias = _normalize_bias(raw.get("daily_bias"))
+        llm_raw = llm_validation.get("llm_bias")
+        llm_bias = _normalize_bias(llm_raw) if llm_raw is not None else None
+        agreement = str(llm_validation.get("agreement") or "unknown").strip().lower()
+        if agreement not in {"agree", "partial", "disagree"}:
+            agreement = "unknown"
+        error = raw.get("bias_error") or model_output.get("error")
+        rows.append(
+            DailyBiasRow(
+                bias_date=run_date,
+                symbol=str(symbol).strip().upper(),
+                ml_bias=ml_bias,
+                ml_confidence=_as_float(raw.get("confidence")),
+                llm_bias=llm_bias,
+                llm_confidence=_as_float(llm_validation.get("llm_confidence")),
+                agreement=agreement,
+                bias_available=bool(raw.get("bias_available", ml_bias != "unavailable")),
+                bias_error=str(error) if error else None,
+                llm_reasoning=(
+                    str(llm_validation.get("reasoning"))
+                    if llm_validation.get("reasoning")
+                    else None
+                ),
+                context_version=(
+                    str(raw.get("context_version") or context.get("context_version"))
+                    if raw.get("context_version") or context.get("context_version")
+                    else None
+                ),
+                generated_at=generated_at,
+                source_artifact=str(context_path),
+            )
+        )
+    return rows
+
+
 def parse_order_events(run_date: str, events_path: Path) -> list[OrderEventRow]:
     if not events_path.exists():
         return []
@@ -1271,6 +1368,57 @@ def upsert_account_snapshots(cur, rows: list[AccountSnapshotRow], now_iso: str) 
     return len(rows)
 
 
+def upsert_daily_bias(cur, rows: list[DailyBiasRow], now_iso: str) -> int:
+    if not rows:
+        return 0
+    if execute_values is None:
+        raise SystemExit("Missing psycopg2. Install requirements before running EOD Supabase sync.")
+    values = [
+        (
+            row.bias_date,
+            row.symbol,
+            row.ml_bias,
+            row.ml_confidence,
+            row.llm_bias,
+            row.llm_confidence,
+            row.agreement,
+            row.bias_available,
+            row.bias_error,
+            row.llm_reasoning,
+            row.context_version,
+            row.generated_at,
+            row.source_artifact,
+            now_iso,
+        )
+        for row in rows
+    ]
+    execute_values(
+        cur,
+        """
+        INSERT INTO llm_advisor_daily_bias
+        (bias_date,symbol,ml_bias,ml_confidence,llm_bias,llm_confidence,
+         agreement,bias_available,bias_error,llm_reasoning,context_version,
+         generated_at,source_artifact,updated_at)
+        VALUES %s
+        ON CONFLICT (bias_date, symbol) DO UPDATE SET
+          ml_bias = EXCLUDED.ml_bias,
+          ml_confidence = EXCLUDED.ml_confidence,
+          llm_bias = EXCLUDED.llm_bias,
+          llm_confidence = EXCLUDED.llm_confidence,
+          agreement = EXCLUDED.agreement,
+          bias_available = EXCLUDED.bias_available,
+          bias_error = EXCLUDED.bias_error,
+          llm_reasoning = EXCLUDED.llm_reasoning,
+          context_version = EXCLUDED.context_version,
+          generated_at = EXCLUDED.generated_at,
+          source_artifact = EXCLUDED.source_artifact,
+          updated_at = EXCLUDED.updated_at
+        """,
+        values,
+    )
+    return len(rows)
+
+
 def upsert_order_events(cur, rows: list[OrderEventRow], now_iso: str) -> int:
     if not rows:
         return 0
@@ -1465,12 +1613,14 @@ def main() -> None:
     heartbeats: list[HeartbeatRow] = []
     order_events: list[OrderEventRow] = []
     account_snapshots: list[AccountSnapshotRow] = []
+    daily_bias: list[DailyBiasRow] = []
     for run_date, run_dir in run_dirs:
         processed = run_dir / "processed"
         run_row, trade_rows = parse_daily_run_payload(run_date, processed)
         heartbeat_row = parse_heartbeat(run_date, processed / "live_loop_log.jsonl")
         event_rows = parse_order_events(run_date, processed / "order_events.jsonl")
         snapshot_rows = parse_account_snapshots(run_date, processed / "account_snapshot.json")
+        bias_rows = parse_daily_bias(run_date, processed / "premarket_context.json")
         if run_row:
             runs.append(run_row)
         elif heartbeat_row:
@@ -1482,6 +1632,7 @@ def main() -> None:
             heartbeats.append(heartbeat_row)
         order_events.extend(event_rows)
         account_snapshots.extend(snapshot_rows)
+        daily_bias.extend(bias_rows)
 
     use_bq = args.use_bigquery
     if use_bq is None:
@@ -1515,6 +1666,7 @@ def main() -> None:
     heartbeats = dedupe_heartbeats(heartbeats)
     order_events = dedupe_order_events(order_events)
     account_snapshots = dedupe_account_snapshots(account_snapshots)
+    daily_bias = dedupe_daily_bias(daily_bias)
     runs = backfill_run_equity_from_snapshots(runs, account_snapshots)
     reconciliation_tolerance = float(
         os.getenv("BROKER_RECONCILIATION_TOLERANCE", "50")
@@ -1529,16 +1681,17 @@ def main() -> None:
 
     LOGGER.info(
         "Prepared aggregate rows | runs=%d trades=%d heartbeats=%d order_events=%d "
-        "account_snapshots=%d reconciliations=%d lifecycles=%d",
+        "account_snapshots=%d daily_bias=%d reconciliations=%d lifecycles=%d",
         len(runs),
         len(trades),
         len(heartbeats),
         len(order_events),
         len(account_snapshots),
+        len(daily_bias),
         len(reconciliations),
         len(lifecycles),
     )
-    if not (runs or trades or heartbeats or order_events or account_snapshots):
+    if not (runs or trades or heartbeats or order_events or account_snapshots or daily_bias):
         message = "No ingestable rows were parsed from located run directories"
         if args.allow_empty:
             LOGGER.warning("%s (allow-empty enabled)", message)
@@ -1558,6 +1711,7 @@ def main() -> None:
             upsert_heartbeats(cur, heartbeats, now_iso)
             upsert_order_events(cur, order_events, now_iso)
             upsert_account_snapshots(cur, account_snapshots, now_iso)
+            upsert_daily_bias(cur, daily_bias, now_iso)
             upsert_broker_reconciliations(cur, reconciliations, now_iso)
             upsert_trade_lifecycles(cur, lifecycles, now_iso)
             alerts = [row for row in reconciliations if row.status == "alert"]
@@ -1581,12 +1735,13 @@ def main() -> None:
                         raise SystemExit(msg)
                     LOGGER.warning("%s (set EOD_STRICT_TELEMETRY=1 to fail on this)", msg)
             LOGGER.info(
-                "EOD ingest complete | runs=%d trades=%d heartbeats=%d order_events=%d account_snapshots=%d",
+                "EOD ingest complete | runs=%d trades=%d heartbeats=%d order_events=%d account_snapshots=%d daily_bias=%d",
                 len(runs),
                 len(trades),
                 len(heartbeats),
                 len(order_events),
                 len(account_snapshots),
+                len(daily_bias),
             )
     finally:
         conn.close()

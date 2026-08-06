@@ -100,9 +100,49 @@ export default async function OverviewPage() {
     ? liveAccountCapturedAt
     : snapshotCapturedAt;
 
-  const equityPoints = snapshots
-    .filter((s) => s.equity !== null)
-    .map((s) => ({ label: s.snapshot_date, equity: Number(s.equity) }));
+  const equitySeries = snapshots
+    .filter((s) => s.equity !== null && Number.isFinite(Number(s.equity)))
+    .map((s) => ({
+      capturedAt: s.captured_at,
+      timestamp: new Date(s.captured_at).getTime(),
+      equity: Number(s.equity),
+      dailyPnl: s.daily_pnl == null ? null : Number(s.daily_pnl),
+    }));
+  if (
+    liveAccountIsNewer &&
+    liveState?.equity != null &&
+    liveAccountCapturedAt != null &&
+    Number.isFinite(new Date(liveAccountCapturedAt).getTime())
+  ) {
+    equitySeries.push({
+      capturedAt: liveAccountCapturedAt,
+      timestamp: new Date(liveAccountCapturedAt).getTime(),
+      equity: Number(liveState.equity),
+      dailyPnl: liveState.daily_pnl == null ? null : Number(liveState.daily_pnl),
+    });
+  }
+  equitySeries.sort((a, b) => a.timestamp - b.timestamp);
+  const equityPoints = equitySeries.reduce<{
+    timestamp: number;
+    capturedAt: string;
+    equity: number;
+    dailyPnl: number | null;
+    deltaFromPrevious: number | null;
+  }[]>((points, point) => {
+    const previous = points.at(-1);
+    if (previous && previous.timestamp === point.timestamp) {
+      points[points.length - 1] = {
+        ...point,
+        deltaFromPrevious: point.equity - (points.at(-2)?.equity ?? point.equity),
+      };
+      return points;
+    }
+    points.push({
+      ...point,
+      deltaFromPrevious: previous ? point.equity - previous.equity : null,
+    });
+    return points;
+  }, []);
 
   // "Since" is measured from the oldest snapshot actually in the window, not
   // from an assumed starting balance.
@@ -252,7 +292,7 @@ export default async function OverviewPage() {
                 {fmtSignedUsd(sinceStart)}
                 {sinceStartPct != null ? <span>{fmtPct(sinceStartPct, 2)}</span> : null}
                 <span className="font-sans text-[12.5px] text-ink-3">
-                  since {fmtDate(windowStart.label)}
+                  since {fmtDate(windowStart.capturedAt)}
                 </span>
               </span>
             ) : null}
@@ -266,14 +306,15 @@ export default async function OverviewPage() {
                   baseline={windowStart?.equity ?? null}
                 />
                 <p className="mt-3 text-[11.5px] text-ink-3">
-                  Snapshots captured at live-loop start and end, 90 days. The
+                  Intraday account snapshots are captured from the live loop
+                  and the tooltip shows the change at each timestamp. The
                   dashed rule marks equity at the start of the window
                   {accountCapturedAt ? ` · last value ${relativeTime(accountCapturedAt)}` : ""}
                   .
                 </p>
               </>
             ) : (
-              <EmptyState message="Not enough equity snapshots yet — the live loop writes one at session start and end each trading day." />
+              <EmptyState message="Not enough equity snapshots yet — the live loop records account values during the session and at shutdown." />
             )}
           </Panel>
 

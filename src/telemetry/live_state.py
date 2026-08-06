@@ -276,6 +276,46 @@ def publish_live_state(row: Dict[str, Any]) -> bool:
                             "exit_policy": json.dumps(row.get("exit_policy") or {}),
                         },
                     )
+                    # Keep the latest live-state row cheap to read while also
+                    # preserving the time series that the dashboard needs.
+                    # The account fields were already fetched for this tick,
+                    # so this does not add another broker request.
+                    if row.get("equity") is not None:
+                        last_equity = row.get("last_equity")
+                        daily_pnl = row.get("daily_pnl")
+                        daily_pnl_pct = (
+                            float(daily_pnl) / float(last_equity)
+                            if daily_pnl is not None and last_equity not in (None, 0)
+                            else None
+                        )
+                        cur.execute(
+                            """
+                            INSERT INTO llm_advisor_account_snapshots (
+                              snapshot_date, captured_at, equity, last_equity,
+                              buying_power, daily_pnl, daily_pnl_pct, source,
+                              updated_at
+                            ) VALUES (
+                              %(snapshot_date)s, %(captured_at)s, %(equity)s,
+                              %(last_equity)s, NULL, %(daily_pnl)s,
+                              %(daily_pnl_pct)s, %(snapshot_source)s, now()
+                            )
+                            ON CONFLICT (snapshot_date, captured_at) DO UPDATE SET
+                              equity = EXCLUDED.equity,
+                              last_equity = EXCLUDED.last_equity,
+                              daily_pnl = EXCLUDED.daily_pnl,
+                              daily_pnl_pct = EXCLUDED.daily_pnl_pct,
+                              updated_at = now()
+                            """,
+                            {
+                                "snapshot_date": row.get("session_date"),
+                                "captured_at": row.get("heartbeat_ts"),
+                                "equity": row.get("equity"),
+                                "last_equity": last_equity,
+                                "daily_pnl": daily_pnl,
+                                "daily_pnl_pct": daily_pnl_pct,
+                                "snapshot_source": f"{row.get('source', 'paper')}_live_loop",
+                            },
+                        )
         finally:
             conn.close()
         _consecutive_failures = 0

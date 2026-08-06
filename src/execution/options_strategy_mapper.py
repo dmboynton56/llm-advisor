@@ -35,6 +35,10 @@ class OptionTradePlan:
     signal_side: str
     z_score: float
     selection_tier: str = "primary"
+    signal_uid: str = ""
+    planned_underlying_rr: Optional[float] = None
+    premium_stop_loss_pct: Optional[float] = None
+    planned_option_risk_dollars: Optional[float] = None
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -201,6 +205,15 @@ class OptionsStrategyMapper:
             }
             return None
 
+        trade_plan = getattr(state, "trade", None)
+        underlying_entry = float(getattr(trade_plan, "entry_price", signal.entry_price) or signal.entry_price)
+        underlying_stop = getattr(trade_plan, "sl_price", None)
+        underlying_target = getattr(trade_plan, "tp_price", None)
+        underlying_risk = abs(underlying_entry - float(underlying_stop)) if underlying_stop is not None else 0.0
+        underlying_reward = abs(float(underlying_target) - underlying_entry) if underlying_target is not None else 0.0
+        planned_rr = underlying_reward / underlying_risk if underlying_risk else None
+        planned_option_risk = contract_cost * qty * float(self.options.stop_loss_pct)
+
         return OptionTradePlan(
             underlying_symbol=signal.symbol,
             option_symbol=best.contract.symbol,
@@ -226,6 +239,10 @@ class OptionsStrategyMapper:
             signal_side=signal.side,
             z_score=float(signal.z_score),
             selection_tier=profile.name,
+            signal_uid=str(getattr(signal, "signal_uid", "") or ""),
+            planned_underlying_rr=planned_rr,
+            premium_stop_loss_pct=float(self.options.stop_loss_pct),
+            planned_option_risk_dollars=planned_option_risk,
         )
 
     def _filter_candidates(self, candidates: List[OptionSnapshot]) -> List[OptionSnapshot]:

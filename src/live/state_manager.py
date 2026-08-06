@@ -18,6 +18,7 @@ class TradePlan:
     triggered_at: datetime
     execution_attempts: int = 0  # Track how many times we've tried to execute
     first_execution_attempt: Optional[datetime] = None  # When we first tried to execute
+    signal_uid: str = ""
 
 
 @dataclass

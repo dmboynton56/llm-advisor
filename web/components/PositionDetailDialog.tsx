@@ -46,6 +46,9 @@ type ChartResponse = {
   bars: PositionChartBar[];
   source?: string;
   error?: string;
+  error_code?: string;
+  request_id?: string;
+  retryable?: boolean;
 };
 
 function fillLabel(fill: PositionFill): string {
@@ -99,6 +102,7 @@ export function PositionDetailDialog({
   const [chart, setChart] = useState<ChartResponse | null>(null);
   const [loading, setLoading] = useState(false);
   const [chartReady, setChartReady] = useState(false);
+  const [retryNonce, setRetryNonce] = useState(0);
 
   useEffect(() => {
     const dialog = dialogRef.current;
@@ -151,7 +155,7 @@ export function PositionDetailDialog({
     return () => {
       cancelled = true;
     };
-  }, [position]);
+  }, [position, retryNonce]);
 
   const chartBars = useMemo(
     () => (chart?.bars ?? []).filter((bar) => Number.isFinite(bar.close)),
@@ -303,8 +307,20 @@ export function PositionDetailDialog({
               ) : chartBars.length > 0 ? (
                 <div className="grid h-64 place-items-center text-[12px] text-ink-3">Preparing chart...</div>
               ) : (
-                <div className="grid h-64 place-items-center px-6 text-center text-[12px] text-ink-3">
-                  {chart?.error ?? "No option bars were available for this holding window."}
+                <div className="flex h-64 flex-col items-center justify-center gap-3 px-6 text-center text-[12px] text-ink-3">
+                  <p>{chart?.error ?? "No option bars were available for this holding window."}</p>
+                  {chart?.request_id ? (
+                    <p className="num text-[10px] text-ink-3">Request {chart.request_id}</p>
+                  ) : null}
+                  {chart?.retryable || chart?.error_code === "NO_DATA" ? (
+                    <button
+                      type="button"
+                      onClick={() => setRetryNonce((value) => value + 1)}
+                      className="rounded-lg border border-line-2 px-3 py-1.5 text-[11px] text-ink-2 transition-colors hover:bg-sunk"
+                    >
+                      Retry
+                    </button>
+                  ) : null}
                 </div>
               )}
             </div>

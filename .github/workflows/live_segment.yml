@@ -13,6 +13,14 @@ on:
         required: false
         default: ""
         type: string
+      handoff_segment:
+        required: false
+        default: ""
+        type: string
+      entry_mode:
+        required: false
+        default: normal
+        type: string
 
 permissions:
   contents: read
@@ -21,7 +29,7 @@ permissions:
 jobs:
   run-segment:
     runs-on: ubuntu-latest
-    timeout-minutes: 300
+    timeout-minutes: 180
 
     env:
       ALPACA_API_KEY: ${{ secrets.ALPACA_API_KEY }}
@@ -91,6 +99,7 @@ jobs:
       SUPABASE_DB_PORT: ${{ secrets.SUPABASE_DB_PORT }}
       SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
       LIVE_STATE_PUBLISH_TICKS: "1"
+      LIVE_ENTRY_MODE: ${{ inputs.entry_mode }}
 
     steps:
       - name: Checkout Code
@@ -212,11 +221,11 @@ jobs:
           github-token: ${{ github.token }}
           path: .
 
-      - name: Download morning handoff
-        if: inputs.segment == 'afternoon'
+      - name: Download previous segment handoff
+        if: inputs.handoff_segment != ''
         uses: actions/download-artifact@v4
         with:
-          name: llm-advisor-handoff-${{ github.run_id }}
+          name: llm-advisor-handoff-${{ github.run_id }}-${{ inputs.handoff_segment }}
           path: .
 
       - name: Verify premarket context
@@ -241,10 +250,12 @@ jobs:
           if [ -n "${{ inputs.session_cutoff }}" ]; then
             CUTOFF_ARGS=(--session-cutoff "${{ inputs.session_cutoff }}")
           fi
+          ENTRY_ARGS=(--entry-mode "${{ inputs.entry_mode }}")
           python scripts/run_live_loop.py \
             --symbols $SYMBOLS_SPACE \
             --use-db \
             --fast 60 \
+            "${ENTRY_ARGS[@]}" \
             "${CUTOFF_ARGS[@]}"
 
       - name: Validate segment completion
@@ -260,8 +271,8 @@ jobs:
           reason = payload.get("session_end_reason")
           segment = "${{ inputs.segment }}"
           allowed = (
-              {"segment_handoff"}
-              if segment == "morning"
+              {"segment_handoff", "entry_window_closed_flat"}
+              if segment != "closing"
               else {"eod_close", "entry_window_closed_flat"}
           )
           if reason not in allowed:
@@ -275,31 +286,21 @@ jobs:
         if: always()
         run: touch .telemetry-artifact-anchor
 
-      - name: Upload morning handoff
-        if: always() && inputs.segment == 'morning'
+      - name: Upload segment handoff
+        if: always() && inputs.segment != 'closing'
         uses: actions/upload-artifact@v4
         with:
-          name: llm-advisor-handoff-${{ github.run_id }}
+          name: llm-advisor-handoff-${{ github.run_id }}-${{ inputs.segment }}
           path: |
             data/daily_news/
             .telemetry-artifact-anchor
           if-no-files-found: warn
 
-      - name: Upload emergency daily telemetry
-        if: failure() && inputs.segment == 'morning'
+      - name: Upload segment daily telemetry
+        if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: llm-advisor-daily-news-${{ github.run_id }}
-          path: |
-            data/daily_news/
-            .telemetry-artifact-anchor
-          if-no-files-found: warn
-
-      - name: Upload final daily telemetry
-        if: always() && inputs.segment == 'afternoon'
-        uses: actions/upload-artifact@v4
-        with:
-          name: llm-advisor-daily-news-${{ github.run_id }}
+          name: llm-advisor-daily-news-${{ github.run_id }}-${{ inputs.segment }}
           path: |
             data/daily_news/
             .telemetry-artifact-anchor

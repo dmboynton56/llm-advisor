@@ -68,6 +68,21 @@ def test_mr_trigger(test_state):
     assert signal.side == "short"
 
 
+def test_triggered_signal_reuses_stable_signal_uid(test_state):
+    test_state.status = "mr_armed"
+    test_state.side = "short"
+    test_state.armed_z = 1.5
+    test_state.update_features(100.0, 1.0, 0.5, datetime.now())
+
+    first = evaluate_thresholds(test_state, 100.5)
+    second = evaluate_thresholds(test_state, 100.5)
+
+    assert first is not None
+    assert second is not None
+    assert first.signal_uid
+    assert second.signal_uid == first.signal_uid
+
+
 def test_tc_arming(test_state):
     """Test trend continuation arming."""
     # Bullish trend (positive slope)

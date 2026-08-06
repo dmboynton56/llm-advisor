@@ -67,7 +67,8 @@ jobs:
                 run_id: runId,
                 per_page: 100,
               });
-              const artifact = artifacts.find((item) => item.name.startsWith('llm-advisor-daily-news-'));
+              const artifact = artifacts.find((item) => item.name === `llm-advisor-daily-news-${runId}-closing`)
+                || artifacts.find((item) => item.name.startsWith('llm-advisor-daily-news-'));
               if (!artifact) {
                 core.setFailed(`No llm-advisor-daily-news-* artifact on workflow run ${runId}.`);
                 return false;
@@ -87,7 +88,8 @@ jobs:
                   run_id: runId,
                   per_page: 100,
                 });
-                const artifact = artifacts.find((item) => item.name.startsWith('llm-advisor-daily-news-'));
+                const artifact = artifacts.find((item) => item.name === `llm-advisor-daily-news-${runId}-closing`)
+                  || artifacts.find((item) => item.name.startsWith('llm-advisor-daily-news-'));
                 if (artifact) {
                   core.setOutput('run_id', String(runId));
                   core.setOutput('artifact_name', artifact.name);
@@ -137,7 +139,8 @@ jobs:
                 run_id: run.id,
                 per_page: 100,
               });
-              const artifact = artifacts.find((item) => item.name.startsWith('llm-advisor-daily-news-'));
+              const artifact = artifacts.find((item) => item.name === `llm-advisor-daily-news-${run.id}-closing`)
+                || artifacts.find((item) => item.name.startsWith('llm-advisor-daily-news-'));
               if (artifact) {
                 core.setOutput('run_id', String(run.id));
                 core.setOutput('artifact_name', artifact.name);

@@ -90,3 +90,39 @@ def test_llm_validation_unwraps_gemini_style_list_response() -> None:
     assert result.should_execute is True
     assert result.confidence == 65
     assert result.risk_assessment == "medium"
+
+
+def test_hard_rr_gate_rejects_before_llm_call() -> None:
+    signal = SignalEvent(
+        symbol="SPY",
+        setup_type="MR",
+        side="long",
+        entry_price=500.0,
+        z_score=-1.2,
+        thresholds_used={},
+        timestamp=datetime.now(timezone.utc),
+        signal_uid="signal-rr-1",
+    )
+    state = SimpleNamespace(
+        trade=SimpleNamespace(entry_price=500.0, sl_price=499.0, tp_price=500.5),
+        last_z=-1.2,
+        atr_percentile=40.0,
+        htf_bias="bullish",
+        status="mr_triggered",
+    )
+    llm_client = SimpleNamespace(
+        call_structured=lambda prompt, schema: (_ for _ in ()).throw(
+            AssertionError("hard gate should run before the LLM")
+        )
+    )
+
+    result = validate_trade_with_llm(
+        signal=signal,
+        state=state,
+        premarket_context=SimpleNamespace(symbols={}),
+        llm_client=llm_client,
+    )
+
+    assert result.should_execute is False
+    assert result.risk_assessment == "hard_veto"
+    assert "underlying_risk_reward" in result.veto_flags

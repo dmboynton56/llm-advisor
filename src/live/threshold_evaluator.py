@@ -2,6 +2,7 @@
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Optional
+from uuid import uuid4
 
 from src.live.state_manager import SymbolState, TradePlan
 from config.thresholds import ThresholdMultiplier, STDEVThresholds
@@ -17,6 +18,7 @@ class SignalEvent:
     z_score: float
     thresholds_used: dict  # Threshold values used
     timestamp: datetime
+    signal_uid: str = ""
 
 
 def evaluate_thresholds(
@@ -92,6 +94,7 @@ def evaluate_thresholds(
                     "tc_trigger_z": thresholds.tc_trigger_z,
                 },
                 timestamp=datetime.now(),
+                signal_uid=state.trade.signal_uid,
             )
         # If no trade plan but status is triggered, reset (trade was executed)
         state.reset_to_idle()
@@ -125,6 +128,7 @@ def _create_signal(
         sl = price + atr_offset
         tp = price - thresholds.min_rr_ratio * atr_offset
     
+    signal_uid = str(uuid4())
     state.trade = TradePlan(
         setup=setup_type,
         side=state.side or "long",
@@ -134,6 +138,7 @@ def _create_signal(
         triggered_at=datetime.now(),
         execution_attempts=0,
         first_execution_attempt=None,
+        signal_uid=signal_uid,
     )
     state.status = f"{setup_type.lower()}_triggered"
     
@@ -150,4 +155,5 @@ def _create_signal(
             "tc_trigger_z": thresholds.tc_trigger_z,
         },
         timestamp=datetime.now(),
+        signal_uid=signal_uid,
     )

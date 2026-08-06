@@ -13,6 +13,7 @@ from run_eod_aggregate import (  # noqa: E402
     _underlying_from_occ,
     dedupe_account_snapshots,
     derive_trade_enrichment,
+    parse_daily_bias,
     parse_account_snapshots,
 )
 
@@ -128,3 +129,34 @@ class TestAccountSnapshotParsing:
         deduped = dedupe_account_snapshots([row, newer])
         assert len(deduped) == 1
         assert deduped[0].equity == 2.0
+
+
+class TestDailyBiasParsing:
+    def test_parse_ml_primary_and_llm_opinion(self, tmp_path):
+        artifact = tmp_path / "premarket_context.json"
+        artifact.write_text(
+            """
+            {"premarket_context": {"date": "2026-07-02", "symbols": {
+              "QQQ": {"daily_bias": "bullish", "confidence": 72,
+                "bias_available": true, "model_output": {"llm_validation": {
+                  "llm_bias": "choppy", "llm_confidence": 61,
+                  "agreement": "disagree", "reasoning": "Index is extended."}}},
+              "SPY": {"daily_bias": "", "confidence": 0, "bias_available": false,
+                "bias_error": "model unavailable", "model_output": {}}
+            }}}
+            """,
+            encoding="utf-8",
+        )
+        rows = parse_daily_bias("2026-07-02", artifact)
+
+        assert len(rows) == 2
+        qqq = next(row for row in rows if row.symbol == "QQQ")
+        assert qqq.ml_bias == "bullish"
+        assert qqq.llm_bias == "choppy"
+        assert qqq.agreement == "disagree"
+        assert qqq.llm_reasoning == "Index is extended."
+
+        spy = next(row for row in rows if row.symbol == "SPY")
+        assert spy.ml_bias == "unavailable"
+        assert spy.bias_available is False
+        assert spy.bias_error == "model unavailable"
