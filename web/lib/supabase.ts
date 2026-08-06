@@ -61,3 +61,37 @@ export async function supabaseSelect<T>(
     return null;
   }
 }
+
+/**
+ * Read a large ordered result set without relying on PostgREST's default row
+ * limit. This is intentionally server-side and read-only, like
+ * supabaseSelect().
+ */
+export async function supabaseSelectPaged<T>(
+  table: string,
+  query: string,
+  pageSize = 1000,
+  maxRows = 50_000,
+): Promise<T[] | null> {
+  if (!SUPABASE_URL || !SUPABASE_API_KEY) return null;
+  const rows: T[] = [];
+  try {
+    for (let offset = 0; offset < maxRows; offset += pageSize) {
+      const separator = query ? "&" : "";
+      const res = await fetch(
+        `${SUPABASE_URL}/rest/v1/${table}?${query}${separator}limit=${pageSize}&offset=${offset}`,
+        {
+          headers: buildSupabaseHeaders(SUPABASE_API_KEY),
+          cache: "no-store",
+        },
+      );
+      if (!res.ok) return null;
+      const page = (await res.json()) as T[];
+      rows.push(...page);
+      if (page.length < pageSize) break;
+    }
+    return rows;
+  } catch {
+    return null;
+  }
+}

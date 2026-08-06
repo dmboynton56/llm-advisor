@@ -9,6 +9,42 @@ export type AccountSnapshot = {
   source: string;
 };
 
+export type DailyBiasValue = "bullish" | "bearish" | "choppy" | "unavailable";
+
+export type DailyBiasSummary = {
+  bias_date: string;
+  symbol: string;
+  ml_bias: DailyBiasValue;
+  ml_confidence: number | null;
+  llm_bias: DailyBiasValue | null;
+  llm_confidence: number | null;
+  agreement: "agree" | "partial" | "disagree" | "unknown";
+  bias_available: boolean;
+  bias_error: string | null;
+  llm_reasoning: string | null;
+  context_version: string | null;
+  generated_at: string | null;
+};
+
+export type ValidationGateResult = {
+  code: string;
+  status: "pass" | "warn" | "fail";
+  observed_value?: string | number | boolean | null;
+  required_value?: string | number | boolean | null;
+  evidence?: string | null;
+};
+
+export type TradeValidationSummary = {
+  signal_uid?: string | null;
+  verdict: "approved" | "rejected" | "error" | "unknown";
+  confidence: number | null;
+  reasoning: string | null;
+  risk_assessment: string | null;
+  veto_flags: string[];
+  gate_results: ValidationGateResult[];
+  model?: string | null;
+};
+
 export type RunRow = {
   run_date: string;
   total_trades: number;
@@ -60,6 +96,10 @@ export type TradeRow = TradeDirection & {
   exit_reason: string | null;
   pnl: number | null;
   status: string | null;
+  daily_bias: DailyBiasSummary | null;
+  planned_underlying_rr: number | null;
+  realized_r: number | null;
+  validation_summary: TradeValidationSummary | null;
 };
 
 export type ValidationEvent = {
@@ -115,6 +155,10 @@ export type TradeLifecycleRow = {
   /** Recovered from entry telemetry for legacy lifecycle rows. */
   setup_type?: string | null;
   option_dte?: number | null;
+  daily_bias?: DailyBiasSummary | null;
+  planned_underlying_rr?: number | null;
+  realized_r?: number | null;
+  validation_summary?: TradeValidationSummary | null;
 };
 
 export type PositionFill = {

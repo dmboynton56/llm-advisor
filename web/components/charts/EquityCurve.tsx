@@ -14,14 +14,57 @@ import {
   AXIS_LINE,
   AXIS_TICK,
   GRID_STROKE,
-  TOOLTIP_CONTENT_STYLE,
-  TOOLTIP_LABEL_STYLE,
 } from "./chartTheme";
 
 export type EquityPoint = {
-  label: string;
+  timestamp: number;
+  capturedAt: string;
   equity: number;
+  dailyPnl: number | null;
+  deltaFromPrevious: number | null;
 };
+
+function money(value: number | null): string {
+  if (value === null || !Number.isFinite(value)) return "—";
+  return value.toLocaleString("en-US", {
+    style: "currency",
+    currency: "USD",
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  });
+}
+
+function EquityTooltip({
+  active,
+  payload,
+}: {
+  active?: boolean;
+  payload?: Array<{ payload: EquityPoint }>;
+}) {
+  const point = payload?.[0]?.payload;
+  if (!active || !point) return null;
+  const captured = new Date(point.capturedAt).toLocaleString("en-US", {
+    timeZone: "America/New_York",
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+    timeZoneName: "short",
+  });
+  return (
+    <div className="rounded-lg border border-line-2 bg-card px-3 py-2 shadow-panel">
+      <p className="tag">{captured}</p>
+      <p className="num mt-1 text-[14px] font-medium">{money(point.equity)}</p>
+      <p className="num mt-1 text-[10px] text-ink-3">
+        Point change {money(point.deltaFromPrevious)}
+      </p>
+      <p className="num text-[10px] text-ink-3">
+        Daily P&amp;L {money(point.dailyPnl)}
+      </p>
+    </div>
+  );
+}
 
 export function EquityCurve({
   data,
@@ -34,6 +77,8 @@ export function EquityCurve({
   // last tick went.
   const up = data.length > 1 && data[data.length - 1].equity >= data[0].equity;
   const stroke = up ? "var(--gain)" : "var(--loss)";
+  const intraday =
+    data.length > 1 && data[data.length - 1].timestamp - data[0].timestamp <= 2 * 86_400_000;
 
   return (
     <div className="h-64 w-full">
@@ -47,11 +92,22 @@ export function EquityCurve({
           </defs>
           <CartesianGrid stroke={GRID_STROKE} strokeDasharray="3 4" vertical={false} />
           <XAxis
-            dataKey="label"
+            dataKey="timestamp"
+            type="number"
+            domain={["dataMin", "dataMax"]}
             tick={AXIS_TICK}
             tickLine={false}
             axisLine={{ stroke: AXIS_LINE }}
             minTickGap={40}
+            tickFormatter={(value: number) =>
+              new Date(value).toLocaleString("en-US", {
+                timeZone: "America/New_York",
+                month: "short",
+                day: "numeric",
+                hour: intraday ? "numeric" : undefined,
+                minute: intraday ? "2-digit" : undefined,
+              })
+            }
           />
           <YAxis
             tick={AXIS_TICK}
@@ -76,15 +132,8 @@ export function EquityCurve({
             />
           ) : null}
           <Tooltip
-            contentStyle={TOOLTIP_CONTENT_STYLE}
-            labelStyle={TOOLTIP_LABEL_STYLE}
-            formatter={(value) => [
-              Number(value).toLocaleString("en-US", {
-                style: "currency",
-                currency: "USD",
-              }),
-              "Equity",
-            ]}
+            content={<EquityTooltip />}
+            cursor={{ stroke: AXIS_LINE, strokeDasharray: "3 4" }}
           />
           <Area
             type="monotone"

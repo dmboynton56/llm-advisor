@@ -303,6 +303,7 @@ def log_tick(
                 "entry_price": sig.entry_price,
                 "z_score": sig.z_score,
                 "timestamp": sig.timestamp.isoformat(),
+                "signal_uid": sig.signal_uid,
             }
             for sig in signals
         ],
@@ -338,6 +339,7 @@ def append_order_event(
             "z_score": signal.z_score,
             "timestamp": signal.timestamp.isoformat(),
             "thresholds_used": signal.thresholds_used,
+            "signal_uid": signal.signal_uid,
         }
     if state and state.trade:
         record["trade_plan"] = {
@@ -348,6 +350,7 @@ def append_order_event(
             "take_profit": state.trade.tp_price,
             "triggered_at": state.trade.triggered_at.isoformat(),
             "execution_attempts": state.trade.execution_attempts,
+            "signal_uid": state.trade.signal_uid,
         }
     if state:
         record["signal_context"] = {
@@ -696,10 +699,33 @@ def build_execution_success_details(
         "mode": mode,
     }
     if validation is not None:
-        for key in ("reasoning", "confidence", "risk_assessment", "veto_flags"):
+        for key in (
+            "should_execute",
+            "verdict",
+            "reasoning",
+            "confidence",
+            "risk_assessment",
+            "veto_flags",
+            "gate_results",
+            "signal_uid",
+        ):
             value = getattr(validation, key, None)
             if value is not None:
                 details[key] = value
+        details["validation"] = {
+            key: value
+            for key, value in details.items()
+            if key in {
+                "should_execute",
+                "verdict",
+                "reasoning",
+                "confidence",
+                "risk_assessment",
+                "veto_flags",
+                "gate_results",
+                "signal_uid",
+            }
+        }
     return details
 
 
@@ -1115,6 +1141,12 @@ def main():
     parser.add_argument("--use-db", action="store_true", help="Save to database in addition to JSON files")
     parser.add_argument("--db-path", default=None, help="Database path for SQLite (default: data/trading.db)")
     parser.add_argument(
+        "--entry-mode",
+        choices=("normal", "manage_only"),
+        default=os.getenv("LIVE_ENTRY_MODE", "normal"),
+        help="Allow new entries or only manage/reconcile existing positions.",
+    )
+    parser.add_argument(
         "--session-cutoff",
         default=None,
         help="Optional live-segment handoff time in ET (HH:MM); does not run EOD flatten",
@@ -1146,6 +1178,7 @@ def main():
     
     logger.info(f"Starting live loop for {date_str}")
     logger.info(f"Symbols: {', '.join(symbols)}")
+    logger.info("Entry mode: %s", args.entry_mode)
     
     # Initialize storage if requested
     storage = None
@@ -1462,6 +1495,8 @@ def main():
     loop_count = 0
     start_alert_sent = False
     entry_window_close_logged = False
+    validation_cache: Dict[str, Any] = {}
+    recorded_signal_uids: set[str] = set()
 
     def finalize_live_session(reason: str) -> None:
         if is_backtest:
@@ -1811,7 +1846,10 @@ def main():
                 logger.debug("Skipping market analysis (no premarket context in backtest mode)")
             
             # Evaluate thresholds and collect signals
-            entry_window_open = entry_window_is_open(current_et, run_end_et)
+            entry_window_open = (
+                args.entry_mode == "normal"
+                and entry_window_is_open(current_et, run_end_et)
+            )
             signals: List[SignalEvent] = []
             for symbol in symbols:
                 if not entry_window_open:
@@ -1850,19 +1888,23 @@ def main():
                 
                 if signal:
                     logger.info(f"TRADE SIGNAL DETECTED for {symbol}: {signal.setup_type} {signal.side.upper()} @ ${signal.entry_price:.2f}")
-
-                    signals.append(signal)
-                    append_order_event(
-                        order_events_path,
-                        "signal_detected",
-                        symbol,
-                        loop_count,
-                        signal=signal,
-                        state=state,
-                    )
+                    signal_uid = signal.signal_uid or f"{symbol}:{signal.timestamp.isoformat()}"
+                    signal.signal_uid = signal_uid
+                    if signal_uid not in recorded_signal_uids:
+                        recorded_signal_uids.add(signal_uid)
+                        signals.append(signal)
+                        append_order_event(
+                            order_events_path,
+                            "signal_detected",
+                            symbol,
+                            loop_count,
+                            signal=signal,
+                            state=state,
+                            details={"signal_uid": signal_uid},
+                        )
 
                     signal_id: Optional[int] = None
-                    if storage:
+                    if storage and not validation_cache.get(f"saved:{signal_uid}"):
                         try:
                             signal_id = storage.save_trade_signal({
                                 "timestamp": signal.timestamp.isoformat(),
@@ -1872,74 +1914,70 @@ def main():
                                 "entry_price": signal.entry_price,
                                 "z_score": signal.z_score,
                                 "threshold_multipliers": signal.thresholds_used,
+                                "signal_uid": signal_uid,
                             })
+                            validation_cache[f"saved:{signal_uid}"] = True
                             logger.debug(f"[DB] Saved trade signal for {symbol} (ID: {signal_id})")
                         except Exception as e:
                             logger.error(f"Failed to save trade signal to database: {e}")
 
-                    last_validation = None
+                    last_validation = validation_cache.get(signal_uid)
                     if settings.llm.enable_trade_validation and premarket_context:
                         if is_backtest:
                             logger.info(f"Would check with LLM for {symbol} trade validation (test mode - skipping API call)")
-                        else:
+                        elif last_validation is None and signal_uid not in validation_cache:
                             try:
                                 last_validation = validate_trade_with_llm(
                                     signal=signal,
                                     state=state,
                                     premarket_context=premarket_context,
-                                    llm_client=llm_client
+                                    llm_client=llm_client,
                                 )
-                                
-                                if last_validation.should_execute:
-                                    reasoning_str = str(last_validation.reasoning) if last_validation.reasoning else "Approved"
-                                    logger.info(f"LLM VALIDATION APPROVED {symbol} trade (confidence: {last_validation.confidence}%): {reasoning_str[:150]}...")
-                                    append_order_event(
-                                        order_events_path,
-                                        "validation_approved",
-                                        symbol,
-                                        loop_count,
-                                        signal=signal,
-                                        state=state,
-                                        details={
+                                validation_cache[signal_uid] = last_validation
+                                validation_event = "validation_approved" if last_validation.should_execute else "validation_rejected"
+                                reasoning_str = str(last_validation.reasoning or "")
+                                logger.info(
+                                    "LLM VALIDATION %s %s (confidence: %s%%): %s",
+                                    "APPROVED" if last_validation.should_execute else "REJECTED",
+                                    symbol,
+                                    last_validation.confidence,
+                                    reasoning_str[:150],
+                                )
+                                append_order_event(
+                                    order_events_path,
+                                    validation_event,
+                                    symbol,
+                                    loop_count,
+                                    signal=signal,
+                                    state=state,
+                                    details={
+                                        "signal_uid": signal_uid,
+                                        "should_execute": last_validation.should_execute,
+                                        "verdict": "approved" if last_validation.should_execute else "rejected",
+                                        "confidence": last_validation.confidence,
+                                        "reasoning": last_validation.reasoning,
+                                        "risk_assessment": last_validation.risk_assessment,
+                                        "veto_flags": getattr(last_validation, "veto_flags", []),
+                                        "gate_results": getattr(last_validation, "gate_results", []),
+                                    },
+                                )
+                                if storage and signal_id is not None:
+                                    try:
+                                        storage.save_llm_validation({
+                                            "signal_id": signal_id,
+                                            "timestamp": current_utc.isoformat(),
+                                            "should_execute": last_validation.should_execute,
                                             "confidence": last_validation.confidence,
                                             "reasoning": last_validation.reasoning,
                                             "risk_assessment": last_validation.risk_assessment,
-                                            "veto_flags": getattr(last_validation, "veto_flags", []),
-                                        },
-                                    )
-                                else:
-                                    reasoning_str = str(last_validation.reasoning) if last_validation.reasoning else "Rejected"
-                                    logger.info(f"LLM validation rejected trade for {symbol}: {reasoning_str}")
-                                    append_order_event(
-                                        order_events_path,
-                                        "validation_rejected",
-                                        symbol,
-                                        loop_count,
-                                        signal=signal,
-                                        state=state,
-                                        details={
-                                            "confidence": last_validation.confidence,
-                                            "reasoning": last_validation.reasoning,
-                                            "risk_assessment": last_validation.risk_assessment,
-                                            "veto_flags": getattr(last_validation, "veto_flags", []),
-                                        },
-                                    )
-                                    if storage and signal_id is not None:
-                                        try:
-                                            storage.save_llm_validation({
-                                                "signal_id": signal_id,
-                                                "timestamp": current_utc.isoformat(),
-                                                "should_execute": last_validation.should_execute,
-                                                "confidence": last_validation.confidence,
-                                                "reasoning": last_validation.reasoning,
-                                                "risk_assessment": last_validation.risk_assessment,
-                                                "llm_model": settings.llm.model,
-                                            })
-                                        except Exception as e:
-                                            logger.error(f"Failed to save LLM validation to database: {e}")
-                                    continue
+                                            "llm_model": settings.llm.model,
+                                            "signal_uid": signal_uid,
+                                        })
+                                    except Exception as e:
+                                        logger.error(f"Failed to save LLM validation to database: {e}")
                             except Exception as e:
                                 logger.error(f"Trade validation failed: {e}; skipping execution")
+                                validation_cache[signal_uid] = None
                                 append_order_event(
                                     order_events_path,
                                     "validation_error",
@@ -1947,29 +1985,21 @@ def main():
                                     loop_count,
                                     signal=signal,
                                     state=state,
-                                    details={"error": str(e)},
+                                    details={"signal_uid": signal_uid, "error": str(e)},
                                 )
+                                state.reset_to_idle()
                                 continue
+                        if last_validation is not None and not last_validation.should_execute:
+                            # Leave the triggered state so the same rejected
+                            # plan cannot be emitted every loop.
+                            state.reset_to_idle()
+                            continue
                     elif settings.llm.enable_trade_validation and not premarket_context:
                         if is_backtest:
                             logger.debug(f"LLM trade validation skipped (no premarket context for {symbol} in test mode)")
                         else:
                             logger.debug(f"LLM trade validation skipped (no premarket context for {symbol})")
 
-                    if storage and last_validation is not None and signal_id is not None:
-                        try:
-                            storage.save_llm_validation({
-                                "signal_id": signal_id,
-                                "timestamp": current_utc.isoformat(),
-                                "should_execute": last_validation.should_execute,
-                                "confidence": last_validation.confidence,
-                                "reasoning": last_validation.reasoning,
-                                "risk_assessment": last_validation.risk_assessment,
-                                "llm_model": settings.llm.model,
-                            })
-                        except Exception as e:
-                            logger.error(f"Failed to save LLM validation to database: {e}")
-                    
                     if state.trade:
                         if state.trade.first_execution_attempt is None:
                             state.trade.first_execution_attempt = current_utc
@@ -2102,26 +2132,6 @@ def main():
                         
                         if is_execution_success(result):
                             logger.info(f"TRADE EXECUTED SUCCESSFULLY for {symbol}: Order ID {result.get('order_id', 'N/A')}")
-                            append_order_event(
-                                order_events_path,
-                                "execution_succeeded",
-                                symbol,
-                                loop_count,
-                                signal=signal,
-                                state=state,
-                                details=build_execution_success_details(
-                                    result,
-                                    attempt_num,
-                                    "paper_live",
-                                    last_validation,
-                                ),
-                            )
-                            send_trade_alert(
-                                symbol=symbol,
-                                side=signal.side,
-                                price=signal.entry_price,
-                                setup=signal.setup_type
-                            )
                             oid = str(result.get("order_id", ""))
                             execution_symbol = str(
                                 result.get("option_symbol")
@@ -2143,16 +2153,87 @@ def main():
                             persisted_take_profit = None if is_option_order else state.trade.tp_price
                             option_plan = result.get("option_plan") if is_option_order else None
                             if is_option_order and isinstance(option_plan, dict) and state.trade:
+                                underlying_entry = float(state.trade.entry_price)
+                                underlying_stop = float(state.trade.sl_price)
+                                underlying_target = float(state.trade.tp_price)
+                                underlying_risk = abs(underlying_entry - underlying_stop)
+                                underlying_reward = abs(underlying_target - underlying_entry)
+                                planned_rr = (
+                                    underlying_reward / underlying_risk
+                                    if underlying_risk > 0
+                                    else None
+                                )
+                                bias_snapshot = None
+                                if premarket_context:
+                                    bias = premarket_context.symbols.get(symbol)
+                                    if bias:
+                                        model_output = (
+                                            bias.model_output
+                                            if isinstance(bias.model_output, dict)
+                                            else {}
+                                        )
+                                        llm_validation = model_output.get("llm_validation")
+                                        llm_validation = (
+                                            llm_validation
+                                            if isinstance(llm_validation, dict)
+                                            else {}
+                                        )
+                                        bias_snapshot = {
+                                            "bias_date": premarket_context.date,
+                                            "symbol": symbol,
+                                            "ml_bias": str(bias.daily_bias or "unavailable").lower(),
+                                            "ml_confidence": bias.confidence,
+                                            "llm_bias": llm_validation.get("llm_bias"),
+                                            "llm_confidence": llm_validation.get("llm_confidence"),
+                                            "agreement": llm_validation.get("agreement", "unknown"),
+                                            "bias_available": bool(bias.bias_available),
+                                            "bias_error": bias.bias_error or model_output.get("error"),
+                                            "llm_reasoning": llm_validation.get("reasoning"),
+                                            "generated_at": current_utc.isoformat(),
+                                        }
+                                risk_plan = {
+                                    "signal_uid": signal.signal_uid,
+                                    "underlying_entry": underlying_entry,
+                                    "underlying_stop": underlying_stop,
+                                    "underlying_target": underlying_target,
+                                    "planned_underlying_rr": planned_rr,
+                                    "premium_stop_loss_pct": option_plan.get("premium_stop_loss_pct"),
+                                    "planned_option_risk_dollars": option_plan.get("planned_option_risk_dollars"),
+                                    "exit_policy": "hybrid_thesis_first_premium_catastrophe_staged",
+                                }
                                 option_plan = {
                                     **option_plan,
                                     "underlying_trade_plan": {
-                                        "entry_price": state.trade.entry_price,
-                                        "stop_loss": state.trade.sl_price,
-                                        "take_profit": state.trade.tp_price,
+                                        "entry_price": underlying_entry,
+                                        "stop_loss": underlying_stop,
+                                        "take_profit": underlying_target,
                                         "side": state.trade.side,
                                     },
                                     "shadow_levels": dict(getattr(state, "shadow_levels", {}) or {}),
+                                    "daily_bias": bias_snapshot,
+                                    "risk_plan": risk_plan,
                                 }
+                                result = {**result, "option_plan": option_plan}
+                            append_order_event(
+                                order_events_path,
+                                "execution_succeeded",
+                                symbol,
+                                loop_count,
+                                signal=signal,
+                                state=state,
+                                details=build_execution_success_details(
+                                    result,
+                                    attempt_num,
+                                    "paper_live",
+                                    last_validation,
+                                ),
+                            )
+                            send_trade_alert(
+                                symbol=symbol,
+                                side=signal.side,
+                                price=signal.entry_price,
+                                setup=signal.setup_type
+                            )
                             underlying_symbol = result.get("underlying_symbol") if is_option_order else symbol
                             option_symbol = result.get("option_symbol") if is_option_order else None
                             qty_raw = result.get("qty", 0)

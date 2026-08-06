@@ -13,19 +13,47 @@ permissions:
   actions: read
 
 jobs:
-  morning:
+  opening:
     uses: ./.github/workflows/live_segment.yml
     with:
       symbols: ${{ inputs.symbols || 'SPY,QQQ,IWM' }}
-      segment: morning
-      session_cutoff: "12:35"
+      segment: opening
+      session_cutoff: "11:00"
+      entry_mode: normal
     secrets: inherit
 
-  afternoon:
-    needs: morning
+  late_morning:
+    needs: opening
+    if: ${{ always() }}
     uses: ./.github/workflows/live_segment.yml
     with:
       symbols: ${{ inputs.symbols || 'SPY,QQQ,IWM' }}
-      segment: afternoon
+      segment: late_morning
+      session_cutoff: "12:30"
+      handoff_segment: opening
+      entry_mode: ${{ needs.opening.result == 'success' && 'normal' || 'manage_only' }}
+    secrets: inherit
+
+  early_afternoon:
+    needs: late_morning
+    if: ${{ always() }}
+    uses: ./.github/workflows/live_segment.yml
+    with:
+      symbols: ${{ inputs.symbols || 'SPY,QQQ,IWM' }}
+      segment: early_afternoon
+      session_cutoff: "14:00"
+      handoff_segment: late_morning
+      entry_mode: ${{ needs.late_morning.result == 'success' && 'normal' || 'manage_only' }}
+    secrets: inherit
+
+  closing:
+    needs: early_afternoon
+    if: ${{ always() }}
+    uses: ./.github/workflows/live_segment.yml
+    with:
+      symbols: ${{ inputs.symbols || 'SPY,QQQ,IWM' }}
+      segment: closing
       session_cutoff: ""
+      handoff_segment: early_afternoon
+      entry_mode: ${{ needs.early_afternoon.result == 'success' && 'normal' || 'manage_only' }}
     secrets: inherit

@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { randomUUID } from "node:crypto";
 import { getLiveState } from "@/lib/data";
 import { supabaseSelect } from "@/lib/supabase";
 import type { JsonRecord, LiveOpenPosition, TradeLifecycleRow } from "@/lib/types";
@@ -25,6 +26,62 @@ type RawBar = {
   c?: number;
   v?: number;
 };
+
+type ChartErrorCode =
+  | "CONFIGURATION_ERROR"
+  | "UPSTREAM_AUTH"
+  | "UPSTREAM_RATE_LIMIT"
+  | "UPSTREAM_UNAVAILABLE"
+  | "INVALID_UPSTREAM_RESPONSE"
+  | "NO_DATA";
+
+function errorResponse(
+  code: ChartErrorCode,
+  message: string,
+  status: number,
+  requestId: string,
+  retryable: boolean,
+) {
+  return NextResponse.json(
+    {
+      bars: [],
+      error: message,
+      error_code: code,
+      request_id: requestId,
+      retryable,
+    },
+    {
+      status,
+      headers: { "Cache-Control": "no-store" },
+    },
+  );
+}
+
+function logUpstreamFailure(input: {
+  requestId: string;
+  positionId: string;
+  symbol: string;
+  status?: number;
+  body?: string;
+  error?: unknown;
+  elapsedMs: number;
+}) {
+  const body = input.body
+    ? input.body.replace(/[\r\n]+/g, " ").slice(0, 400)
+    : undefined;
+  console.error(
+    JSON.stringify({
+      event: "position_chart_upstream_failure",
+      request_id: input.requestId,
+      position_id: input.positionId,
+      symbol: input.symbol,
+      upstream_status: input.status ?? null,
+      upstream_body_prefix: body ?? null,
+      error: input.error instanceof Error ? input.error.message : input.error ?? null,
+      elapsed_ms: input.elapsedMs,
+    }),
+  );
+}
 
 function asRecord(value: unknown): JsonRecord {
   return value && typeof value === "object" && !Array.isArray(value)
@@ -134,30 +191,35 @@ function normalizedBars(payload: unknown, symbol: string) {
 }
 
 export async function GET(request: Request) {
+  const requestId = randomUUID();
+  const startedAt = Date.now();
   const url = new URL(request.url);
   const requestedId = url.searchParams.get("position_id")?.trim() ?? "";
   if (!requestedId || requestedId.length > 200) {
-    return NextResponse.json({ error: "position not found" }, { status: 404 });
+    return errorResponse("INVALID_UPSTREAM_RESPONSE", "Position not found.", 404, requestId, false);
   }
 
   const position = await resolvePosition(requestedId);
   if (!position || !OCC_RE.test(position.symbol)) {
-    return NextResponse.json({ error: "position not found" }, { status: 404 });
+    return errorResponse("INVALID_UPSTREAM_RESPONSE", "Position not found.", 404, requestId, false);
   }
 
   const key = (process.env.ALPACA_API_KEY ?? "").trim();
   const secret = (process.env.ALPACA_SECRET_KEY ?? "").trim();
   if (!key || !secret) {
-    return NextResponse.json(
-      { bars: [], error: "Option history is not configured on this deployment." },
-      { status: 503 },
+    return errorResponse(
+      "CONFIGURATION_ERROR",
+      "Option history is not configured on this deployment.",
+      503,
+      requestId,
+      false,
     );
   }
 
   const { start, end } = windowFor(position);
-  const source = (process.env.ALPACA_OPTIONS_FEED ?? "indicative").toLowerCase() === "opra"
-    ? "opra"
-    : "indicative";
+  // The options bars endpoint rejects a `feed` query parameter. Keep the
+  // response label honest instead of claiming a feed that was never sent.
+  const source = "alpaca-options-bars";
   const allBars: ReturnType<typeof normalizedBars> = [];
   let pageToken: string | null = null;
 
@@ -177,30 +239,74 @@ export async function GET(request: Request) {
           "APCA-API-KEY-ID": key,
           "APCA-API-SECRET-KEY": secret,
         },
+        signal: AbortSignal.timeout(10_000),
         next: { revalidate: position.status === "open" ? 30 : 86_400 },
       });
       if (!response.ok) {
-        return NextResponse.json(
-          { bars: [], error: "Option history is temporarily unavailable." },
-          { status: 502 },
-        );
+        const body = await response.text();
+        const status = response.status;
+        logUpstreamFailure({
+          requestId,
+          positionId: requestedId,
+          symbol: position.symbol,
+          status,
+          body,
+          elapsedMs: Date.now() - startedAt,
+        });
+        if (status === 401 || status === 403) {
+          return errorResponse("UPSTREAM_AUTH", "The option history service rejected its deployment credentials.", 502, requestId, false);
+        }
+        if (status === 429) {
+          return errorResponse("UPSTREAM_RATE_LIMIT", "Option history is rate limited. Try again shortly.", 503, requestId, true);
+        }
+        return errorResponse("UPSTREAM_UNAVAILABLE", "The option history service is temporarily unavailable.", 502, requestId, true);
       }
-      const payload = await response.json();
+      let payload: unknown;
+      try {
+        payload = await response.json();
+      } catch (error) {
+        logUpstreamFailure({
+          requestId,
+          positionId: requestedId,
+          symbol: position.symbol,
+          error,
+          elapsedMs: Date.now() - startedAt,
+        });
+        return errorResponse("INVALID_UPSTREAM_RESPONSE", "The option history service returned invalid data.", 502, requestId, true);
+      }
       allBars.push(...normalizedBars(payload, position.symbol));
       const next = asRecord(payload).next_page_token;
       pageToken = typeof next === "string" && next ? next : null;
       if (!pageToken) break;
     }
-  } catch {
-    return NextResponse.json(
-      { bars: [], error: "Option history is temporarily unavailable." },
-      { status: 502 },
-    );
+  } catch (error) {
+    logUpstreamFailure({
+      requestId,
+      positionId: requestedId,
+      symbol: position.symbol,
+      error,
+      elapsedMs: Date.now() - startedAt,
+    });
+    return errorResponse("UPSTREAM_UNAVAILABLE", "The option history service is temporarily unavailable.", 502, requestId, true);
   }
 
   const uniqueBars = [...new Map(allBars.map((bar) => [bar.timestamp, bar])).values()];
+  if (!uniqueBars.length) {
+    return NextResponse.json(
+      {
+        symbol: position.symbol,
+        source,
+        bars: [],
+        error: "No option bars were available for this holding window.",
+        error_code: "NO_DATA" as const,
+        request_id: requestId,
+        retryable: false,
+      },
+      { headers: { "Cache-Control": "no-store" } },
+    );
+  }
   return NextResponse.json(
-    { symbol: position.symbol, source, bars: uniqueBars },
+    { symbol: position.symbol, source, bars: uniqueBars, request_id: requestId },
     {
       headers: {
         "Cache-Control": position.status === "open"

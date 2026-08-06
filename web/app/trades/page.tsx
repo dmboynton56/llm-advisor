@@ -42,6 +42,10 @@ function lifecycleAsTrade(row: TradeLifecycleRow): TradeRow {
     exit_reason: row.exit_reason,
     pnl: row.realized_pnl,
     status: row.status,
+    daily_bias: row.daily_bias ?? null,
+    planned_underlying_rr: row.planned_underlying_rr ?? null,
+    realized_r: row.realized_r ?? null,
+    validation_summary: row.validation_summary ?? null,
   };
 }
 
@@ -58,8 +62,8 @@ export default async function TradesPage() {
     <div>
       <PageHeader title="Trades">
         Broker-position lifecycles over the last 90 days, using actual fills when
-        available and showing position, option contract, and market bias
-        separately.
+        available. Daily bias is the premarket ML reading; any LLM disagreement
+        is shown as opinion context rather than replacing the model reading.
       </PageHeader>
 
       {!supabaseConfigured() ? (

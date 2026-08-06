@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react";
 import clsx from "clsx";
-import type { TradePosition, TradeRow } from "@/lib/types";
+import type { TradeRow } from "@/lib/types";
 import {
   dateEtIso,
   fmtDateTime,
@@ -28,36 +28,17 @@ function dteBucket(dte: number | null): string {
 
 const DTE_OPTIONS = ["0", "1-3", "4-7", "8-14", "15+"];
 
-function positionForTrade(trade: TradeRow): TradePosition | "unknown" {
-  if (trade.position_side) return trade.position_side;
-  if (
-    trade.entry_action === "buy_to_open" ||
-    trade.side === "buy" ||
-    trade.side === "long"
-  ) {
-    return "long";
-  }
-  if (trade.entry_action === "sell_to_open" || trade.side === "short") return "short";
-  return "unknown";
-}
-
-function entryActionLabel(action: TradeRow["entry_action"]): string {
-  if (action === "buy_to_open") return "Buy to open";
-  if (action === "sell_to_open") return "Sell to open";
-  return "Unknown entry";
-}
-
 /**
  * Badges stay achromatic — colour in this app means money, and a call is not a
  * profit. Direction is carried by the word plus a filled/outlined weight.
  */
 function badgeClass(
-  kind: "long" | "short" | "call" | "put" | "bullish" | "bearish" | "unknown",
+  kind: "call" | "put" | "bullish" | "bearish" | "choppy" | "unavailable" | "unknown",
 ) {
-  const solid = kind === "long" || kind === "bullish" || kind === "call";
+  const solid = kind === "bullish" || kind === "call";
   return solid
     ? "border-transparent bg-sunk text-ink"
-    : kind === "unknown"
+    : kind === "unknown" || kind === "choppy" || kind === "unavailable"
       ? "border-dashed border-line-2 text-ink-3"
       : "border-line-2 text-ink-2";
 }
@@ -67,7 +48,7 @@ function Badge({
   children,
   title,
 }: {
-  kind: "long" | "short" | "call" | "put" | "bullish" | "bearish" | "unknown";
+  kind: "call" | "put" | "bullish" | "bearish" | "choppy" | "unavailable" | "unknown";
   children: React.ReactNode;
   title?: string;
 }) {
@@ -116,9 +97,8 @@ function FilterSelect({
 
 export function TradesTable({ trades }: { trades: TradeRow[] }) {
   const [underlying, setUnderlying] = useState("");
-  const [position, setPosition] = useState("");
   const [contractType, setContractType] = useState("");
-  const [bias, setBias] = useState("");
+  const [dailyBias, setDailyBias] = useState("");
   const [setup, setSetup] = useState("");
   const [dte, setDte] = useState("");
   const [entryDate, setEntryDate] = useState("");
@@ -148,16 +128,15 @@ export function TradesTable({ trades }: { trades: TradeRow[] }) {
     () =>
       trades.filter((t) => {
         if (underlying && (t.underlying_symbol ?? "") !== underlying) return false;
-        if (position && positionForTrade(t) !== position) return false;
         if (contractType && (t.contract_type ?? "") !== contractType) return false;
-        if (bias && (t.signal_bias ?? "") !== bias) return false;
+        if (dailyBias && (t.daily_bias?.ml_bias ?? "unavailable") !== dailyBias) return false;
         if (setup && (t.setup_type ?? "") !== setup) return false;
         if (dte && dteBucket(t.option_dte) !== dte) return false;
         if (entryDate && t.run_date !== entryDate) return false;
         if (exitDate && dateEtIso(t.exit_time) !== exitDate) return false;
         return true;
       }),
-    [trades, underlying, position, contractType, bias, setup, dte, entryDate, exitDate],
+    [trades, underlying, contractType, dailyBias, setup, dte, entryDate, exitDate],
   );
 
   const filteredPnl = filtered.reduce((acc, t) => acc + Number(t.pnl ?? 0), 0);
@@ -166,15 +145,16 @@ export function TradesTable({ trades }: { trades: TradeRow[] }) {
     "Entry",
     "Exit",
     "Symbol",
-    "Position",
     "Contract",
-    "Bias",
+    "Daily Bias",
     "Setup",
     "DTE",
     "Qty",
     "Entry px",
     "Exit px",
     "PnL",
+    "RR / R",
+    "Validation",
     "Exit reason",
   ];
 
@@ -201,22 +181,16 @@ export function TradesTable({ trades }: { trades: TradeRow[] }) {
             options={underlyings}
           />
           <FilterSelect
-            label="Position"
-            value={position}
-            onChange={setPosition}
-            options={["long", "short"]}
-          />
-          <FilterSelect
             label="Contract"
             value={contractType}
             onChange={setContractType}
             options={["call", "put"]}
           />
           <FilterSelect
-            label="Bias"
-            value={bias}
-            onChange={setBias}
-            options={["bullish", "bearish"]}
+            label="Daily bias"
+            value={dailyBias}
+            onChange={setDailyBias}
+            options={["bullish", "bearish", "choppy", "unavailable"]}
           />
           <FilterSelect
             label="Setup"
@@ -233,8 +207,10 @@ export function TradesTable({ trades }: { trades: TradeRow[] }) {
           </span>
         </div>
         <p className="mt-3 text-[11.5px] text-ink-3">
-          Position is whether the option was bought or sold. Contract is call or
-          put. Bias is the stock direction the signal expected.
+          Contract is call or put. Daily Bias is the premarket ML reading;
+          confidence and any LLM disagreement are shown in each row. RR / R
+          shows planned underlying RR followed by realized option R; Validation
+          includes the model verdict and hard-gate evidence on hover.
         </p>
       </div>
 
@@ -277,25 +253,29 @@ export function TradesTable({ trades }: { trades: TradeRow[] }) {
                   ) : null}
                 </td>
                 <td className="whitespace-nowrap px-4 py-3">
-                  <Badge
-                    kind={positionForTrade(t)}
-                    title="Long means the option was bought to open; short means it was sold to open."
-                  >
-                    {positionForTrade(t)}
-                  </Badge>
-                  <span className="mt-1 block text-[10px] text-ink-3">
-                    {entryActionLabel(t.entry_action)}
-                  </span>
-                </td>
-                <td className="whitespace-nowrap px-4 py-3">
                   <Badge kind={t.contract_type ?? "unknown"}>
                     {t.contract_type ?? "Unknown"}
                   </Badge>
                 </td>
                 <td className="whitespace-nowrap px-4 py-3">
-                  <Badge kind={t.signal_bias ?? "unknown"}>
-                    {t.signal_bias ?? "Unknown"}
+                  <Badge
+                    kind={t.daily_bias?.ml_bias ?? "unavailable"}
+                    title={
+                      t.daily_bias?.agreement === "disagree"
+                        ? `LLM opinion: ${t.daily_bias.llm_bias ?? "unknown"} (${t.daily_bias.llm_confidence ?? "?"}%). ${t.daily_bias.llm_reasoning ?? ""}`
+                        : "Primary value is the premarket ML daily bias."
+                    }
+                  >
+                    {t.daily_bias?.ml_bias ?? "Unavailable"}
                   </Badge>
+                  <span className="mt-1 block text-[10px] text-ink-3">
+                    {t.daily_bias?.ml_confidence != null
+                      ? `${t.daily_bias.ml_confidence}% ML`
+                      : "no confidence"}
+                    {t.daily_bias?.agreement === "disagree"
+                      ? ` · LLM ${t.daily_bias.llm_bias ?? "?"}`
+                      : ""}
+                  </span>
                 </td>
                 <td className="num whitespace-nowrap px-4 py-3 text-ink-2">
                   {t.setup_type ?? "—"}
@@ -317,6 +297,44 @@ export function TradesTable({ trades }: { trades: TradeRow[] }) {
                   )}
                 >
                   {t.pnl !== null ? fmtSignedUsd(Number(t.pnl)) : t.status ?? "—"}
+                </td>
+                <td
+                  className={clsx(
+                    "num whitespace-nowrap px-4 py-3",
+                    pnlColor(t.realized_r),
+                  )}
+                 >
+                  <span className="num block text-ink-2">
+                    {t.planned_underlying_rr != null
+                      ? `${t.planned_underlying_rr.toFixed(2)}:1`
+                      : "n/a"}
+                  </span>
+                  {t.realized_r != null
+                    ? `${t.realized_r > 0 ? "+" : ""}${t.realized_r.toFixed(2)}R`
+                    : "—"}
+                </td>
+                <td className="whitespace-nowrap px-4 py-3">
+                  <span
+                    title={[
+                      t.validation_summary?.reasoning,
+                      ...(t.validation_summary?.gate_results ?? [])
+                        .filter((gate) => gate.status === "fail")
+                        .map((gate) => `${gate.code}: ${gate.evidence ?? "failed"}`),
+                    ]
+                      .filter(Boolean)
+                      .join(" ") || undefined}
+                    className={clsx(
+                      "rounded border px-1.5 py-0.5 text-[10px] uppercase tracking-[0.06em]",
+                      t.validation_summary?.verdict === "approved"
+                        ? "border-line-2 bg-sunk text-ink"
+                        : t.validation_summary?.verdict === "rejected" ||
+                            t.validation_summary?.verdict === "error"
+                          ? "border-dashed border-line-2 text-ink-3"
+                          : "border-line text-ink-3",
+                    )}
+                  >
+                    {t.validation_summary?.verdict ?? "unavailable"}
+                  </span>
                 </td>
                 <td className="whitespace-nowrap px-4 py-3 text-[11.5px] text-ink-2">
                   {t.exit_reason ?? "—"}

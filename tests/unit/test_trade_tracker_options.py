@@ -51,6 +51,17 @@ class FakeOrderManager:
         return True
 
 
+class ProtectiveStopFillManager(FakeOrderManager):
+    def get_latest_exit_fill(self, symbol: str):
+        return {
+            "order_id": "stop-1",
+            "status": "filled",
+            "filled_qty": 1,
+            "filled_avg_price": 2.20,
+            "is_protective_stop": True,
+        }
+
+
 def _option_position(symbol: str = "SPY260116C00500000", plpc: float = 0.26):
     return {
         "symbol": symbol,
@@ -251,3 +262,29 @@ def test_protective_stop_event_activates_actual_entry_fill() -> None:
     ]
     assert storage.positions[0]["qty"] == 3
     assert storage.positions[0]["entry_price"] == 2.15
+
+
+def test_profitable_protective_stop_is_labeled_as_anomaly() -> None:
+    storage = FakeStorage()
+    symbol = "SPY260116C00500000"
+    manager = ProtectiveStopFillManager([_option_position(plpc=0.01)])
+    tracker = TradeTracker(
+        manager,
+        storage=storage,
+        options_settings=OptionsSettings(stop_loss_pct=0.35),
+    )
+    tracker.register_open_trade(
+        symbol,
+        "order-1",
+        42,
+        metadata={"asset_class": "option", "opened_at": datetime.now(timezone.utc)},
+    )
+
+    tracker.update_positions(now=datetime.now(timezone.utc))
+    manager.positions = []
+    tracker.update_positions(now=datetime.now(timezone.utc))
+
+    assert storage.closed[0]["exit_reason"] == "option_protective_stop_anomaly"
+    events = tracker.pop_exit_events()
+    anomaly = next(event for event in events if event["event_type"] == "option_protective_stop_anomaly")
+    assert anomaly["details"]["realized_pnl"] == 20.0

@@ -213,6 +213,33 @@ class TradeTracker:
             reason = str(context.get("reason") or "position_closed")
             if not context and (fill or {}).get("is_protective_stop"):
                 reason = "option_stop_loss"
+            if (
+                reason == "option_stop_loss"
+                and (fill or {}).get("is_protective_stop")
+                and total_pnl >= 0
+            ):
+                # A broker-reported protective stop that closes at or above
+                # the entry basis is contradictory. Preserve the fill, but
+                # label it as an anomaly so a profitable stop cannot be
+                # counted as an ordinary stop loss or start a cooldown.
+                reason = "option_protective_stop_anomaly"
+                self._exit_events.append(
+                    {
+                        "event_type": "option_protective_stop_anomaly",
+                        "symbol": symbol,
+                        "details": {
+                            "original_reason": "option_stop_loss",
+                            "exit_reason": reason,
+                            "exit_order": fill,
+                            "entry_price": self._float_or_none(
+                                old_pos.get("entry_price") or old_pos.get("avg_entry_price")
+                            ),
+                            "exit_price": total_exit_price,
+                            "realized_pnl": total_pnl,
+                            "position": old_pos,
+                        },
+                    }
+                )
             logger.info("Position closed: %s (realized/estimated P/L: $%.2f)", symbol, total_pnl)
             self._record_session_closed(
                 symbol=symbol,

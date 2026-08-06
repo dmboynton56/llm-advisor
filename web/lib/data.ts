@@ -1,8 +1,9 @@
-import { supabaseSelect } from "@/lib/supabase";
+import { supabaseSelect, supabaseSelectPaged } from "@/lib/supabase";
 import type {
   AccountSnapshot,
   Decision,
   DecisionEvent,
+  DailyBiasSummary,
   DecisionLog,
   Heartbeat,
   JsonRecord,
@@ -11,8 +12,10 @@ import type {
   RunRow,
   TradeRow,
   TradeLifecycleRow,
+  TradeValidationSummary,
   ValidationEvent,
 } from "@/lib/types";
+import { dateEtIso } from "@/lib/format";
 import {
   deriveTradeDirection,
   tradeDirectionDetails,
@@ -25,7 +28,7 @@ function daysAgoIso(days: number): string {
 }
 
 export async function getAccountSnapshots(days = 90): Promise<AccountSnapshot[]> {
-  const rows = await supabaseSelect<AccountSnapshot>(
+  const rows = await supabaseSelectPaged<AccountSnapshot>(
     "llm_advisor_account_snapshots",
     `select=snapshot_date,captured_at,equity,last_equity,buying_power,daily_pnl,daily_pnl_pct,source&snapshot_date=gte.${daysAgoIso(days)}&order=captured_at.asc`,
   );
@@ -67,6 +70,8 @@ type TradeEnrichmentRow = {
   option_metadata: JsonRecord | null;
 };
 
+type DailyBiasRow = DailyBiasSummary;
+
 function asJsonRecord(value: unknown): JsonRecord | null {
   return value && typeof value === "object" && !Array.isArray(value)
     ? (value as JsonRecord)
@@ -89,6 +94,131 @@ function firstNumber(...values: unknown[]): number | null {
     }
   }
   return null;
+}
+
+function asBias(value: unknown): DailyBiasSummary["ml_bias"] {
+  const normalized = String(value ?? "").trim().toLowerCase();
+  return normalized === "bullish" || normalized === "bearish" || normalized === "choppy"
+    ? normalized
+    : "unavailable";
+}
+
+function asAgreement(value: unknown): DailyBiasSummary["agreement"] {
+  const normalized = String(value ?? "").trim().toLowerCase();
+  return normalized === "agree" || normalized === "partial" || normalized === "disagree"
+    ? normalized
+    : "unknown";
+}
+
+function dailyBiasFromDetails(details: JsonRecord | null): DailyBiasSummary | null {
+  const order = asJsonRecord(details?.order);
+  const optionPlan = asJsonRecord(order?.option_plan);
+  const raw =
+    asJsonRecord(details?.daily_bias) ??
+    asJsonRecord(details?.bias_snapshot) ??
+    asJsonRecord(optionPlan?.daily_bias) ??
+    asJsonRecord(optionPlan?.bias_snapshot);
+  if (!raw) return null;
+  return {
+    bias_date: firstString(raw.bias_date, raw.date, raw.run_date) ?? "",
+    symbol: firstString(raw.symbol) ?? "",
+    ml_bias: asBias(raw.ml_bias ?? raw.daily_bias ?? raw.bias),
+    ml_confidence: firstNumber(raw.ml_confidence, raw.confidence),
+    llm_bias: raw.llm_bias == null ? null : asBias(raw.llm_bias),
+    llm_confidence: firstNumber(raw.llm_confidence),
+    agreement: asAgreement(raw.agreement),
+    bias_available: raw.bias_available !== false,
+    bias_error: firstString(raw.bias_error, raw.error),
+    llm_reasoning: firstString(raw.llm_reasoning, raw.reasoning),
+    context_version: firstString(raw.context_version),
+    generated_at: firstString(raw.generated_at, raw.timestamp),
+  };
+}
+
+function validationFromDetails(
+  details: JsonRecord | null,
+  eventType?: string | null,
+): TradeValidationSummary | null {
+  const raw = asJsonRecord(details?.validation) ?? details;
+  if (!raw) return null;
+  const hasValidation =
+    raw.should_execute != null ||
+    raw.verdict != null ||
+    raw.confidence != null ||
+    raw.reasoning != null ||
+    raw.veto_flags != null ||
+    raw.gate_results != null;
+  if (!hasValidation) return null;
+  const inferredVerdict =
+    eventType === "execution_succeeded"
+      ? "approved"
+      : eventType === "validation_rejected"
+        ? "rejected"
+        : eventType === "validation_error"
+          ? "error"
+          : null;
+  const verdictValue = String(
+    raw.verdict ??
+      inferredVerdict ??
+      (raw.should_execute === true
+        ? "approved"
+        : raw.should_execute === false
+          ? "rejected"
+          : "unknown"),
+  );
+  const verdict: TradeValidationSummary["verdict"] =
+    verdictValue === "approved" ? "approved" : verdictValue === "rejected" ? "rejected" : verdictValue === "error" ? "error" : "unknown";
+  const gates = Array.isArray(raw.gate_results) ? raw.gate_results : [];
+  return {
+    signal_uid: firstString(raw.signal_uid),
+    verdict,
+    confidence: firstNumber(raw.confidence),
+    reasoning: firstString(raw.reasoning, raw.reason),
+    risk_assessment: firstString(raw.risk_assessment),
+    veto_flags: Array.isArray(raw.veto_flags)
+      ? raw.veto_flags.filter((value): value is string => typeof value === "string")
+      : [],
+    gate_results: gates.filter((value): value is Record<string, unknown> => Boolean(value && typeof value === "object")) as TradeValidationSummary["gate_results"],
+    model: firstString(raw.model, raw.llm_model),
+  };
+}
+
+function riskPlanFromDetails(details: JsonRecord | null): JsonRecord | null {
+  const order = asJsonRecord(details?.order);
+  const optionPlan = asJsonRecord(order?.option_plan);
+  return (
+    asJsonRecord(details?.risk_plan) ??
+    asJsonRecord(details?.execution_risk_plan) ??
+    asJsonRecord(optionPlan?.risk_plan)
+  );
+}
+
+function rrFromPlan(value: unknown): number | null {
+  const plan = asJsonRecord(value);
+  if (!plan) return null;
+  const entry = firstNumber(plan.underlying_entry, plan.entry_price);
+  const stop = firstNumber(plan.underlying_stop, plan.stop_loss);
+  const target = firstNumber(plan.underlying_target, plan.take_profit);
+  if (entry == null || stop == null || target == null) return null;
+  const risk = Math.abs(entry - stop);
+  return risk > 0 ? Math.abs(target - entry) / risk : null;
+}
+
+function plannedRrFromDetails(
+  details: JsonRecord | null,
+  optionMetadata: JsonRecord | null,
+): number | null {
+  const order = asJsonRecord(details?.order);
+  const optionPlan = asJsonRecord(order?.option_plan);
+  const riskPlan = riskPlanFromDetails(details);
+  return firstNumber(
+    details?.planned_underlying_rr,
+    riskPlan?.planned_underlying_rr,
+    rrFromPlan(riskPlan),
+    rrFromPlan(details?.trade_plan),
+    rrFromPlan(optionPlan?.underlying_trade_plan),
+    rrFromPlan(optionMetadata?.underlying_trade_plan),
+  );
 }
 
 function optionDteFromSymbol(symbol: string, entryAt: string | null): number | null {
@@ -120,7 +250,7 @@ export async function getTradeLifecycles(
     details: JsonRecord | null;
   };
 
-  const [rows, executionEvents, tradeRows] = await Promise.all([
+  const [rows, executionEvents, tradeRows, dailyBiasRows] = await Promise.all([
     supabaseSelect<TradeLifecycleRow>(
       "llm_advisor_trade_lifecycles",
       `select=lifecycle_uid,entry_order_id,exit_order_id,symbol,underlying_symbol,opened_at,closed_at,filled_qty,entry_fill_price,exit_fill_price,exit_reason,realized_pnl,status,details&closed_at=gte.${daysAgoIso(days)}T00:00:00Z&order=closed_at.desc&limit=1000`,
@@ -138,12 +268,21 @@ export async function getTradeLifecycles(
       "llm_advisor_backtest_trades",
       `select=trade_uid,run_date,order_id,symbol,entry_time,setup_type,option_dte,option_metadata&run_date=gte.${daysAgoIso(days)}&order=run_date.desc,entry_time.desc&limit=1000`,
     ),
+    supabaseSelect<DailyBiasRow>(
+      "llm_advisor_daily_bias",
+      `select=bias_date,symbol,ml_bias,ml_confidence,llm_bias,llm_confidence,agreement,bias_available,bias_error,llm_reasoning,context_version,generated_at&bias_date=gte.${daysAgoIso(days)}&order=bias_date.desc&limit=1000`,
+    ),
   ]);
 
   const eventsByOrderId = new Map<string, ExecutionEvent>();
   const eventsBySymbol = new Map<string, ExecutionEvent[]>();
   const tradesByOrderId = new Map<string, TradeEnrichmentRow>();
   const tradesBySymbol = new Map<string, TradeEnrichmentRow[]>();
+  const dailyBiasByKey = new Map<string, DailyBiasSummary>();
+
+  for (const bias of dailyBiasRows ?? []) {
+    dailyBiasByKey.set(`${bias.bias_date}|${bias.symbol.toUpperCase()}`, bias);
+  }
 
   for (const trade of tradeRows ?? []) {
     if (trade.order_id) tradesByOrderId.set(trade.order_id, trade);
@@ -219,6 +358,12 @@ export async function getTradeLifecycles(
     const optionSymbol =
       firstString(optionPlan?.option_symbol, metadata?.option_symbol, row.symbol) ??
       row.symbol;
+    const underlyingSymbol =
+      firstString(
+        row.underlying_symbol,
+        optionPlan?.underlying_symbol,
+        metadata?.underlying_symbol,
+      ) ?? row.symbol;
     const direction = deriveTradeDirection({
       symbol: row.symbol,
       side: firstString(order?.side, optionPlan?.side, metadata?.side, event?.side),
@@ -258,10 +403,38 @@ export async function getTradeLifecycles(
         metadata?.dte,
       ) ?? optionDteFromSymbol(optionSymbol, row.opened_at);
 
+    const biasSnapshot =
+      dailyBiasFromDetails(row.details) ??
+      dailyBiasFromDetails(eventDetails) ??
+      dailyBiasByKey.get(`${dateEtIso(row.opened_at ?? row.closed_at)}|${underlyingSymbol.toUpperCase()}`) ??
+      null;
+    const riskPlan = riskPlanFromDetails(eventDetails) ?? riskPlanFromDetails(row.details);
+    const validationSummary =
+      validationFromDetails(eventDetails, event?.event_type) ??
+      validationFromDetails(row.details);
+    const realizedR = firstNumber(
+      row.details?.realized_r,
+      eventDetails.realized_r,
+      riskPlan && typeof row.realized_pnl === "number" && Number(riskPlan.planned_option_risk_dollars) > 0
+        ? row.realized_pnl / Number(riskPlan.planned_option_risk_dollars)
+        : null,
+    );
+
     return {
       ...row,
+      underlying_symbol: underlyingSymbol === row.symbol ? row.underlying_symbol : underlyingSymbol,
       setup_type: setupType,
       option_dte: optionDte,
+      daily_bias: biasSnapshot,
+      planned_underlying_rr: firstNumber(
+        row.details?.planned_underlying_rr,
+        eventDetails.planned_underlying_rr,
+        riskPlan?.planned_underlying_rr,
+        plannedRrFromDetails(row.details, metadata ?? null),
+        plannedRrFromDetails(eventDetails, metadata ?? null),
+      ),
+      realized_r: realizedR,
+      validation_summary: validationSummary,
       details: {
         ...(row.details ?? {}),
         trade_direction: tradeDirectionDetails(direction),
