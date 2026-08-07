@@ -292,3 +292,41 @@ def test_mapper_preserves_explicit_legacy_two_hundred_dollar_cap() -> None:
     assert plan is not None
     assert plan.qty == 1
     assert plan.estimated_premium <= 200.0
+
+
+def test_mapper_reads_trade_plan_rr_from_state() -> None:
+    """Regression: profile builder must receive state (NameError blocked live fills)."""
+
+    class FakeOptionsClient:
+        def find_candidates(self, **kwargs):
+            return [_snapshot("SPY260116C00500000", delta=0.45)]
+
+    mapper = OptionsStrategyMapper(
+        OptionsSettings(
+            min_delta=0.30,
+            max_delta=0.60,
+            max_premium_per_trade=500.0,
+            max_bid_ask_spread_pct=0.20,
+            min_open_interest=100,
+        ),
+        RiskSettings(max_risk_per_trade_percent=1.0),
+    )
+    signal = SimpleNamespace(
+        symbol="SPY",
+        side="long",
+        setup_type="MR",
+        entry_price=500.0,
+        z_score=-1.0,
+        signal_uid="sig-rr-1",
+    )
+    state = SimpleNamespace(
+        trade=SimpleNamespace(entry_price=500.0, sl_price=499.0, tp_price=501.5)
+    )
+
+    plan = mapper.build_trade_plan(
+        signal, state=state, options_client=FakeOptionsClient(), account_equity=100000
+    )
+
+    assert plan is not None
+    assert plan.planned_underlying_rr == pytest.approx(1.5)
+    assert plan.signal_uid == "sig-rr-1"

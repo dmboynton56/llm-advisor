@@ -85,6 +85,7 @@ class OptionsStrategyMapper:
             try:
                 plan = self._build_trade_plan_for_profile(
                     signal=signal,
+                    state=state,
                     options_client=options_client,
                     account_equity=account_equity,
                     contract_type=contract_type,
@@ -118,6 +119,7 @@ class OptionsStrategyMapper:
     def _build_trade_plan_for_profile(
         self,
         signal: Any,
+        state: Any,
         options_client: AlpacaOptionsClient,
         account_equity: float,
         contract_type: str,
