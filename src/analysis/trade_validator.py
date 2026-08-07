@@ -4,6 +4,7 @@ from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
 
 from src.analysis.llm_client import LLMClient, normalize_structured_content
+from src.execution.risk_calculator import validate_risk_reward
 from src.live.threshold_evaluator import SignalEvent
 from src.live.state_manager import SymbolState
 from src.premarket.bias_gatherer import PremarketContext
@@ -50,7 +51,8 @@ def _hard_gates(signal: SignalEvent, state: SymbolState, symbol_bias: Any) -> Li
     risk = abs(entry - stop)
     reward = abs(target - entry)
     rr = reward / risk if risk else 0.0
-    gates.append(_gate("underlying_risk_reward", "pass" if rr >= 1.5 else "fail", rr, 1.5, "Trade-plan target divided by trade-plan stop distance."))
+    rr_ok = validate_risk_reward(entry, stop, target, 1.5) if risk else False
+    gates.append(_gate("underlying_risk_reward", "pass" if rr_ok else "fail", rr, 1.5, "Trade-plan target divided by trade-plan stop distance."))
 
     if signal.setup_type.upper() == "TC":
         expected = "bullish" if signal.side == "long" else "bearish"

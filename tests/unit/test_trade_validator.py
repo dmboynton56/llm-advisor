@@ -126,3 +126,54 @@ def test_hard_rr_gate_rejects_before_llm_call() -> None:
     assert result.should_execute is False
     assert result.risk_assessment == "hard_veto"
     assert "underlying_risk_reward" in result.veto_flags
+
+
+def test_hard_rr_gate_accepts_float_dust_at_min_ratio() -> None:
+    """1.5R plans with float residue just under 1.5 must not hard-veto."""
+    from src.execution.risk_calculator import calculate_risk_reward_ratio
+
+    entry = 500.0
+    stop = 499.0
+    # Slightly under exact 1.5R (fails bare `>= 1.5`, passes epsilon gate).
+    target = entry + (1.5 * (entry - stop)) * (1.0 - 1e-12)
+    assert calculate_risk_reward_ratio(entry, stop, target) < 1.5
+
+    signal = SignalEvent(
+        symbol="SPY",
+        setup_type="MR",
+        side="long",
+        entry_price=entry,
+        z_score=-1.2,
+        thresholds_used={},
+        timestamp=datetime.now(timezone.utc),
+        signal_uid="signal-rr-float-1",
+    )
+    state = SimpleNamespace(
+        trade=SimpleNamespace(entry_price=entry, sl_price=stop, tp_price=target),
+        last_z=-1.2,
+        atr_percentile=40.0,
+        htf_bias="bullish",
+        status="mr_triggered",
+    )
+    llm_client = SimpleNamespace(
+        call_structured=lambda prompt, schema: SimpleNamespace(
+            content={
+                "should_execute": True,
+                "confidence": 55,
+                "reasoning": "RR geometry is valid.",
+                "risk_assessment": "medium",
+            }
+        )
+    )
+
+    result = validate_trade_with_llm(
+        signal=signal,
+        state=state,
+        premarket_context=SimpleNamespace(symbols={}),
+        llm_client=llm_client,
+    )
+
+    assert result.should_execute is True
+    assert "underlying_risk_reward" not in result.veto_flags
+    rr_gate = next(g for g in result.gate_results if g["code"] == "underlying_risk_reward")
+    assert rr_gate["status"] == "pass"
