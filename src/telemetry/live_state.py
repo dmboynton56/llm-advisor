@@ -229,6 +229,100 @@ def build_live_state_row(
     }
 
 
+def _json_dict(value: Any) -> Dict[str, Any]:
+    if isinstance(value, dict):
+        return dict(value)
+    if isinstance(value, str):
+        try:
+            parsed = json.loads(value)
+        except json.JSONDecodeError:
+            return {}
+        return dict(parsed) if isinstance(parsed, dict) else {}
+    return {}
+
+
+def _closed_identity(item: Dict[str, Any]) -> str:
+    for field in ("position_id", "entry_order_id"):
+        value = item.get(field)
+        if value not in (None, ""):
+            return f"{field}:{value}"
+    # Legacy rows may not have an ID. Include enough fill information to avoid
+    # duplicating the same close when a segment is retried.
+    return json.dumps(
+        [
+            item.get("symbol"),
+            item.get("opened_at"),
+            item.get("closed_at"),
+            item.get("initial_qty"),
+            item.get("exit_price"),
+            item.get("pnl"),
+        ],
+        sort_keys=True,
+        default=str,
+    )
+
+
+def _merge_cross_segment_stats(
+    cur: Any,
+    row: Dict[str, Any],
+) -> Dict[str, Any]:
+    """Accumulate closed positions across same-day workflow segments.
+
+    Each GitHub Actions segment creates a new TradeTracker, so its
+    ``session_closed`` list only covers that process. The live-state row is
+    upserted by all segments; merge the prior same-date row before replacing it
+    so the published session total remains a trading-day total.
+    """
+    current = _json_dict(row.get("session_stats"))
+    session_date = row.get("session_date")
+    source = row.get("source") or "paper"
+    if not session_date:
+        return current
+
+    cur.execute(
+        """
+        SELECT session_date, session_stats
+        FROM llm_advisor_live_state
+        WHERE source = %(source)s
+        FOR UPDATE
+        """,
+        {"source": source},
+    )
+    previous_row = cur.fetchone()
+    if not previous_row:
+        return current
+
+    previous_date, previous_raw_stats = previous_row
+    if str(previous_date)[:10] != str(session_date)[:10]:
+        return current
+
+    previous = _json_dict(previous_raw_stats)
+    closed_by_id: Dict[str, Dict[str, Any]] = {}
+    for item in [*(previous.get("closed") or []), *(current.get("closed") or [])]:
+        if isinstance(item, dict):
+            closed_by_id[_closed_identity(item)] = item
+
+    closed = list(closed_by_id.values())
+    realized = sum(float(item.get("pnl") or 0.0) for item in closed)
+    merged = {**previous, **current}
+    merged.update(
+        {
+            "fills": len(closed),
+            "realized_pnl": realized,
+            "wins": sum(1 for item in closed if float(item.get("pnl") or 0.0) > 0),
+            "losses": sum(1 for item in closed if float(item.get("pnl") or 0.0) < 0),
+            "closed": closed,
+        }
+    )
+    # A segment handoff is not the end of the trading session. Only the
+    # current segment's final publish may set an end reason.
+    if current.get("session_end_reason"):
+        merged["session_end_reason"] = current["session_end_reason"]
+    else:
+        merged.pop("session_end_reason", None)
+    return merged
+
+
 def publish_live_state(row: Dict[str, Any]) -> bool:
     """
     Upsert one live-state row. Never raises to the caller.
@@ -242,6 +336,8 @@ def publish_live_state(row: Dict[str, Any]) -> bool:
         try:
             with conn:
                 with conn.cursor() as cur:
+                    row_to_publish = dict(row)
+                    row_to_publish["session_stats"] = _merge_cross_segment_stats(cur, row)
                     cur.execute(
                         """
                         INSERT INTO llm_advisor_live_state (
@@ -270,19 +366,19 @@ def publish_live_state(row: Dict[str, Any]) -> bool:
                           updated_at = now()
                         """,
                         {
-                            **row,
-                            "open_positions": json.dumps(row.get("open_positions") or []),
-                            "session_stats": json.dumps(row.get("session_stats") or {}),
-                            "exit_policy": json.dumps(row.get("exit_policy") or {}),
+                            **row_to_publish,
+                            "open_positions": json.dumps(row_to_publish.get("open_positions") or []),
+                            "session_stats": json.dumps(row_to_publish.get("session_stats") or {}),
+                            "exit_policy": json.dumps(row_to_publish.get("exit_policy") or {}),
                         },
                     )
                     # Keep the latest live-state row cheap to read while also
                     # preserving the time series that the dashboard needs.
                     # The account fields were already fetched for this tick,
                     # so this does not add another broker request.
-                    if row.get("equity") is not None:
-                        last_equity = row.get("last_equity")
-                        daily_pnl = row.get("daily_pnl")
+                    if row_to_publish.get("equity") is not None:
+                        last_equity = row_to_publish.get("last_equity")
+                        daily_pnl = row_to_publish.get("daily_pnl")
                         daily_pnl_pct = (
                             float(daily_pnl) / float(last_equity)
                             if daily_pnl is not None and last_equity not in (None, 0)
@@ -307,13 +403,13 @@ def publish_live_state(row: Dict[str, Any]) -> bool:
                               updated_at = now()
                             """,
                             {
-                                "snapshot_date": row.get("session_date"),
-                                "captured_at": row.get("heartbeat_ts"),
-                                "equity": row.get("equity"),
+                                "snapshot_date": row_to_publish.get("session_date"),
+                                "captured_at": row_to_publish.get("heartbeat_ts"),
+                                "equity": row_to_publish.get("equity"),
                                 "last_equity": last_equity,
                                 "daily_pnl": daily_pnl,
                                 "daily_pnl_pct": daily_pnl_pct,
-                                "snapshot_source": f"{row.get('source', 'paper')}_live_loop",
+                                "snapshot_source": f"{row_to_publish.get('source', 'paper')}_live_loop",
                             },
                         )
         finally:
