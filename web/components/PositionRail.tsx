@@ -10,9 +10,10 @@ import {
   formatOccLabel,
   pnlColor,
   relativeTime,
+  dateEtIso,
 } from "@/lib/format";
 import type { LiveStateRow, OverviewPosition } from "@/lib/types";
-import { formatPositionStatus } from "@/lib/positions";
+import { formatPositionStatus, getOverviewSessionMetrics } from "@/lib/positions";
 
 function PositionRow({
   position,
@@ -57,30 +58,46 @@ export function PositionRail({
   liveState,
   liveFresh,
   capturedAt,
+  sessionDate,
+  brokerDailyPnl,
 }: {
   positions: OverviewPosition[];
   liveState: LiveStateRow | null;
   liveFresh: boolean;
   capturedAt: string | null;
+  sessionDate: string;
+  brokerDailyPnl: number | null;
 }) {
   const [selected, setSelected] = useState<OverviewPosition | null>(null);
   const open = useMemo(() => positions.filter((position) => position.status === "open"), [positions]);
   const closed = useMemo(() => positions.filter((position) => position.status === "closed"), [positions]);
+  const metrics = useMemo(
+    () => getOverviewSessionMetrics(positions, sessionDate),
+    [positions, sessionDate],
+  );
+  const isCurrentSession = sessionDate === dateEtIso();
+  const positionTitle = isCurrentSession ? "Today's positions" : "Last session's positions";
+  const closedLabel = isCurrentSession ? "Closed today" : "Closed session";
+  const hasPositionData = Boolean(liveState) || positions.length > 0;
+  const accountDelta =
+    brokerDailyPnl != null && hasPositionData
+      ? brokerDailyPnl - metrics.realizedPnl - metrics.openUnrealizedPnl
+      : null;
 
   return (
     <>
       <Panel>
         <PanelHead
-          title="Today’s positions"
+          title={positionTitle}
           aside={`${open.length} open · ${closed.length} closed`}
         />
         <p
           className={clsx(
             "num text-[24px] font-medium tracking-[-0.03em]",
-            pnlColor(liveState?.unrealized_pnl ?? null),
+            pnlColor(hasPositionData ? metrics.openUnrealizedPnl : null),
           )}
         >
-          {fmtSignedUsd(liveState?.unrealized_pnl ?? null)}
+          {fmtSignedUsd(hasPositionData ? metrics.openUnrealizedPnl : null)}
         </p>
         <p className="mt-1 text-[11px] text-ink-3">open unrealized P&L · tap a position for its trail</p>
 
@@ -102,7 +119,7 @@ export function PositionRail({
             ) : null}
             {closed.length > 0 ? (
               <div className={clsx(open.length > 0 && "mt-4")}>
-                <p className="tag border-b border-line pb-2">Closed today</p>
+                <p className="tag border-b border-line pb-2">{closedLabel}</p>
                 <ul className="mt-1 divide-y divide-line/70">
                   {closed.map((position) => (
                     <PositionRow
@@ -117,7 +134,11 @@ export function PositionRail({
           </div>
         ) : (
           <p className="mt-3 text-[12.5px] text-ink-3">
-            {liveState ? "No open or closed positions today." : "No live state recorded yet."}
+            {liveState
+              ? isCurrentSession
+                ? "No open or closed positions today."
+                : "No open or closed positions in the last session."
+              : "No live state recorded yet."}
           </p>
         )}
 
@@ -125,28 +146,36 @@ export function PositionRail({
           <div className="flex-1">
             <span className="tag">Session</span>
             <span className="num mt-1.5 block text-[15px] font-medium">
-              {liveState?.session_stats?.wins ?? 0}W <span className="text-ink-3">/</span>{" "}
-              {liveState?.session_stats?.losses ?? 0}L
+              {metrics.wins}W <span className="text-ink-3">/</span> {metrics.losses}L
             </span>
           </div>
           <div className="flex-1">
-            <span className="tag">Realized</span>
+            <span className="tag">Realized lifecycle</span>
             <span
               className={clsx(
                 "num mt-1.5 block text-[15px] font-medium",
-                pnlColor(
-                  liveState?.session_stats?.realized_pnl != null
-                    ? Number(liveState.session_stats.realized_pnl)
-                    : null,
-                ),
+                pnlColor(hasPositionData ? metrics.realizedPnl : null),
               )}
             >
-              {liveState?.session_stats?.realized_pnl != null
-                ? fmtSignedUsd(Number(liveState.session_stats.realized_pnl))
+              {hasPositionData
+                ? fmtSignedUsd(metrics.realizedPnl)
                 : "—"}
             </span>
           </div>
         </div>
+
+        {accountDelta != null && Math.abs(accountDelta) >= 0.01 ? (
+          <p className="mt-3 text-[11px] leading-relaxed text-ink-3">
+            Broker daily P&L also includes {fmtSignedUsd(accountDelta)} outside position lifecycle P&L
+            (fees, cash adjustments, or pending reconciliation).
+          </p>
+        ) : null}
+
+        {!isCurrentSession ? (
+          <p className="mt-3 text-[11px] text-ink-3">
+            Account P&L and positions are anchored to {sessionDate} ET, the latest recorded trading session.
+          </p>
+        ) : null}
 
         {!liveFresh && liveState ? (
           <p className="mt-3 text-[11px] text-ink-3">

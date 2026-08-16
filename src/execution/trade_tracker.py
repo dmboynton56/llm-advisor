@@ -1247,7 +1247,9 @@ class TradeTracker:
         multiplier = 100.0 if cls._is_option_position(pos) else 1.0
         side = str(pos.get("side", "")).lower()
         direction = -1.0 if side in ("short", "sell") else 1.0
-        return (exit_price - entry_price) * qty * multiplier * direction
+        # P&L is a cash amount; round at the storage/event boundary so
+        # floating-point residue cannot create cent-level reconciliation drift.
+        return round((exit_price - entry_price) * qty * multiplier * direction, 2)
 
     def _record_stopout_and_overshoot(
         self,

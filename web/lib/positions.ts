@@ -14,6 +14,13 @@ function numberOrNull(value: unknown): number | null {
   return Number.isFinite(parsed) ? parsed : null;
 }
 
+function normalizeSessionDate(value: string | Date): string {
+  // A bare ISO date is already an ET session date. Parsing it as a JavaScript
+  // Date would interpret midnight as UTC and shift it to the prior ET date.
+  if (typeof value === "string" && /^\d{4}-\d{2}-\d{2}$/.test(value)) return value;
+  return dateEtIso(value);
+}
+
 function record(value: unknown): JsonRecord {
   return value && typeof value === "object" && !Array.isArray(value)
     ? (value as JsonRecord)
@@ -126,6 +133,8 @@ function normalizeOpenPosition(position: LiveOpenPosition): OverviewPosition {
   const totalPnl = realizedPnl + unrealizedPnl;
   const fills = Array.isArray(position.fills)
     ? position.fills
+        .map((fill) => fillFromRaw(fill, "partial_exit"))
+        .filter((fill): fill is PositionFill => Boolean(fill))
     : Array.isArray(state.exit_fills)
       ? state.exit_fills
           .map((fill) => fillFromRaw(fill, "partial_exit"))
@@ -338,13 +347,13 @@ function sourcePriority(source: PositionSource): number {
   return 1;
 }
 
-/** Merge live open/session data with durable lifecycles closed today in ET. */
+/** Merge live open/session data with durable lifecycles closed on one ET date. */
 export function getTodayOverviewPositions(
   liveState: LiveStateRow | null,
   lifecycles: TradeLifecycleRow[],
-  now: Date = new Date(),
+  sessionDate: string | Date = new Date(),
 ): OverviewPosition[] {
-  const today = dateEtIso(now);
+  const targetDate = normalizeSessionDate(sessionDate);
   const merged = new Map<string, { position: OverviewPosition; priority: number }>();
   const aliasToKey = new Map<string, string>();
   let generatedKey = 0;
@@ -383,12 +392,12 @@ export function getTodayOverviewPositions(
     add(normalized, "live-open");
   }
   for (const closed of liveState?.session_stats?.closed ?? []) {
-    if (dateEtIso(closed.closed_at) !== today) continue;
+    if (dateEtIso(closed.closed_at) !== targetDate) continue;
     const normalized = normalizeLiveClosed(closed);
     add(normalized, "live-closed");
   }
   for (const lifecycle of lifecycles) {
-    if (dateEtIso(lifecycle.closed_at) !== today) continue;
+    if (dateEtIso(lifecycle.closed_at) !== targetDate) continue;
     const normalized = normalizeLifecycle(lifecycle);
     add(normalized, "lifecycle");
   }
@@ -399,6 +408,78 @@ export function getTodayOverviewPositions(
     const bTime = Date.parse(b.status === "open" ? b.opened_at ?? "" : b.closed_at ?? "");
     return (Number.isFinite(bTime) ? bTime : 0) - (Number.isFinite(aTime) ? aTime : 0);
   });
+}
+
+export type OverviewSessionMetrics = {
+  openUnrealizedPnl: number;
+  realizedPnl: number;
+  wins: number;
+  losses: number;
+  closedCount: number;
+};
+
+function openPositionRealizedPnlForDate(
+  position: OverviewPosition,
+  targetDate: string,
+): number {
+  const partialFills = position.fills.filter((fill) => fill.kind === "partial_exit");
+  if (partialFills.length === 0) {
+    // Legacy live-state rows did not always persist exit fills. Only use the
+    // aggregate realized value when the position itself opened in this
+    // session; an overnight position may carry prior-session partial P&L.
+    return dateEtIso(position.opened_at) === targetDate
+      ? numberOrNull(position.realized_pnl) ?? 0
+      : 0;
+  }
+
+  const datedFills = partialFills.filter(
+    (fill) => dateEtIso(fill.timestamp) === targetDate,
+  );
+  if (datedFills.length > 0) {
+    return datedFills.reduce((sum, fill) => sum + (fill.pnl ?? 0), 0);
+  }
+
+  // If timestamps are absent in a legacy row, use its aggregate only for a
+  // same-session entry; this keeps prior-session partial exits out of today.
+  const hasTimestamp = partialFills.some((fill) => Boolean(fill.timestamp));
+  return !hasTimestamp && dateEtIso(position.opened_at) === targetDate
+    ? numberOrNull(position.realized_pnl) ?? 0
+    : 0;
+}
+
+/**
+ * Calculate the rail's session totals from the exact positions it renders.
+ * This is intentionally independent of process-local live_state counters,
+ * which are reset when a multi-segment workflow hands off to a new process.
+ */
+export function getOverviewSessionMetrics(
+  positions: OverviewPosition[],
+  sessionDate: string | Date = new Date(),
+): OverviewSessionMetrics {
+  const targetDate = normalizeSessionDate(sessionDate);
+  const metrics: OverviewSessionMetrics = {
+    openUnrealizedPnl: 0,
+    realizedPnl: 0,
+    wins: 0,
+    losses: 0,
+    closedCount: 0,
+  };
+
+  for (const position of positions) {
+    if (position.status === "open") {
+      metrics.openUnrealizedPnl += numberOrNull(position.unrealized_pnl) ?? 0;
+      metrics.realizedPnl += openPositionRealizedPnlForDate(position, targetDate);
+      continue;
+    }
+
+    const pnl = numberOrNull(position.total_pnl) ?? numberOrNull(position.realized_pnl) ?? 0;
+    metrics.realizedPnl += pnl;
+    metrics.closedCount += 1;
+    if (pnl > 0) metrics.wins += 1;
+    if (pnl < 0) metrics.losses += 1;
+  }
+
+  return metrics;
 }
 
 export function formatPositionStatus(position: OverviewPosition): string {

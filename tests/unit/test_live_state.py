@@ -1,6 +1,7 @@
 """Unit tests for intraday live_state publisher."""
 from __future__ import annotations
 
+import json
 from datetime import date, datetime, timezone
 from unittest.mock import MagicMock, patch
 
@@ -127,6 +128,78 @@ def test_build_live_state_row_session_closed_stats() -> None:
     assert row["session_stats"]["losses"] == 1
     assert row["session_stats"]["realized_pnl"] == 60.0
     assert row["session_stats"]["session_end_reason"] == "entry_window_closed_flat"
+
+
+def test_publish_live_state_merges_closed_positions_across_segments() -> None:
+    reset_publish_state_for_tests()
+    cursor = MagicMock()
+    cursor.fetchone.return_value = (
+        date(2026, 7, 16),
+        {
+            "fills": 1,
+            "realized_pnl": 100.0,
+            "wins": 1,
+            "losses": 0,
+            "closed": [
+                {
+                    "position_id": "prior-segment",
+                    "symbol": "SPY260724C00700000",
+                    "closed_at": "2026-07-16T14:00:00+00:00",
+                    "pnl": 100.0,
+                }
+            ],
+            "session_end_reason": "segment_handoff",
+        },
+    )
+    conn = MagicMock()
+    conn.cursor.return_value.__enter__.return_value = cursor
+    row = {
+        "source": "paper",
+        "session_date": "2026-07-16",
+        "heartbeat_ts": "2026-07-16T15:00:00+00:00",
+        "loop_count": 2,
+        "equity": 99_900.0,
+        "last_equity": 100_000.0,
+        "daily_pnl": -100.0,
+        "unrealized_pnl": 0.0,
+        "open_position_count": 0,
+        "open_positions": [],
+        "session_stats": {
+            "fills": 1,
+            "realized_pnl": -40.0,
+            "wins": 0,
+            "losses": 1,
+            "closed": [
+                {
+                    "position_id": "current-segment",
+                    "symbol": "SPY260724P00700000",
+                    "closed_at": "2026-07-16T15:00:00+00:00",
+                    "pnl": -40.0,
+                }
+            ],
+        },
+        "exit_policy": {},
+    }
+
+    with patch.object(live_state_mod, "connect", return_value=conn):
+        assert publish_live_state(row) is True
+
+    live_insert = next(
+        call
+        for call in cursor.execute.call_args_list
+        if "INSERT INTO llm_advisor_live_state" in call.args[0]
+    )
+    stats = json.loads(live_insert.args[1]["session_stats"])
+    assert stats["fills"] == 2
+    assert stats["realized_pnl"] == 60.0
+    assert stats["wins"] == 1
+    assert stats["losses"] == 1
+    assert {item["position_id"] for item in stats["closed"]} == {
+        "prior-segment",
+        "current-segment",
+    }
+    assert "session_end_reason" not in stats
+    reset_publish_state_for_tests()
 
 
 def test_publish_live_state_never_raises_and_self_disables() -> None:

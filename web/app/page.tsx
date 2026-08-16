@@ -91,14 +91,26 @@ export default async function OverviewPage() {
   const accountDailyPnl = liveAccountIsNewer
     ? liveState?.daily_pnl
     : latestSnapshot?.daily_pnl;
-  const accountDailyPnlPct = liveAccountIsNewer
-    ? liveState?.daily_pnl != null && liveState.last_equity
-      ? liveState.daily_pnl / liveState.last_equity
-      : null
-    : latestSnapshot?.daily_pnl_pct;
+  const accountLastEquity = liveAccountIsNewer
+    ? liveState?.last_equity
+    : latestSnapshot?.last_equity;
+  const accountDailyPnlPct =
+    accountDailyPnl != null && accountLastEquity
+      ? accountDailyPnl / accountLastEquity
+      : null;
   const accountCapturedAt = liveAccountIsNewer
     ? liveAccountCapturedAt
     : snapshotCapturedAt;
+  // The account API's daily P&L is tied to the session represented by the
+  // latest account record, not necessarily the server's current calendar
+  // date. This matters after midnight ET and across weekends/holidays.
+  const accountSessionDate =
+    (liveAccountIsNewer ? liveState?.session_date : latestSnapshot?.snapshot_date) ??
+    liveState?.session_date ??
+    latestSnapshot?.snapshot_date ??
+    dateEtIso();
+  const sessionLiveState =
+    liveState?.session_date === accountSessionDate ? liveState : null;
 
   const equitySeries = snapshots
     .filter((s) => s.equity !== null && Number.isFinite(Number(s.equity)))
@@ -188,9 +200,9 @@ export default async function OverviewPage() {
     if (Number.isFinite(equity)) snapshotEquityByDate.set(snapshot.snapshot_date, equity);
   }
 
-  const liveFresh = liveStateFresh(liveState);
+  const liveFresh = liveStateFresh(sessionLiveState);
   const inSession = isRegularSessionEt();
-  const sessionEnded = Boolean(liveState?.session_stats?.session_end_reason);
+  const sessionEnded = Boolean(sessionLiveState?.session_stats?.session_end_reason);
   const hb = heartbeatStatus(heartbeat?.heartbeat_ts ?? null);
 
   const status = liveFresh
@@ -218,7 +230,11 @@ export default async function OverviewPage() {
         .filter(Boolean)
         .join(" · ");
 
-  const todayPositions = getTodayOverviewPositions(liveState, lifecycles);
+  const todayPositions = getTodayOverviewPositions(
+    sessionLiveState,
+    lifecycles,
+    accountSessionDate,
+  );
 
   return (
     <div className="grid items-start gap-9 lg:grid-cols-[minmax(0,1fr)_316px] lg:gap-11">
@@ -280,7 +296,9 @@ export default async function OverviewPage() {
               {accountDailyPnlPct != null ? (
                 <span>{fmtPct(Number(accountDailyPnlPct), 2)}</span>
               ) : null}
-              <span className="font-sans text-[12.5px] text-ink-3">today</span>
+              <span className="font-sans text-[12.5px] text-ink-3">
+                {accountSessionDate === dateEtIso() ? "today" : `${accountSessionDate} session`}
+              </span>
             </span>
             {sinceStart != null && windowStart ? (
               <span
@@ -468,9 +486,11 @@ export default async function OverviewPage() {
       >
         <PositionRail
           positions={todayPositions}
-          liveState={liveState}
+          liveState={sessionLiveState}
           liveFresh={liveFresh}
-          capturedAt={liveAccountCapturedAt}
+          capturedAt={sessionLiveState ? liveAccountCapturedAt : null}
+          sessionDate={accountSessionDate}
+          brokerDailyPnl={accountDailyPnl == null ? null : Number(accountDailyPnl)}
         />
 
         <Panel>
