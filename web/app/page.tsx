@@ -40,16 +40,18 @@ export const dynamic = "force-dynamic";
 
 const LIVE_FRESH_MS = 3 * 60_000;
 
+type HeartbeatStatus = {
+  label: string;
+  stale: boolean;
+};
+
 function liveStateFresh(row: LiveStateRow | null): boolean {
   if (!row?.heartbeat_ts) return false;
   const age = Date.now() - new Date(row.heartbeat_ts).getTime();
   return !Number.isNaN(age) && age <= LIVE_FRESH_MS;
 }
 
-function heartbeatStatus(heartbeatTs: string | null): {
-  label: string;
-  stale: boolean;
-} {
+function heartbeatStatus(heartbeatTs: string | null): HeartbeatStatus {
   if (!heartbeatTs) return { label: "No heartbeat", stale: true };
   const ageHours = (Date.now() - new Date(heartbeatTs).getTime()) / 3.6e6;
   // The loop only runs on market days, so a gap under ~4 days is just a

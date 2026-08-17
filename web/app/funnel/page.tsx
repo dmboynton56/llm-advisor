@@ -14,12 +14,12 @@ import { fmtPct } from "@/lib/format";
 
 export const dynamic = "force-dynamic";
 
-const STAGE_LABELS: Record<string, string> = {
-  signals: "Signals detected",
-  validation_approved: "LLM approved",
-  execution_attempted: "Execution attempted",
-  executed: "Orders executed",
-};
+const STAGE_LABELS = new Map([
+  ["signals", "Signals detected"],
+  ["validation_approved", "LLM approved"],
+  ["execution_attempted", "Execution attempted"],
+  ["executed", "Orders executed"],
+]);
 
 export default async function FunnelPage() {
   const [opsMetrics, validationEvents] = await Promise.all([
@@ -31,7 +31,7 @@ export default async function FunnelPage() {
 
   const stageData = funnel
     ? Object.entries(funnel.stages).map(([stage, count]) => ({
-        stage: STAGE_LABELS[stage] ?? stage,
+        stage: STAGE_LABELS.get(stage) ?? stage,
         count,
       }))
     : [];

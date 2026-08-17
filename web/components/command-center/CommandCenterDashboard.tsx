@@ -4,9 +4,29 @@ import { useEffect, useState } from "react";
 import { Flag, Plus, Radio, Trash2 } from "lucide-react";
 import clsx from "clsx";
 import type { Opportunity, WatchlistFlag } from "@/lib/commandCenter";
+import { asJsonRecord, isJsonBoolean, isJsonString } from "@/lib/json";
+import type { JsonValue } from "@/lib/types";
 import { Panel, PanelHead } from "@/components/ui";
 
 const STORAGE_KEY = "llm-advisor-command-center-watchlist";
+
+function parseWatchlistFlags(serialized: string): WatchlistFlag[] | null {
+  const parsed: JsonValue = JSON.parse(serialized);
+  if (!Array.isArray(parsed)) return null;
+  const flags: WatchlistFlag[] = [];
+  for (const item of parsed) {
+    const record = asJsonRecord(item);
+    if (!record || !isJsonString(record.symbol) || !isJsonBoolean(record.flagged)) {
+      return null;
+    }
+    flags.push({
+      symbol: record.symbol,
+      flagged: record.flagged,
+      note: isJsonString(record.note) ? record.note : "",
+    });
+  }
+  return flags;
+}
 
 export function CommandCenterDashboard({
   initialFlags,
@@ -22,7 +42,9 @@ export function CommandCenterDashboard({
     const saved = window.localStorage.getItem(STORAGE_KEY);
     if (!saved) return;
     try {
-      setFlags(JSON.parse(saved) as WatchlistFlag[]);
+      const parsed = parseWatchlistFlags(saved);
+      if (parsed) setFlags(parsed);
+      else window.localStorage.removeItem(STORAGE_KEY);
     } catch {
       window.localStorage.removeItem(STORAGE_KEY);
     }

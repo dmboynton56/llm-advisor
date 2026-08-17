@@ -6,8 +6,9 @@ import { Moon, Sun } from "lucide-react";
 type Theme = "light" | "dark";
 
 function readTheme(): Theme {
-  if (typeof document === "undefined") return "light";
-  return document.documentElement.getAttribute("data-theme") === "dark"
+  const documentElement = globalThis.document?.documentElement;
+  if (!documentElement) return "light";
+  return documentElement.getAttribute("data-theme") === "dark"
     ? "dark"
     : "light";
 }

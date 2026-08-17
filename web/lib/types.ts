@@ -56,7 +56,9 @@ export type RunRow = {
   final_equity: number | null;
 };
 
-export type JsonRecord = Record<string, unknown>;
+export type JsonPrimitive = string | number | boolean | null;
+export type JsonValue = JsonPrimitive | JsonValue[] | JsonRecord;
+export type JsonRecord = { [key: string]: JsonValue };
 
 export type TradePosition = "long" | "short";
 export type OptionContractType = "call" | "put";
@@ -276,6 +278,7 @@ export type LiveOpenPosition = {
   opened_at?: string | null;
   realized_pnl?: number | null;
   fills?: PositionFill[];
+  tiered_exit_state?: JsonRecord | null;
   setup_type?: string | null;
   dte?: number | null;
   stop_mark?: number | null;

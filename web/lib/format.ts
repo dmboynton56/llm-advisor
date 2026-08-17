@@ -132,7 +132,7 @@ export function parseOccSymbol(
   return {
     underlying,
     expiry,
-    right: right as "C" | "P",
+    right: right === "C" ? "C" : "P",
     strike,
     dte: Number.isFinite(dte) ? dte : null,
   };

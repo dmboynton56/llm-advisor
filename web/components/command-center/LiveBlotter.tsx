@@ -35,6 +35,8 @@ export function LiveBlotter() {
   const fetchLive = useCallback(async () => {
     try {
       const res = await fetch("/command-center/api/live", { cache: "no-store" });
+      // SAFETY: this response is produced by the owned command-center route,
+      // whose success and error payloads share the LiveBlotterPayload contract.
       const body = (await res.json()) as LiveBlotterPayload & { error?: string };
       if (!res.ok && !body.account) {
         throw new Error(body.error || `HTTP ${res.status}`);

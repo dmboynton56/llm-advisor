@@ -2,11 +2,14 @@
   "name": "llm-advisor-web",
   "version": "0.1.0",
   "private": true,
+  "type": "module",
   "scripts": {
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "oxlint --config oxlint.config.ts",
+    "lint:anti-slop": "npm run lint",
+    "typecheck": "tsc --noEmit"
   },
   "dependencies": {
     "clsx": "^2.1.1",
@@ -17,10 +20,12 @@
     "recharts": "^3.8.1"
   },
   "devDependencies": {
+    "@oxlint/plugins": "^1.78.0",
     "@tailwindcss/postcss": "^4",
     "@types/node": "^20",
     "@types/react": "^19",
     "@types/react-dom": "^19",
+    "oxlint": "^1.78.0",
     "tailwindcss": "^4",
     "typescript": "^5"
   }

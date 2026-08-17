@@ -1,8 +1,9 @@
 import { NextResponse } from "next/server";
 import { randomUUID } from "node:crypto";
 import { getLiveState } from "@/lib/data";
+import { asJsonRecord, firstJsonString, jsonNumber, jsonRecords } from "@/lib/json";
 import { supabaseSelect } from "@/lib/supabase";
-import type { JsonRecord, LiveOpenPosition, TradeLifecycleRow } from "@/lib/types";
+import type { JsonValue, LiveOpenPosition, TradeLifecycleRow } from "@/lib/types";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -18,13 +19,9 @@ type ResolvedPosition = {
   status: "open" | "closed";
 };
 
-type RawBar = {
-  t?: string;
-  o?: number;
-  h?: number;
-  l?: number;
-  c?: number;
-  v?: number;
+type ChartWindow = {
+  start: Date;
+  end: Date;
 };
 
 type ChartErrorCode =
@@ -83,17 +80,8 @@ function logUpstreamFailure(input: {
   );
 }
 
-function asRecord(value: unknown): JsonRecord {
-  return value && typeof value === "object" && !Array.isArray(value)
-    ? (value as JsonRecord)
-    : {};
-}
-
 function positionId(position: LiveOpenPosition): string {
-  const state = asRecord(
-    (position as LiveOpenPosition & { tiered_exit_state?: JsonRecord })
-      .tiered_exit_state,
-  );
+  const state = position.tiered_exit_state ?? {};
   return String(position.position_id ?? state.lifecycle_id ?? position.option_symbol ?? position.symbol);
 }
 
@@ -144,7 +132,7 @@ async function resolvePosition(positionIdValue: string): Promise<ResolvedPositio
   };
 }
 
-function windowFor(position: ResolvedPosition): { start: Date; end: Date } {
+function windowFor(position: ResolvedPosition): ChartWindow {
   const now = new Date();
   const end = position.closedAt
     ? new Date(new Date(position.closedAt).getTime() + 15 * 60_000)
@@ -158,32 +146,29 @@ function windowFor(position: ResolvedPosition): { start: Date; end: Date } {
   return { start: start < maxLookback ? maxLookback : start, end };
 }
 
-function normalizedBars(payload: unknown, symbol: string) {
-  const root = asRecord(payload);
+function normalizedBars(payload: JsonValue, symbol: string) {
+  const root = asJsonRecord(payload) ?? {};
   const bars = root.bars;
   const raw = Array.isArray(bars)
-    ? bars
-    : Array.isArray(asRecord(bars)[symbol])
-      ? (asRecord(bars)[symbol] as unknown[])
-      : [];
+    ? jsonRecords(bars)
+    : jsonRecords(asJsonRecord(bars)?.[symbol]);
   return raw
-    .map((value) => {
-      const bar = asRecord(value) as RawBar;
-      const timestamp = typeof bar.t === "string" ? bar.t : null;
+    .map((bar) => {
+      const timestamp = firstJsonString(bar.t);
       const timestampMs = timestamp ? Date.parse(timestamp) : NaN;
-      const open = Number(bar.o);
-      const high = Number(bar.h);
-      const low = Number(bar.l);
-      const close = Number(bar.c);
+      const open = jsonNumber(bar.o);
+      const high = jsonNumber(bar.h);
+      const low = jsonNumber(bar.l);
+      const close = jsonNumber(bar.c);
       if (!timestamp || !Number.isFinite(timestampMs) || !Number.isFinite(close)) return null;
       return {
         timestamp,
         timestampMs,
-        open: Number.isFinite(open) ? open : close,
-        high: Number.isFinite(high) ? high : close,
-        low: Number.isFinite(low) ? low : close,
+        open: open ?? close,
+        high: high ?? close,
+        low: low ?? close,
         close,
-        volume: Number.isFinite(Number(bar.v)) ? Number(bar.v) : null,
+        volume: jsonNumber(bar.v),
       };
     })
     .filter((bar): bar is NonNullable<typeof bar> => Boolean(bar))
@@ -261,7 +246,7 @@ export async function GET(request: Request) {
         }
         return errorResponse("UPSTREAM_UNAVAILABLE", "The option history service is temporarily unavailable.", 502, requestId, true);
       }
-      let payload: unknown;
+      let payload: JsonValue;
       try {
         payload = await response.json();
       } catch (error) {
@@ -275,8 +260,7 @@ export async function GET(request: Request) {
         return errorResponse("INVALID_UPSTREAM_RESPONSE", "The option history service returned invalid data.", 502, requestId, true);
       }
       allBars.push(...normalizedBars(payload, position.symbol));
-      const next = asRecord(payload).next_page_token;
-      pageToken = typeof next === "string" && next ? next : null;
+      pageToken = firstJsonString(asJsonRecord(payload)?.next_page_token);
       if (!pageToken) break;
     }
   } catch (error) {

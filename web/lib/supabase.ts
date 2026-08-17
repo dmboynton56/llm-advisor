@@ -16,11 +16,11 @@ export function supabaseConfigured(): boolean {
 }
 
 function buildSupabaseHeaders(apiKey: string): HeadersInit {
-  const headers: Record<string, string> = { apikey: apiKey };
+  const headers = new Headers({ apikey: apiKey });
   // Legacy JWT anon/service_role keys use Bearer; sb_publishable_ keys must not —
   // PostgREST tries to parse Bearer as JWT and returns 401 Invalid JWT.
   if (apiKey.startsWith("eyJ")) {
-    headers.Authorization = `Bearer ${apiKey}`;
+    headers.set("Authorization", `Bearer ${apiKey}`);
   }
   return headers;
 }
@@ -56,7 +56,8 @@ export async function supabaseSelect<T>(
       cache: "no-store",
     });
     if (!res.ok) return null;
-    return (await res.json()) as T[];
+    const rows: T[] = await res.json();
+    return rows;
   } catch {
     return null;
   }
@@ -86,7 +87,7 @@ export async function supabaseSelectPaged<T>(
         },
       );
       if (!res.ok) return null;
-      const page = (await res.json()) as T[];
+      const page: T[] = await res.json();
       rows.push(...page);
       if (page.length < pageSize) break;
     }

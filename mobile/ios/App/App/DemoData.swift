@@ -1,0 +1,212 @@
+import Foundation
+
+enum DemoData {
+    private static let calendar = Calendar(identifier: .gregorian)
+
+    static var snapshot: DashboardSnapshot {
+        let now = Date()
+        let equityValues: [Double] = [
+            99_480, 99_720, 99_610, 98_940, 97_860, 98_120, 97_520,
+            98_460, 98_180, 98_920, 98_640, 99_120, 100_060, 99_740,
+            99_980, 99_610, 97_639.31,
+        ]
+        let equityHistory = equityValues.enumerated().map { index, equity in
+            EquityPoint(
+                capturedAt: now.addingTimeInterval(Double(index - equityValues.count + 1) * 86_400),
+                equity: equity,
+                dailyPnl: index == equityValues.count - 1 ? -740.30 : nil,
+            )
+        }
+
+        let position = PaperPosition(
+            id: "demo-position-spy",
+            symbol: "SPY",
+            optionSymbol: "SPY 260821C00670000",
+            side: "long",
+            quantity: 4,
+            entryPrice: 4.12,
+            currentPrice: 5.23,
+            unrealizedPnl: 444.00,
+            unrealizedPnlPercent: 0.269,
+            setup: "Trend continuation",
+            dte: 9,
+            openedAt: now.addingTimeInterval(-3_600 * 2),
+            stopMark: 2.68,
+            targetMark: 5.15,
+        )
+
+        return DashboardSnapshot(
+            account: AccountSummary(
+                equity: 97_639.31,
+                dailyPnl: -740.30,
+                dailyPnlPercent: -0.0075,
+                buyingPower: 42_360.69,
+            ),
+            health: HealthSummary(
+                isHealthy: true,
+                heartbeat: now.addingTimeInterval(-18),
+                loopCount: 59,
+                symbolsTracked: 3,
+                message: "Heartbeat just now",
+            ),
+            equityHistory: equityHistory,
+            positions: [position],
+            latestDecision: DecisionRecord(
+                id: "demo-decision-spy",
+                symbol: "SPY",
+                setup: "TC LONG",
+                verdict: "Taken",
+                confidence: 0.56,
+                reasoning: "Risk/reward passed the execution gates; ML and LLM validation supported the continuation setup.",
+                createdAt: now.addingTimeInterval(-1_800),
+            ),
+            performance: PerformanceSummary(
+                totalTrades: 48,
+                winningTrades: 27,
+                losingTrades: 21,
+                winRate: 0.5625,
+                totalPnl: 2_841.20,
+                maxDrawdown: -3_912.00,
+                averageWin: 318.40,
+                averageLoss: -227.15,
+            ),
+            breakdowns: [
+                BreakdownRow(id: "SPY", trades: 24, winRate: 0.625, pnl: 1_904.10, averageRiskReward: 1.48),
+                BreakdownRow(id: "QQQ", trades: 14, winRate: 0.571, pnl: 1_210.40, averageRiskReward: 1.31),
+                BreakdownRow(id: "IWM", trades: 10, winRate: 0.400, pnl: -273.30, averageRiskReward: 0.92),
+            ],
+            funnel: FunnelSummary(
+                signals: 126,
+                approved: 54,
+                executed: 48,
+                approvalRate: 0.429,
+                rejectionReasons: [
+                    "RR below threshold": 28,
+                    "LLM veto": 19,
+                    "Spread too wide": 13,
+                    "Daily bias unavailable": 12,
+                ],
+            ),
+            brokerOrders: [],
+            generatedAt: now,
+        )
+    }
+
+    static var trades: [TradeRecord] {
+        let now = Date()
+        return [
+            TradeRecord(
+                id: "demo-trade-spy-open",
+                symbol: "SPY",
+                underlying: "SPY",
+                optionSymbol: "SPY 260821C00670000",
+                side: "long",
+                setup: "TC",
+                status: "Open",
+                dte: 9,
+                quantity: 4,
+                entryPrice: 4.12,
+                exitPrice: nil,
+                pnl: 444.00,
+                returnPercent: 0.269,
+                entryAt: now.addingTimeInterval(-7_200),
+                exitAt: nil,
+                exitReason: nil,
+                bias: "Bullish",
+                validationVerdict: "Approved",
+                confidence: 0.56,
+                reasoning: "Risk/reward passed the execution gates; ML and LLM validation supported the continuation setup.",
+                riskAssessment: "Stop and target were inside the configured paper risk envelope.",
+                vetoFlags: [],
+                gateResults: ["Daily bias: pass", "Spread: pass", "Risk/reward: pass"],
+                fills: [
+                    TradeFill(id: "fill-spy-entry", kind: "Entry", timestamp: now.addingTimeInterval(-7_200), quantity: 4, price: 4.12, pnl: nil, reason: nil),
+                ],
+            ),
+            TradeRecord(
+                id: "demo-trade-qqq-win",
+                symbol: "QQQ",
+                underlying: "QQQ",
+                optionSymbol: "QQQ 260814P00542000",
+                side: "short",
+                setup: "MR",
+                status: "Closed",
+                dte: 4,
+                quantity: 3,
+                entryPrice: 3.22,
+                exitPrice: 4.04,
+                pnl: 246.00,
+                returnPercent: 0.255,
+                entryAt: now.addingTimeInterval(-86_400),
+                exitAt: now.addingTimeInterval(-80_000),
+                exitReason: "Profit target",
+                bias: "Bearish",
+                validationVerdict: "Approved",
+                confidence: 0.68,
+                reasoning: "Mean reversion setup aligned with the bearish daily context.",
+                riskAssessment: "Defined premium risk with a two-to-one planned reward.",
+                vetoFlags: [],
+                gateResults: ["Daily bias: pass", "Liquidity: pass", "Risk/reward: pass"],
+                fills: [
+                    TradeFill(id: "fill-qqq-entry", kind: "Entry", timestamp: now.addingTimeInterval(-86_400), quantity: 3, price: 3.22, pnl: nil, reason: nil),
+                    TradeFill(id: "fill-qqq-exit", kind: "Final exit", timestamp: now.addingTimeInterval(-80_000), quantity: 3, price: 4.04, pnl: 246.00, reason: "Profit target"),
+                ],
+            ),
+            TradeRecord(
+                id: "demo-trade-iwm-loss",
+                symbol: "IWM",
+                underlying: "IWM",
+                optionSymbol: "IWM 260807C00230000",
+                side: "long",
+                setup: "TC",
+                status: "Closed",
+                dte: 2,
+                quantity: 2,
+                entryPrice: 2.10,
+                exitPrice: 1.37,
+                pnl: -146.00,
+                returnPercent: -0.348,
+                entryAt: now.addingTimeInterval(-172_800),
+                exitAt: now.addingTimeInterval(-166_400),
+                exitReason: "Stop loss",
+                bias: "Choppy",
+                validationVerdict: "Approved",
+                confidence: 0.51,
+                reasoning: "Continuation signal passed, but the context was mixed and the move failed quickly.",
+                riskAssessment: "Stop was respected; no emergency flatten was required.",
+                vetoFlags: [],
+                gateResults: ["Daily bias: warn", "Spread: pass", "Risk/reward: pass"],
+                fills: [
+                    TradeFill(id: "fill-iwm-entry", kind: "Entry", timestamp: now.addingTimeInterval(-172_800), quantity: 2, price: 2.10, pnl: nil, reason: nil),
+                    TradeFill(id: "fill-iwm-exit", kind: "Final exit", timestamp: now.addingTimeInterval(-166_400), quantity: 2, price: 1.37, pnl: -146.00, reason: "Stop loss"),
+                ],
+            ),
+            TradeRecord(
+                id: "demo-trade-spy-veto",
+                symbol: "SPY",
+                underlying: "SPY",
+                optionSymbol: nil,
+                side: "long",
+                setup: "MR",
+                status: "Rejected",
+                dte: nil,
+                quantity: nil,
+                entryPrice: nil,
+                exitPrice: nil,
+                pnl: nil,
+                returnPercent: nil,
+                entryAt: now.addingTimeInterval(-259_200),
+                exitAt: nil,
+                exitReason: "LLM veto",
+                bias: "Bullish",
+                validationVerdict: "Rejected",
+                confidence: 0.42,
+                reasoning: "The proposed mean-reversion entry conflicted with the broader trend and did not offer enough asymmetry.",
+                riskAssessment: "No order was submitted.",
+                vetoFlags: ["Trend conflict", "Insufficient asymmetry"],
+                gateResults: ["Daily bias: fail", "Risk/reward: fail"],
+                fills: [],
+            ),
+        ]
+    }
+}

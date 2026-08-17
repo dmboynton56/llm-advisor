@@ -1,0 +1,11 @@
+{
+  "name": "llm-advisor-ios",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Native iOS demo shell for the LLM Advisor dashboard",
+  "scripts": {
+    "open": "open ios/App/App.xcodeproj",
+    "build:simulator": "xcodebuild -project ios/App/App.xcodeproj -scheme App -configuration Debug -sdk iphonesimulator -derivedDataPath build CODE_SIGNING_ALLOWED=NO build",
+    "run:simulator": "./scripts/run-simulator.sh"
+  }
+}

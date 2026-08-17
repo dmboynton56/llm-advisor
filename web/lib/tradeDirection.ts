@@ -6,22 +6,20 @@ import type {
   TradeEntryAction,
   TradePosition,
 } from "@/lib/types";
+import {
+  asJsonRecord,
+  firstJsonString,
+  type JsonInput,
+} from "@/lib/json";
 
-function asRecord(value: unknown): JsonRecord {
-  return value && typeof value === "object" && !Array.isArray(value)
-    ? (value as JsonRecord)
-    : {};
-}
-
-function asText(value: unknown): string | null {
-  if (typeof value !== "string") return null;
-  const text = value.trim().toLowerCase();
+function asText(value: JsonInput): string | null {
+  const text = firstJsonString(value)?.toLowerCase() ?? null;
   return text || null;
 }
 
 function firstNormalized<T>(
-  normalize: (value: unknown) => T | null,
-  ...values: unknown[]
+  normalize: (value: JsonInput) => T | null,
+  ...values: JsonInput[]
 ): T | null {
   for (const value of values) {
     const normalized = normalize(value);
@@ -30,7 +28,7 @@ function firstNormalized<T>(
   return null;
 }
 
-export function normalizePositionSide(value: unknown): TradePosition | null {
+export function normalizePositionSide(value: JsonInput): TradePosition | null {
   const normalized = asText(value);
   if (["long", "buy", "buy_to_open"].includes(normalized ?? "")) return "long";
   if (["short", "sell", "sell_to_open"].includes(normalized ?? "")) return "short";
@@ -38,21 +36,21 @@ export function normalizePositionSide(value: unknown): TradePosition | null {
   return null;
 }
 
-export function normalizeContractType(value: unknown): OptionContractType | null {
+export function normalizeContractType(value: JsonInput): OptionContractType | null {
   const normalized = asText(value);
   if (normalized === "call" || normalized === "c") return "call";
   if (normalized === "put" || normalized === "p") return "put";
   return null;
 }
 
-export function normalizeBias(value: unknown): TradeBias | null {
+export function normalizeBias(value: JsonInput): TradeBias | null {
   const normalized = asText(value);
   if (["bullish", "long", "up"].includes(normalized ?? "")) return "bullish";
   if (["bearish", "short", "down"].includes(normalized ?? "")) return "bearish";
   return null;
 }
 
-export function normalizeEntryAction(value: unknown): TradeEntryAction | null {
+export function normalizeEntryAction(value: JsonInput): TradeEntryAction | null {
   const normalized = asText(value);
   if (normalized === "buy_to_open" || normalized === "buy to open") {
     return "buy_to_open";
@@ -90,19 +88,19 @@ export function deriveTradeDirection({
   assumeLongOptionPosition = false,
 }: {
   symbol?: string | null;
-  side?: unknown;
-  details?: unknown;
+  side?: JsonInput;
+  details?: JsonInput;
   assumeLongOptionPosition?: boolean;
 }): TradeDirection {
-  const root = asRecord(details);
-  const stored = asRecord(root.trade_direction);
-  const optionPlan = asRecord(root.option_plan);
-  const order = asRecord(root.order);
-  const orderPlan = asRecord(order.option_plan);
-  const position = asRecord(root.position);
-  const underlyingPlan = asRecord(
+  const root = asJsonRecord(details) ?? {};
+  const stored = asJsonRecord(root.trade_direction) ?? {};
+  const optionPlan = asJsonRecord(root.option_plan) ?? {};
+  const order = asJsonRecord(root.order) ?? {};
+  const orderPlan = asJsonRecord(order.option_plan) ?? {};
+  const position = asJsonRecord(root.position) ?? {};
+  const underlyingPlan = asJsonRecord(
     optionPlan.underlying_trade_plan ?? orderPlan.underlying_trade_plan,
-  );
+  ) ?? {};
 
   let positionSide = firstNormalized(
     normalizePositionSide,

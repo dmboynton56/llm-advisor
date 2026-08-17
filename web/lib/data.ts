@@ -1,4 +1,15 @@
 import { supabaseSelect, supabaseSelectPaged } from "@/lib/supabase";
+import {
+  asJsonRecord,
+  firstJsonNumber,
+  firstJsonString,
+  isJsonBoolean,
+  isJsonNumber,
+  isJsonString,
+  jsonNumber,
+  jsonRecords,
+  type JsonInput,
+} from "@/lib/json";
 import type {
   AccountSnapshot,
   Decision,
@@ -13,6 +24,7 @@ import type {
   TradeRow,
   TradeLifecycleRow,
   TradeValidationSummary,
+  ValidationGateResult,
   ValidationEvent,
 } from "@/lib/types";
 import { dateEtIso } from "@/lib/format";
@@ -72,39 +84,15 @@ type TradeEnrichmentRow = {
 
 type DailyBiasRow = DailyBiasSummary;
 
-function asJsonRecord(value: unknown): JsonRecord | null {
-  return value && typeof value === "object" && !Array.isArray(value)
-    ? (value as JsonRecord)
-    : null;
-}
-
-function firstString(...values: unknown[]): string | null {
-  for (const value of values) {
-    if (typeof value === "string" && value.trim()) return value.trim();
-  }
-  return null;
-}
-
-function firstNumber(...values: unknown[]): number | null {
-  for (const value of values) {
-    if (typeof value === "number" && Number.isFinite(value)) return value;
-    if (typeof value === "string" && value.trim()) {
-      const parsed = Number(value);
-      if (Number.isFinite(parsed)) return parsed;
-    }
-  }
-  return null;
-}
-
-function asBias(value: unknown): DailyBiasSummary["ml_bias"] {
-  const normalized = String(value ?? "").trim().toLowerCase();
+function asBias(value: JsonInput): DailyBiasSummary["ml_bias"] {
+  const normalized = (firstJsonString(value) ?? "").toLowerCase();
   return normalized === "bullish" || normalized === "bearish" || normalized === "choppy"
     ? normalized
     : "unavailable";
 }
 
-function asAgreement(value: unknown): DailyBiasSummary["agreement"] {
-  const normalized = String(value ?? "").trim().toLowerCase();
+function asAgreement(value: JsonInput): DailyBiasSummary["agreement"] {
+  const normalized = (firstJsonString(value) ?? "").toLowerCase();
   return normalized === "agree" || normalized === "partial" || normalized === "disagree"
     ? normalized
     : "unknown";
@@ -120,18 +108,18 @@ function dailyBiasFromDetails(details: JsonRecord | null): DailyBiasSummary | nu
     asJsonRecord(optionPlan?.bias_snapshot);
   if (!raw) return null;
   return {
-    bias_date: firstString(raw.bias_date, raw.date, raw.run_date) ?? "",
-    symbol: firstString(raw.symbol) ?? "",
+    bias_date: firstJsonString(raw.bias_date, raw.date, raw.run_date) ?? "",
+    symbol: firstJsonString(raw.symbol) ?? "",
     ml_bias: asBias(raw.ml_bias ?? raw.daily_bias ?? raw.bias),
-    ml_confidence: firstNumber(raw.ml_confidence, raw.confidence),
+    ml_confidence: firstJsonNumber(raw.ml_confidence, raw.confidence),
     llm_bias: raw.llm_bias == null ? null : asBias(raw.llm_bias),
-    llm_confidence: firstNumber(raw.llm_confidence),
+    llm_confidence: firstJsonNumber(raw.llm_confidence),
     agreement: asAgreement(raw.agreement),
     bias_available: raw.bias_available !== false,
-    bias_error: firstString(raw.bias_error, raw.error),
-    llm_reasoning: firstString(raw.llm_reasoning, raw.reasoning),
-    context_version: firstString(raw.context_version),
-    generated_at: firstString(raw.generated_at, raw.timestamp),
+    bias_error: firstJsonString(raw.bias_error, raw.error),
+    llm_reasoning: firstJsonString(raw.llm_reasoning, raw.reasoning),
+    context_version: firstJsonString(raw.context_version),
+    generated_at: firstJsonString(raw.generated_at, raw.timestamp),
   };
 }
 
@@ -168,18 +156,42 @@ function validationFromDetails(
   );
   const verdict: TradeValidationSummary["verdict"] =
     verdictValue === "approved" ? "approved" : verdictValue === "rejected" ? "rejected" : verdictValue === "error" ? "error" : "unknown";
-  const gates = Array.isArray(raw.gate_results) ? raw.gate_results : [];
+  const gates = jsonRecords(raw.gate_results)
+    .map(validationGateFromRecord)
+    .filter((gate): gate is ValidationGateResult => Boolean(gate));
   return {
-    signal_uid: firstString(raw.signal_uid),
+    signal_uid: firstJsonString(raw.signal_uid),
     verdict,
-    confidence: firstNumber(raw.confidence),
-    reasoning: firstString(raw.reasoning, raw.reason),
-    risk_assessment: firstString(raw.risk_assessment),
+    confidence: firstJsonNumber(raw.confidence),
+    reasoning: firstJsonString(raw.reasoning, raw.reason),
+    risk_assessment: firstJsonString(raw.risk_assessment),
     veto_flags: Array.isArray(raw.veto_flags)
-      ? raw.veto_flags.filter((value): value is string => typeof value === "string")
+      ? raw.veto_flags.filter(isJsonString)
       : [],
-    gate_results: gates.filter((value): value is Record<string, unknown> => Boolean(value && typeof value === "object")) as TradeValidationSummary["gate_results"],
-    model: firstString(raw.model, raw.llm_model),
+    gate_results: gates,
+    model: firstJsonString(raw.model, raw.llm_model),
+  };
+}
+
+function validationScalar(value: JsonInput): string | number | boolean | null {
+  if (value === null || isJsonString(value) || isJsonNumber(value) || isJsonBoolean(value)) {
+    return value;
+  }
+  return null;
+}
+
+function validationGateFromRecord(record: JsonRecord): ValidationGateResult | null {
+  const code = firstJsonString(record.code);
+  const status = firstJsonString(record.status);
+  if (!code || (status !== "pass" && status !== "warn" && status !== "fail")) {
+    return null;
+  }
+  return {
+    code,
+    status,
+    observed_value: validationScalar(record.observed_value),
+    required_value: validationScalar(record.required_value),
+    evidence: firstJsonString(record.evidence),
   };
 }
 
@@ -193,12 +205,12 @@ function riskPlanFromDetails(details: JsonRecord | null): JsonRecord | null {
   );
 }
 
-function rrFromPlan(value: unknown): number | null {
+function rrFromPlan(value: JsonInput): number | null {
   const plan = asJsonRecord(value);
   if (!plan) return null;
-  const entry = firstNumber(plan.underlying_entry, plan.entry_price);
-  const stop = firstNumber(plan.underlying_stop, plan.stop_loss);
-  const target = firstNumber(plan.underlying_target, plan.take_profit);
+  const entry = firstJsonNumber(plan.underlying_entry, plan.entry_price);
+  const stop = firstJsonNumber(plan.underlying_stop, plan.stop_loss);
+  const target = firstJsonNumber(plan.underlying_target, plan.take_profit);
   if (entry == null || stop == null || target == null) return null;
   const risk = Math.abs(entry - stop);
   return risk > 0 ? Math.abs(target - entry) / risk : null;
@@ -211,7 +223,7 @@ function plannedRrFromDetails(
   const order = asJsonRecord(details?.order);
   const optionPlan = asJsonRecord(order?.option_plan);
   const riskPlan = riskPlanFromDetails(details);
-  return firstNumber(
+  return firstJsonNumber(
     details?.planned_underlying_rr,
     riskPlan?.planned_underlying_rr,
     rrFromPlan(riskPlan),
@@ -298,7 +310,7 @@ export async function getTradeLifecycles(
   }
 
   function optionSymbolFromEvent(event: ExecutionEvent): string | null {
-    return firstString(optionPlanFromEvent(event)?.option_symbol);
+    return firstJsonString(optionPlanFromEvent(event)?.option_symbol);
   }
 
   for (const event of executionEvents ?? []) {
@@ -316,13 +328,18 @@ export async function getTradeLifecycles(
     const candidates = eventsBySymbol.get(row.symbol.toUpperCase()) ?? [];
     if (!candidates.length) return null;
     const target = Date.parse(row.opened_at ?? row.closed_at ?? "");
-    return candidates.reduce((best, candidate) => {
-      if (!best) return candidate;
-      if (!Number.isFinite(target)) return best;
+    let best: ExecutionEvent | null = null;
+    for (const candidate of candidates) {
+      if (!best) {
+        best = candidate;
+        continue;
+      }
+      if (!Number.isFinite(target)) continue;
       const bestDistance = Math.abs(Date.parse(best.event_ts ?? "") - target);
       const candidateDistance = Math.abs(Date.parse(candidate.event_ts ?? "") - target);
-      return candidateDistance < bestDistance ? candidate : best;
-    }, null as ExecutionEvent | null);
+      if (candidateDistance < bestDistance) best = candidate;
+    }
+    return best;
   }
 
   function matchingTradeEnrichment(row: TradeLifecycleRow): TradeEnrichmentRow | null {
@@ -334,15 +351,20 @@ export async function getTradeLifecycles(
     const candidates = tradesBySymbol.get(row.symbol.toUpperCase()) ?? [];
     if (!candidates.length) return null;
     const target = Date.parse(row.opened_at ?? row.closed_at ?? "");
-    return candidates.reduce((best, candidate) => {
-      if (!best) return candidate;
-      if (!Number.isFinite(target)) return best;
+    let best: TradeEnrichmentRow | null = null;
+    for (const candidate of candidates) {
+      if (!best) {
+        best = candidate;
+        continue;
+      }
+      if (!Number.isFinite(target)) continue;
       const bestDistance = Math.abs(Date.parse(best.entry_time ?? "") - target);
       const candidateDistance = Math.abs(
         Date.parse(candidate.entry_time ?? "") - target,
       );
-      return candidateDistance < bestDistance ? candidate : best;
-    }, null as TradeEnrichmentRow | null);
+      if (candidateDistance < bestDistance) best = candidate;
+    }
+    return best;
   }
 
   return (rows ?? []).map((row) => {
@@ -356,30 +378,30 @@ export async function getTradeLifecycles(
     const metadata = trade?.option_metadata;
     const tradePlan = asJsonRecord(eventDetails.trade_plan);
     const optionSymbol =
-      firstString(optionPlan?.option_symbol, metadata?.option_symbol, row.symbol) ??
+      firstJsonString(optionPlan?.option_symbol, metadata?.option_symbol, row.symbol) ??
       row.symbol;
     const underlyingSymbol =
-      firstString(
+      firstJsonString(
         row.underlying_symbol,
         optionPlan?.underlying_symbol,
         metadata?.underlying_symbol,
       ) ?? row.symbol;
     const direction = deriveTradeDirection({
       symbol: row.symbol,
-      side: firstString(order?.side, optionPlan?.side, metadata?.side, event?.side),
+      side: firstJsonString(order?.side, optionPlan?.side, metadata?.side, event?.side),
       details: {
         trade_direction: {
-          position_side: firstString(order?.side, optionPlan?.side, metadata?.side),
-          contract_type: firstString(
+          position_side: firstJsonString(order?.side, optionPlan?.side, metadata?.side),
+          contract_type: firstJsonString(
             optionPlan?.contract_type,
             metadata?.contract_type,
           ),
-          signal_bias: firstString(
+          signal_bias: firstJsonString(
             optionPlan?.signal_side,
             metadata?.signal_side,
             event?.side,
           ),
-          entry_action: firstString(
+          entry_action: firstJsonString(
             optionPlan?.position_intent,
             metadata?.position_intent,
           ),
@@ -387,7 +409,7 @@ export async function getTradeLifecycles(
       },
     });
 
-    const setupType = firstString(
+    const setupType = firstJsonString(
       row.setup_type,
       trade?.setup_type,
       optionPlan?.setup_type,
@@ -396,7 +418,7 @@ export async function getTradeLifecycles(
       tradePlan?.setup,
     );
     const optionDte =
-      firstNumber(
+      firstJsonNumber(
         row.option_dte,
         trade?.option_dte,
         optionPlan?.dte,
@@ -412,13 +434,16 @@ export async function getTradeLifecycles(
     const validationSummary =
       validationFromDetails(eventDetails, event?.event_type) ??
       validationFromDetails(row.details);
-    const realizedR = firstNumber(
+    const realizedR = firstJsonNumber(
       row.details?.realized_r,
       eventDetails.realized_r,
-      riskPlan && typeof row.realized_pnl === "number" && Number(riskPlan.planned_option_risk_dollars) > 0
+      riskPlan && row.realized_pnl != null && Number(riskPlan.planned_option_risk_dollars) > 0
         ? row.realized_pnl / Number(riskPlan.planned_option_risk_dollars)
         : null,
     );
+
+    const enrichedDetails: JsonRecord = row.details ? { ...row.details } : {};
+    enrichedDetails.trade_direction = tradeDirectionDetails(direction);
 
     return {
       ...row,
@@ -426,7 +451,7 @@ export async function getTradeLifecycles(
       setup_type: setupType,
       option_dte: optionDte,
       daily_bias: biasSnapshot,
-      planned_underlying_rr: firstNumber(
+      planned_underlying_rr: firstJsonNumber(
         row.details?.planned_underlying_rr,
         eventDetails.planned_underlying_rr,
         riskPlan?.planned_underlying_rr,
@@ -435,10 +460,7 @@ export async function getTradeLifecycles(
       ),
       realized_r: realizedR,
       validation_summary: validationSummary,
-      details: {
-        ...(row.details ?? {}),
-        trade_direction: tradeDirectionDetails(direction),
-      },
+      details: enrichedDetails,
     };
   });
 }
@@ -470,8 +492,8 @@ const DECISION_EVENT_TYPES = [
 function decisionText(details: JsonRecord | null, keys: string[]): string | null {
   if (!details) return null;
   for (const key of keys) {
-    const value = details[key];
-    if (typeof value === "string" && value.trim()) return value.trim();
+    const value = firstJsonString(details[key]);
+    if (value) return value;
   }
   return null;
 }
@@ -524,7 +546,7 @@ export async function getDecisionLog(limit = 12): Promise<DecisionLog> {
         // Approved and rejected events both carry the model's `reasoning`;
         // validation_error carries `reason`/`error` instead.
         reason: decisionText(row.details, ["reasoning", "reason", "error"]),
-        confidence: typeof confidence === "number" ? confidence : null,
+        confidence: jsonNumber(confidence),
       };
     });
 

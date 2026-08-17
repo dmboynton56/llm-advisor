@@ -29,7 +29,14 @@ import {
   formatOccLabel,
   pnlColor,
 } from "@/lib/format";
-import type { OverviewPosition, PositionFill } from "@/lib/types";
+import {
+  asJsonRecord,
+  firstJsonString,
+  jsonBoolean,
+  jsonNumber,
+  jsonRecords,
+} from "@/lib/json";
+import type { JsonValue, OverviewPosition, PositionFill } from "@/lib/types";
 import { formatPositionStatus } from "@/lib/positions";
 
 type PositionChartBar = {
@@ -50,6 +57,33 @@ type ChartResponse = {
   request_id?: string;
   retryable?: boolean;
 };
+
+function parseChartResponse(value: JsonValue): ChartResponse {
+  const root = asJsonRecord(value) ?? {};
+  const bars = jsonRecords(root.bars).flatMap((bar) => {
+    const timestamp = firstJsonString(bar.timestamp);
+    const timestampMs = jsonNumber(bar.timestampMs) ?? (timestamp ? Date.parse(timestamp) : NaN);
+    const close = jsonNumber(bar.close);
+    if (!timestamp || !Number.isFinite(timestampMs) || close === null) return [];
+    return [{
+      timestamp,
+      timestampMs,
+      open: jsonNumber(bar.open) ?? close,
+      high: jsonNumber(bar.high) ?? close,
+      low: jsonNumber(bar.low) ?? close,
+      close,
+      volume: jsonNumber(bar.volume),
+    }];
+  });
+  return {
+    bars,
+    source: firstJsonString(root.source) ?? undefined,
+    error: firstJsonString(root.error) ?? undefined,
+    error_code: firstJsonString(root.error_code) ?? undefined,
+    request_id: firstJsonString(root.request_id) ?? undefined,
+    retryable: jsonBoolean(root.retryable) ?? undefined,
+  };
+}
 
 function fillLabel(fill: PositionFill): string {
   if (fill.kind === "entry") return "Entry";
@@ -134,14 +168,15 @@ export function PositionDetailDialog({
       cache: "no-store",
     })
       .then(async (response) => {
-        const payload = (await response.json()) as ChartResponse;
+        const value: JsonValue = await response.json();
+        const payload = parseChartResponse(value);
         if (!response.ok && !payload.error) throw new Error("Chart unavailable");
         return payload;
       })
       .then((payload) => {
         if (!cancelled) setChart(payload);
       })
-      .catch((error: unknown) => {
+      .catch((error) => {
         if (!cancelled) {
           setChart({
             bars: [],

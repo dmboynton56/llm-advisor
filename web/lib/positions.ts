@@ -1,4 +1,11 @@
 import { dateEtIso, parseOccSymbol } from "@/lib/format";
+import {
+  asJsonRecord,
+  firstJsonString,
+  jsonNumber,
+  jsonRecords,
+  type JsonInput,
+} from "@/lib/json";
 import type {
   JsonRecord,
   LiveOpenPosition,
@@ -8,23 +15,16 @@ import type {
   TradeLifecycleRow,
 } from "@/lib/types";
 
-function numberOrNull(value: unknown): number | null {
-  if (value === null || value === undefined || value === "") return null;
-  const parsed = Number(value);
-  return Number.isFinite(parsed) ? parsed : null;
+function numberOrNull(value: JsonInput): number | null {
+  return jsonNumber(value);
 }
 
 function normalizeSessionDate(value: string | Date): string {
   // A bare ISO date is already an ET session date. Parsing it as a JavaScript
   // Date would interpret midnight as UTC and shift it to the prior ET date.
-  if (typeof value === "string" && /^\d{4}-\d{2}-\d{2}$/.test(value)) return value;
-  return dateEtIso(value);
-}
-
-function record(value: unknown): JsonRecord {
-  return value && typeof value === "object" && !Array.isArray(value)
-    ? (value as JsonRecord)
-    : {};
+  if (value instanceof Date) return dateEtIso(value);
+  const text = String(value);
+  return /^\d{4}-\d{2}-\d{2}$/.test(text) ? text : dateEtIso(text);
 }
 
 function positive(value: number | null): number | null {
@@ -44,29 +44,24 @@ function returnPct(
 }
 
 function fillFromRaw(
-  raw: unknown,
+  raw: JsonRecord | null | undefined,
   kind: PositionFill["kind"],
   fallbackTimestamp: string | null = null,
 ): PositionFill | null {
-  const value = record(raw);
-  const timestamp =
-    typeof value.timestamp === "string"
-      ? value.timestamp
-      : typeof value.event_ts === "string"
-        ? value.event_ts
-        : fallbackTimestamp;
+  const value = raw ?? {};
+  const timestamp = firstJsonString(value.timestamp, value.event_ts) ?? fallbackTimestamp;
   const qty = numberOrNull(value.qty ?? value.filled_qty);
   const price = numberOrNull(value.price ?? value.filled_avg_price);
   const pnl = numberOrNull(value.pnl ?? value.realized_pnl);
   if (!timestamp && qty === null && price === null && pnl === null) return null;
   return {
     kind,
-    stage: typeof value.stage === "string" ? value.stage : null,
+    stage: firstJsonString(value.stage),
     timestamp,
     qty,
     price,
     pnl,
-    reason: typeof value.reason === "string" ? value.reason : null,
+    reason: firstJsonString(value.reason),
   };
 }
 
@@ -87,16 +82,13 @@ function dedupeFills(fills: PositionFill[]): PositionFill[] {
 }
 
 function stateFromDetails(details: JsonRecord | null): JsonRecord {
-  const root = record(details);
-  return record(root.tiered_exit_state ?? root.exit_state);
+  const root = details ?? {};
+  return asJsonRecord(root.tiered_exit_state ?? root.exit_state) ?? {};
 }
 
 function partialFillsFromDetails(details: JsonRecord | null): PositionFill[] {
-  const root = record(details);
-  const raw = Array.isArray(root.tiered_partial_fills)
-    ? root.tiered_partial_fills
-    : [];
-  return raw
+  const root = details ?? {};
+  return jsonRecords(root.tiered_partial_fills)
     .map((fill) => fillFromRaw(fill, "partial_exit"))
     .filter((fill): fill is PositionFill => Boolean(fill));
 }
@@ -116,10 +108,7 @@ function addEntryFill(
 
 function normalizeOpenPosition(position: LiveOpenPosition): OverviewPosition {
   const symbol = position.option_symbol ?? position.symbol;
-  const state = record(
-    (position as LiveOpenPosition & { tiered_exit_state?: JsonRecord })
-      .tiered_exit_state,
-  );
+  const state = position.tiered_exit_state ?? {};
   const initialQty =
     numberOrNull(position.initial_qty) ?? numberOrNull(state.initial_qty) ?? positive(position.qty);
   const remainingQty =
@@ -131,20 +120,15 @@ function normalizeOpenPosition(position: LiveOpenPosition): OverviewPosition {
     numberOrNull(position.realized_pnl) ?? numberOrNull(state.realized_pnl) ?? 0;
   const unrealizedPnl = numberOrNull(position.unrealized_pl) ?? 0;
   const totalPnl = realizedPnl + unrealizedPnl;
-  const fills = Array.isArray(position.fills)
-    ? position.fills
-        .map((fill) => fillFromRaw(fill, "partial_exit"))
-        .filter((fill): fill is PositionFill => Boolean(fill))
-    : Array.isArray(state.exit_fills)
-      ? state.exit_fills
-          .map((fill) => fillFromRaw(fill, "partial_exit"))
-          .filter((fill): fill is PositionFill => Boolean(fill))
-      : [];
+  const fills = position.fills ??
+    jsonRecords(state.exit_fills)
+      .map((fill) => fillFromRaw(fill, "partial_exit"))
+      .filter((fill): fill is PositionFill => Boolean(fill));
 
   return {
     id:
       position.position_id ??
-      (typeof state.lifecycle_id === "string" ? state.lifecycle_id : null) ??
+      firstJsonString(state.lifecycle_id) ??
       symbol,
     entry_order_id: position.entry_order_id ?? null,
     status: "open",
@@ -176,7 +160,7 @@ function normalizeOpenPosition(position: LiveOpenPosition): OverviewPosition {
 }
 
 function normalizeLifecycle(row: TradeLifecycleRow): OverviewPosition {
-  const details = record(row.details);
+  const details = row.details ?? {};
   const state = stateFromDetails(row.details);
   const partialFills = partialFillsFromDetails(row.details);
   const initialQty =
