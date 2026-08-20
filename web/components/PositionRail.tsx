@@ -83,6 +83,12 @@ export function PositionRail({
     brokerDailyPnl != null && hasPositionData
       ? brokerDailyPnl - metrics.realizedPnl - metrics.openUnrealizedPnl
       : null;
+  // Prefer the broker's session total so this headline reconciles exactly with
+  // the account P&L shown above the chart. Fall back to the position rollup
+  // when the account record is unavailable.
+  const sessionPnl = hasPositionData
+    ? brokerDailyPnl ?? metrics.realizedPnl + metrics.openUnrealizedPnl
+    : null;
 
   return (
     <>
@@ -94,12 +100,14 @@ export function PositionRail({
         <p
           className={clsx(
             "num text-[24px] font-medium tracking-[-0.03em]",
-            pnlColor(hasPositionData ? metrics.openUnrealizedPnl : null),
+            pnlColor(sessionPnl),
           )}
         >
-          {fmtSignedUsd(hasPositionData ? metrics.openUnrealizedPnl : null)}
+          {fmtSignedUsd(sessionPnl)}
         </p>
-        <p className="mt-1 text-[11px] text-ink-3">open unrealized P&L · tap a position for its trail</p>
+        <p className="mt-1 text-[11px] text-ink-3">
+          total session P&amp;L · open + closed positions · tap a position for its trail
+        </p>
 
         {positions.length > 0 ? (
           <div className="mt-3.5">
