@@ -74,6 +74,47 @@ def test_mapper_selects_liquid_delta_matched_long_call() -> None:
     assert plan.selection_tier == "primary"
 
 
+def test_mapper_excludes_prior_contract_and_selects_next_eligible_candidate() -> None:
+    first = "SPY260116C00500000"
+    second = "SPY260116C00510000"
+
+    class FakeOptionsClient:
+        def find_candidates(self, **kwargs):
+            return [
+                _snapshot(first, delta=0.45),
+                _snapshot(second, delta=0.46),
+            ]
+
+    mapper = OptionsStrategyMapper(
+        OptionsSettings(
+            min_delta=0.30,
+            max_delta=0.60,
+            max_premium_per_trade=500.0,
+            max_bid_ask_spread_pct=0.20,
+            min_open_interest=100,
+        ),
+        RiskSettings(max_risk_per_trade_percent=1.0),
+    )
+    signal = SimpleNamespace(
+        symbol="SPY",
+        side="long",
+        setup_type="MR",
+        entry_price=500.0,
+        z_score=-1.0,
+    )
+
+    plan = mapper.build_trade_plan(
+        signal,
+        state=object(),
+        options_client=FakeOptionsClient(),
+        account_equity=100000,
+        excluded_option_symbols={first},
+    )
+
+    assert plan is not None
+    assert plan.option_symbol == second
+
+
 def test_mapper_uses_fallback_profile_when_primary_filters_candidate() -> None:
     class FakeOptionsClient:
         def __init__(self):

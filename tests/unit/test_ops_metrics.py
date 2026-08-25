@@ -9,6 +9,7 @@ from src.analytics.ops_metrics import (
     dte_bucket,
     execution_funnel,
     max_drawdown,
+    signal_level_funnel,
     summarize_trades,
     trades_per_day,
 )
@@ -216,6 +217,83 @@ class TestExecutionFunnel:
         funnel = execution_funnel([])
         assert funnel["llm_approval_rate"] is None
         assert funnel["stages"]["signals"] == 0
+
+    def test_signal_level_funnel_deduplicates_retries_and_tracks_session_periods(self):
+        events = [
+            {
+                "event_type": "signal_detected",
+                "ts": "2026-08-20T18:45:00Z",
+                "details": {"signal_uid": "sig-cap"},
+            },
+            {
+                "event_type": "validation_approved",
+                "details": {"signal_uid": "sig-cap"},
+            },
+            {
+                "event_type": "max_concurrent_skipped",
+                "details": {"signal_uid": "sig-cap"},
+            },
+            {
+                "event_type": "max_concurrent_skipped",
+                "details": {"signal_uid": "sig-cap"},
+            },
+            {
+                "event_type": "execution_timeout",
+                "details": {"signal_uid": "sig-cap", "phase": "capacity"},
+            },
+            {
+                "event_type": "signal_outcome",
+                "details": {
+                    "signal_uid": "sig-cap",
+                    "outcome": "capacity_expired",
+                    "capacity_skip_count": 2,
+                },
+            },
+            {
+                "event_type": "signal_outcome",
+                "details": {
+                    "signal_uid": "sig-cap",
+                    "outcome": "capacity_expired",
+                    "capacity_skip_count": 2,
+                },
+            },
+            {
+                "event_type": "signal_detected",
+                "ts": "2026-08-20T19:10:00Z",
+                "details": {"signal_uid": "sig-fill"},
+            },
+            {
+                "event_type": "validation_approved",
+                "details": {"signal_uid": "sig-fill"},
+            },
+            {
+                "event_type": "execution_attempt",
+                "details": {"signal_uid": "sig-fill"},
+            },
+            {
+                "event_type": "execution_succeeded",
+                "details": {"signal_uid": "sig-fill"},
+            },
+            {
+                "event_type": "signal_outcome",
+                "details": {
+                    "signal_uid": "sig-fill",
+                    "outcome": "execution_succeeded",
+                },
+            },
+        ]
+
+        funnel = signal_level_funnel(events)
+
+        assert funnel["detected"] == 2
+        assert funnel["approved"] == 2
+        assert funnel["capacity_blocked"] == 1
+        assert funnel["capacity_expired"] == 1
+        assert funnel["attempted"] == 1
+        assert funnel["execution_succeeded"] == 1
+        assert funnel["approved_no_attempt"] == 1
+        assert funnel["session_periods"]["13_plus"]["detected"] == 2
+        assert funnel["terminal_outcomes"]["capacity_expired"] == 1
 
 
 class TestComputeOpsMetrics:

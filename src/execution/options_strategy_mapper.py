@@ -72,6 +72,7 @@ class OptionsStrategyMapper:
         state: Any,
         options_client: AlpacaOptionsClient,
         account_equity: float,
+        excluded_option_symbols: Optional[set[str]] = None,
     ) -> Optional[OptionTradePlan]:
         self.last_rejection = None
         if self.options.strategy_type != "single_long":
@@ -80,6 +81,11 @@ class OptionsStrategyMapper:
         contract_type = "call" if str(signal.side).lower() == "long" else "put"
         today = date.today()
         attempted_rejections: List[Dict[str, Any]] = []
+        excluded_symbols = {
+            str(symbol).upper()
+            for symbol in (excluded_option_symbols or set())
+            if str(symbol).strip()
+        }
 
         for profile in self._selection_profiles():
             try:
@@ -91,6 +97,7 @@ class OptionsStrategyMapper:
                     contract_type=contract_type,
                     today=today,
                     profile=profile,
+                    excluded_option_symbols=excluded_symbols,
                 )
             except Exception:
                 if attempted_rejections and self.last_rejection:
@@ -125,6 +132,7 @@ class OptionsStrategyMapper:
         contract_type: str,
         today: date,
         profile: OptionSelectionProfile,
+        excluded_option_symbols: set[str],
     ) -> Optional[OptionTradePlan]:
         min_exp = today + timedelta(days=profile.min_dte)
         max_exp = today + timedelta(days=profile.max_dte)
@@ -160,7 +168,7 @@ class OptionsStrategyMapper:
             float(account_equity) * (float(self.risk.max_risk_per_trade_percent) / 100.0),
         )
         filtered, filter_rejections = self._filter_candidates_with_diagnostics(
-            candidates, profile, risk_budget
+            candidates, profile, risk_budget, excluded_option_symbols
         )
         if not filtered:
             self.last_rejection = {
@@ -259,6 +267,7 @@ class OptionsStrategyMapper:
         candidates: List[OptionSnapshot],
         profile: OptionSelectionProfile,
         risk_budget: float,
+        excluded_option_symbols: Optional[set[str]] = None,
     ) -> Tuple[List[OptionSnapshot], Dict[str, int]]:
         rejections = {
             "missing_delta": 0,
@@ -266,9 +275,18 @@ class OptionsStrategyMapper:
             "spread_too_wide": 0,
             "open_interest_too_low": 0,
             "premium_too_high": 0,
+            "excluded_option_symbol": 0,
         }
         filtered = []
+        excluded_symbols = {
+            str(symbol).upper()
+            for symbol in (excluded_option_symbols or set())
+            if str(symbol).strip()
+        }
         for candidate in candidates:
+            if str(candidate.contract.symbol).upper() in excluded_symbols:
+                rejections["excluded_option_symbol"] += 1
+                continue
             delta = candidate.greeks.delta
             if delta is None:
                 rejections["missing_delta"] += 1

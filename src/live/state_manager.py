@@ -19,6 +19,14 @@ class TradePlan:
     execution_attempts: int = 0  # Track how many times we've tried to execute
     first_execution_attempt: Optional[datetime] = None  # When we first tried to execute
     signal_uid: str = ""
+    first_capacity_blocked_at: Optional[datetime] = None
+    capacity_skip_count: int = 0
+    capacity_revalidation_pending: bool = False
+    revalidation_count: int = 0
+    selected_option_symbols: List[str] = field(default_factory=list)
+    excluded_option_symbols: List[str] = field(default_factory=list)
+    alternate_contract_attempted: bool = False
+    guard_failure_reasons: List[str] = field(default_factory=list)
 
 
 @dataclass

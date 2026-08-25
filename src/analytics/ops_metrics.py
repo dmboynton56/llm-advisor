@@ -5,7 +5,10 @@ fed from either Supabase or BigQuery (see scripts/compute_ops_metrics.py).
 """
 from __future__ import annotations
 
+import json
+from datetime import datetime, timezone
 from typing import Any, Callable, Dict, List, Optional
+from zoneinfo import ZoneInfo
 
 DTE_BUCKETS = ("0", "1-3", "4-7", "8-14", "15+")
 
@@ -25,12 +28,210 @@ REJECTION_EVENT_TYPES = (
     "max_concurrent_skipped",
 )
 
+_ET = ZoneInfo("America/New_York")
+_GUARD_FAILURE_REASONS = {
+    "duplicate_option_contract",
+    "underlying_direction_exposure",
+    "max_concurrent_trades",
+    "stopout_cooldown",
+}
+
 
 def _f(value: Any) -> Optional[float]:
     try:
         return float(value) if value is not None else None
     except (TypeError, ValueError):
         return None
+
+
+def _event_details(event: Dict[str, Any]) -> Dict[str, Any]:
+    details = event.get("details")
+    if isinstance(details, str):
+        try:
+            details = json.loads(details)
+        except (TypeError, json.JSONDecodeError):
+            details = {}
+    return details if isinstance(details, dict) else {}
+
+
+def _signal_uid(event: Dict[str, Any]) -> Optional[str]:
+    details = _event_details(event)
+    signal = event.get("signal")
+    signal_uid = (
+        event.get("signal_uid")
+        or details.get("signal_uid")
+        or (signal.get("signal_uid") if isinstance(signal, dict) else None)
+    )
+    value = str(signal_uid or "").strip()
+    return value or None
+
+
+def _event_datetime(event: Dict[str, Any]) -> Optional[datetime]:
+    value = event.get("event_ts") or event.get("ts") or event.get("timestamp")
+    if isinstance(value, datetime):
+        parsed = value
+    elif value:
+        try:
+            parsed = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+        except (TypeError, ValueError):
+            return None
+    else:
+        return None
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return parsed.astimezone(_ET)
+
+
+def _empty_signal_counts() -> Dict[str, int]:
+    return {
+        "detected": 0,
+        "approved": 0,
+        "rejected": 0,
+        "capacity_blocked": 0,
+        "capacity_expired": 0,
+        "attempted": 0,
+        "execution_succeeded": 0,
+        "execution_guard_failed": 0,
+        "execution_failed": 0,
+        "approved_no_attempt": 0,
+    }
+
+
+def signal_level_funnel(order_events: List[Dict[str, Any]]) -> Dict[str, Any]:
+    """Deduplicate signal lifecycle outcomes while preserving retry metrics separately."""
+    records: Dict[str, Dict[str, Any]] = {}
+    for event in order_events:
+        uid = _signal_uid(event)
+        if not uid:
+            continue
+        event_type = str(event.get("event_type") or "")
+        details = _event_details(event)
+        record = records.setdefault(
+            uid,
+            {
+                "detected": False,
+                "approved": False,
+                "rejected": False,
+                "capacity_blocked": False,
+                "capacity_expired": False,
+                "attempted": False,
+                "execution_succeeded": False,
+                "execution_guard_failed": False,
+                "execution_failed": False,
+                "terminal_outcome": None,
+                "detected_at": None,
+                "guard_reasons": set(),
+            },
+        )
+
+        if event_type == "signal_detected":
+            record["detected"] = True
+            record["detected_at"] = _event_datetime(event) or record["detected_at"]
+        elif event_type == "validation_approved":
+            record["approved"] = True
+        elif event_type == "validation_rejected":
+            record["rejected"] = True
+        elif event_type == "execution_attempt":
+            record["attempted"] = True
+        elif event_type == "execution_succeeded":
+            record["execution_succeeded"] = True
+        elif event_type == "max_concurrent_skipped":
+            record["capacity_blocked"] = True
+        elif event_type == "execution_timeout":
+            if str(details.get("phase") or "") == "capacity":
+                record["capacity_expired"] = True
+            else:
+                record["execution_failed"] = True
+        elif event_type == "execution_failed":
+            reason = str(details.get("reason") or details.get("error") or "")
+            if reason in _GUARD_FAILURE_REASONS:
+                record["guard_reasons"].add(reason)
+                record["execution_guard_failed"] = True
+            else:
+                record["execution_failed"] = True
+        elif event_type == "signal_outcome":
+            outcome = str(details.get("outcome") or "").strip()
+            if outcome and not record["terminal_outcome"]:
+                record["terminal_outcome"] = outcome
+            if details.get("detected_at") and record["detected_at"] is None:
+                record["detected_at"] = _event_datetime(
+                    {"timestamp": details.get("detected_at")}
+                )
+            if details.get("approved_at"):
+                record["approved"] = True
+            execution_attempts = _f(details.get("execution_attempts")) or 0.0
+            if execution_attempts > 0:
+                record["attempted"] = True
+            capacity_skip_count = _f(details.get("capacity_skip_count")) or 0.0
+            if capacity_skip_count > 0:
+                record["capacity_blocked"] = True
+            guard_failure_reasons = details.get("guard_failure_reasons") or []
+            if isinstance(guard_failure_reasons, str):
+                guard_failure_reasons = [guard_failure_reasons]
+            for reason in guard_failure_reasons:
+                record["guard_reasons"].add(str(reason))
+            if outcome == "capacity_expired":
+                record["capacity_expired"] = True
+            elif outcome == "execution_guard_failed":
+                record["execution_guard_failed"] = True
+            elif outcome == "execution_failed":
+                record["execution_failed"] = True
+            elif outcome == "execution_succeeded":
+                record["execution_succeeded"] = True
+            elif outcome == "validation_rejected":
+                record["rejected"] = True
+
+    counts = _empty_signal_counts()
+    session_periods = {
+        "before_11": _empty_signal_counts(),
+        "11_to_13": _empty_signal_counts(),
+        "13_plus": _empty_signal_counts(),
+    }
+    terminal_outcomes: Dict[str, int] = {}
+
+    for record in records.values():
+        if record["approved"] and not record["attempted"]:
+            record["approved_no_attempt"] = True
+        terminal_outcome = str(record.get("terminal_outcome") or "")
+        if terminal_outcome:
+            record["execution_succeeded"] = terminal_outcome == "execution_succeeded"
+            record["execution_guard_failed"] = terminal_outcome == "execution_guard_failed"
+            record["execution_failed"] = terminal_outcome in {
+                "execution_failed",
+                "execution_expired",
+            }
+        elif record["execution_succeeded"]:
+            # A signal that eventually succeeded is not a terminal failure even
+            # when an earlier candidate or broker attempt failed.
+            record["execution_guard_failed"] = False
+            record["execution_failed"] = False
+        else:
+            record["execution_guard_failed"] = bool(record["guard_reasons"])
+        if record["terminal_outcome"]:
+            outcome = str(record["terminal_outcome"])
+            terminal_outcomes[outcome] = terminal_outcomes.get(outcome, 0) + 1
+
+        for key in counts:
+            counts[key] += int(bool(record.get(key)))
+
+        detected_at = record.get("detected_at")
+        if detected_at is None:
+            continue
+        if (detected_at.hour, detected_at.minute) < (11, 0):
+            bucket = session_periods["before_11"]
+        elif (detected_at.hour, detected_at.minute) < (13, 0):
+            bucket = session_periods["11_to_13"]
+        else:
+            bucket = session_periods["13_plus"]
+        for key in bucket:
+            bucket[key] += int(bool(record.get(key)))
+
+    return {
+        **counts,
+        "signals_with_uid": len(records),
+        "terminal_outcomes": dict(sorted(terminal_outcomes.items())),
+        "session_periods": session_periods,
+    }
 
 
 def dte_bucket(dte: Any) -> Optional[str]:
@@ -226,7 +427,7 @@ def execution_funnel(order_events: List[Dict[str, Any]]) -> Dict[str, Any]:
         event_type = str(event.get("event_type") or "")
         if event_type not in REJECTION_EVENT_TYPES:
             continue
-        details = event.get("details") or {}
+        details = _event_details(event)
         reason = None
         if isinstance(details, dict):
             reason = details.get("reason") or details.get("error")
@@ -241,6 +442,7 @@ def execution_funnel(order_events: List[Dict[str, Any]]) -> Dict[str, Any]:
         "stages": stages,
         "rejection_reasons": dict(sorted(rejections.items(), key=lambda kv: -kv[1])),
         "llm_approval_rate": (approved / validated_total) if validated_total else None,
+        "signal_funnel": signal_level_funnel(order_events),
     }
 
 

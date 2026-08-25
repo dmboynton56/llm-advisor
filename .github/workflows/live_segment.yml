@@ -46,7 +46,8 @@ jobs:
       # Paper sizing trial: larger individual orders while keeping gross
       # planned premium exposure near the prior 2% x 3 = 6% profile.
       MAX_RISK_PER_TRADE_PERCENT: 3.0
-      MAX_CONCURRENT_TRADES: 2
+      # Five-session paper-only late-session fill recovery canary.
+      MAX_CONCURRENT_TRADES: 3
       MAX_OPTION_PREMIUM_PER_TRADE: 3000
       MAX_OPTION_BID_ASK_SPREAD_PCT: 0.15
       MIN_OPTION_OPEN_INTEREST: 100
@@ -128,8 +129,8 @@ jobs:
               raise SystemExit("Tiered exit paper trial is not enabled")
           if settings.risk.max_risk_per_trade_percent != 3.0:
               raise SystemExit("Sizing trial requires MAX_RISK_PER_TRADE_PERCENT=3.0")
-          if settings.trading.max_concurrent_trades != 2:
-              raise SystemExit("Sizing trial requires MAX_CONCURRENT_TRADES=2")
+          if settings.trading.max_concurrent_trades != 3:
+              raise SystemExit("Late-session fill canary requires MAX_CONCURRENT_TRADES=3")
           if settings.options.max_premium_per_trade != 3000.0:
               raise SystemExit("Sizing trial requires MAX_OPTION_PREMIUM_PER_TRADE=3000")
           if settings.options.fallback_max_premium_per_trade != 3000.0:
@@ -213,7 +214,12 @@ jobs:
               await new Promise((resolve) => setTimeout(resolve, 30000))
             }
 
-      - name: Download premarket context
+      # GitHub artifact storage can transiently return 429/503 responses. Retry
+      # before failing the segment so a short service interruption does not
+      # look like missing trading context.
+      - name: Download premarket context (attempt 1)
+        id: download_premarket_context_1
+        continue-on-error: true
         uses: actions/download-artifact@v4
         with:
           name: ${{ steps.premarket_artifact.outputs.artifact_name }}
@@ -221,12 +227,93 @@ jobs:
           github-token: ${{ github.token }}
           path: .
 
-      - name: Download previous segment handoff
+      - name: Wait before premarket context retry
+        if: steps.download_premarket_context_1.outcome == 'failure'
+        run: sleep 15
+
+      - name: Download premarket context (attempt 2)
+        id: download_premarket_context_2
+        if: steps.download_premarket_context_1.outcome == 'failure'
+        continue-on-error: true
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ steps.premarket_artifact.outputs.artifact_name }}
+          run-id: ${{ steps.premarket_artifact.outputs.run_id }}
+          github-token: ${{ github.token }}
+          path: .
+
+      - name: Wait before final premarket context retry
+        if: steps.download_premarket_context_2.outcome == 'failure'
+        run: sleep 30
+
+      - name: Download premarket context (attempt 3)
+        if: steps.download_premarket_context_2.outcome == 'failure'
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ steps.premarket_artifact.outputs.artifact_name }}
+          run-id: ${{ steps.premarket_artifact.outputs.run_id }}
+          github-token: ${{ github.token }}
+          path: .
+
+      # A later manage_only segment can reconcile from the database when its
+      # predecessor failed before producing a handoff. Keep normal mode fail
+      # closed so a missing handoff can never silently permit new entries.
+      - name: Download previous segment handoff (attempt 1)
         if: inputs.handoff_segment != ''
+        id: download_handoff_1
+        continue-on-error: true
         uses: actions/download-artifact@v4
         with:
           name: llm-advisor-handoff-${{ github.run_id }}-${{ inputs.handoff_segment }}
           path: .
+
+      - name: Wait before previous segment handoff retry
+        if: inputs.handoff_segment != '' && steps.download_handoff_1.outcome == 'failure'
+        run: sleep 15
+
+      - name: Download previous segment handoff (attempt 2)
+        if: inputs.handoff_segment != '' && steps.download_handoff_1.outcome == 'failure'
+        id: download_handoff_2
+        continue-on-error: true
+        uses: actions/download-artifact@v4
+        with:
+          name: llm-advisor-handoff-${{ github.run_id }}-${{ inputs.handoff_segment }}
+          path: .
+
+      - name: Wait before final previous segment handoff retry
+        if: inputs.handoff_segment != '' && steps.download_handoff_2.outcome == 'failure'
+        run: sleep 30
+
+      - name: Download previous segment handoff (attempt 3)
+        if: inputs.handoff_segment != '' && steps.download_handoff_2.outcome == 'failure'
+        id: download_handoff_3
+        continue-on-error: true
+        uses: actions/download-artifact@v4
+        with:
+          name: llm-advisor-handoff-${{ github.run_id }}-${{ inputs.handoff_segment }}
+          path: .
+
+      - name: Validate previous segment handoff
+        if: inputs.handoff_segment != ''
+        env:
+          ENTRY_MODE: ${{ inputs.entry_mode }}
+          HANDOFF_ATTEMPT_1: ${{ steps.download_handoff_1.outcome }}
+          HANDOFF_ATTEMPT_2: ${{ steps.download_handoff_2.outcome }}
+          HANDOFF_ATTEMPT_3: ${{ steps.download_handoff_3.outcome }}
+        run: |
+          set -euo pipefail
+          if [ "$HANDOFF_ATTEMPT_1" = "success" ] || \
+             [ "$HANDOFF_ATTEMPT_2" = "success" ] || \
+             [ "$HANDOFF_ATTEMPT_3" = "success" ]; then
+            echo "Previous segment handoff downloaded successfully."
+            exit 0
+          fi
+          if [ "$ENTRY_MODE" = "manage_only" ]; then
+            echo "::warning::Previous segment handoff was unavailable; continuing in manage_only mode."
+            exit 0
+          fi
+          echo "::error::Previous segment handoff was unavailable in normal mode."
+          exit 1
 
       - name: Verify premarket context
         env:
@@ -294,6 +381,7 @@ jobs:
           path: |
             data/daily_news/
             .telemetry-artifact-anchor
+          include-hidden-files: true
           if-no-files-found: warn
 
       - name: Upload segment daily telemetry
@@ -304,6 +392,7 @@ jobs:
           path: |
             data/daily_news/
             .telemetry-artifact-anchor
+          include-hidden-files: true
           if-no-files-found: warn
 
       - name: Notify Discord on failure

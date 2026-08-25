@@ -146,6 +146,85 @@ def test_execute_signal_trade_returns_option_candidate_diagnostics() -> None:
     assert result["diagnostics"] == diagnostics
 
 
+def test_execute_signal_trade_tries_one_alternate_after_duplicate_guard() -> None:
+    first = _plan()
+    alternate = replace(first, option_symbol="SPY260116C00510000")
+
+    class FakeMapper:
+        last_rejection = None
+
+        def build_trade_plan(self, **kwargs):
+            excluded = kwargs.get("excluded_option_symbols") or set()
+            return alternate if first.option_symbol in excluded else first
+
+    manager = OptionsOrderManager.__new__(OptionsOrderManager)
+    manager.mapper = FakeMapper()
+    manager.options_client = object()
+    manager.get_account_equity = lambda: 100000.0
+    manager.get_buying_power = lambda: 100000.0
+    manager._entry_guard = lambda plan: (
+        {"success": False, "error": "duplicate_option_contract"}
+        if plan.option_symbol == first.option_symbol
+        else None
+    )
+    submitted = []
+    manager.execute_option_trade = lambda plan: submitted.append(plan) or {
+        "success": True,
+        "order_id": "alt-1",
+        "option_symbol": plan.option_symbol,
+    }
+    state = SimpleNamespace(
+        trade=SimpleNamespace(
+            selected_option_symbols=[],
+            excluded_option_symbols=[],
+            alternate_contract_attempted=False,
+            guard_failure_reasons=[],
+        )
+    )
+    signal = SimpleNamespace(symbol="SPY", side="long", entry_price=500.0)
+
+    result = manager.execute_signal_trade(signal, state)
+
+    assert result["success"] is True
+    assert [plan.option_symbol for plan in submitted] == [alternate.option_symbol]
+    assert state.trade.alternate_contract_attempted is True
+    assert state.trade.excluded_option_symbols == [first.option_symbol, alternate.option_symbol]
+
+
+def test_execute_signal_trade_fails_fast_on_same_underlying_direction_exposure() -> None:
+    class FakeMapper:
+        last_rejection = None
+
+        def build_trade_plan(self, **kwargs):
+            return _plan()
+
+    manager = OptionsOrderManager.__new__(OptionsOrderManager)
+    manager.mapper = FakeMapper()
+    manager.options_client = object()
+    manager.get_account_equity = lambda: 100000.0
+    manager.get_buying_power = lambda: 100000.0
+    manager._entry_guard = lambda plan: {
+        "success": False,
+        "error": "underlying_direction_exposure",
+    }
+    manager.execute_option_trade = lambda plan: pytest.fail("exposure guard must fail fast")
+    state = SimpleNamespace(
+        trade=SimpleNamespace(
+            selected_option_symbols=[],
+            excluded_option_symbols=[],
+            alternate_contract_attempted=False,
+            guard_failure_reasons=[],
+        )
+    )
+    signal = SimpleNamespace(symbol="SPY", side="long", entry_price=500.0)
+
+    result = manager.execute_signal_trade(signal, state)
+
+    assert result["success"] is False
+    assert result["terminal_for_signal"] is True
+    assert result["terminal_outcome"] == "execution_guard_failed"
+
+
 def test_ensure_protective_stop_uses_actual_position_fill() -> None:
     submitted = {}
 

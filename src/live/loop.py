@@ -31,7 +31,7 @@ from src.data.storage import Storage, StorageAdapter
 from src.premarket.bias_gatherer import load_premarket_context, PremarketContext
 from src.premarket.snapshot_builder import SymbolSnapshot
 from src.features.stdev_features import RollingStats
-from src.live.state_manager import SymbolState
+from src.live.state_manager import SymbolState, TradePlan
 from src.live.feature_computer import compute_features
 from src.live.threshold_evaluator import evaluate_thresholds, SignalEvent
 from src.analysis.llm_client import create_llm_client
@@ -70,6 +70,38 @@ def to_utc(dt_et: datetime) -> datetime:
 def entry_window_is_open(current_et: datetime, run_end_et: datetime) -> bool:
     """Use the same inclusive entry cutoff in live and backtest modes."""
     return current_et <= run_end_et
+
+
+CAPACITY_BLOCK_EXPIRY = timedelta(minutes=5)
+
+
+def capacity_slot_available(open_positions: Optional[int], max_concurrent_trades: int) -> bool:
+    """Return whether broker-truth capacity permits a new entry."""
+    return open_positions is not None and open_positions < max_concurrent_trades
+
+
+def capacity_block_expired(
+    first_blocked_at: Optional[datetime],
+    current_utc: datetime,
+) -> bool:
+    """Keep capacity-blocked approvals within the existing five-minute safety window."""
+    return bool(
+        first_blocked_at
+        and current_utc - first_blocked_at > CAPACITY_BLOCK_EXPIRY
+    )
+
+
+def should_revalidate_capacity(
+    trade: Optional[TradePlan],
+    open_positions: Optional[int],
+    max_concurrent_trades: int,
+) -> bool:
+    """Revalidate once after a previously blocked signal sees an open slot."""
+    return bool(
+        trade
+        and trade.capacity_revalidation_pending
+        and capacity_slot_available(open_positions, max_concurrent_trades)
+    )
 
 
 def _create_minimal_snapshot_from_bars(
@@ -349,8 +381,30 @@ def append_order_event(
             "stop_loss": state.trade.sl_price,
             "take_profit": state.trade.tp_price,
             "triggered_at": state.trade.triggered_at.isoformat(),
-            "execution_attempts": state.trade.execution_attempts,
-            "signal_uid": state.trade.signal_uid,
+            "execution_attempts": getattr(state.trade, "execution_attempts", 0),
+            "signal_uid": getattr(state.trade, "signal_uid", ""),
+            "first_capacity_blocked_at": (
+                getattr(state.trade, "first_capacity_blocked_at", None).isoformat()
+                if getattr(state.trade, "first_capacity_blocked_at", None)
+                else None
+            ),
+            "capacity_skip_count": getattr(state.trade, "capacity_skip_count", 0),
+            "capacity_revalidation_pending": getattr(
+                state.trade, "capacity_revalidation_pending", False
+            ),
+            "revalidation_count": getattr(state.trade, "revalidation_count", 0),
+            "selected_option_symbols": list(
+                getattr(state.trade, "selected_option_symbols", []) or []
+            ),
+            "excluded_option_symbols": list(
+                getattr(state.trade, "excluded_option_symbols", []) or []
+            ),
+            "alternate_contract_attempted": getattr(
+                state.trade, "alternate_contract_attempted", False
+            ),
+            "guard_failure_reasons": list(
+                getattr(state.trade, "guard_failure_reasons", []) or []
+            ),
         }
     if state:
         record["signal_context"] = {
@@ -679,6 +733,11 @@ def build_execution_failure_details(
             "required",
             "available",
             "qty",
+            "terminal_for_signal",
+            "terminal_outcome",
+            "guard_failure_reason",
+            "alternate_contract_attempted",
+            "original_guard_failure",
         ):
             if result.get(key) is not None:
                 details[key] = result[key]
@@ -1497,6 +1556,108 @@ def main():
     entry_window_close_logged = False
     validation_cache: Dict[str, Any] = {}
     recorded_signal_uids: set[str] = set()
+    terminal_signal_uids: set[str] = set()
+    signal_lifecycles: Dict[str, Dict[str, Any]] = {}
+
+    def ensure_signal_lifecycle(signal_uid: str, detected_at: datetime) -> Dict[str, Any]:
+        lifecycle = signal_lifecycles.setdefault(
+            signal_uid,
+            {
+                "signal_uid": signal_uid,
+                "detected_at": detected_at.isoformat(),
+                "approved_at": None,
+                "revalidation_timestamps": [],
+                "capacity_skip_count": 0,
+                "capacity_blocked_at": None,
+                "guard_failure_reasons": [],
+                "selected_option_symbols": [],
+            },
+        )
+        return lifecycle
+
+    def emit_signal_outcome(
+        signal: SignalEvent,
+        state: SymbolState,
+        outcome: str,
+        final_reason: str,
+        completed_at: datetime,
+        **extra: Any,
+    ) -> None:
+        """Emit exactly one terminal, signal-grain lifecycle outcome."""
+        signal_uid = str(signal.signal_uid or getattr(state.trade, "signal_uid", "") or "")
+        if not signal_uid or signal_uid in terminal_signal_uids:
+            return
+
+        lifecycle = ensure_signal_lifecycle(signal_uid, completed_at)
+        trade = state.trade
+        selected_symbols = list(lifecycle.get("selected_option_symbols") or [])
+        guard_failures = list(lifecycle.get("guard_failure_reasons") or [])
+        excluded_symbols: List[str] = []
+        alternate_contract_attempted = False
+        revalidation_count = 0
+        if trade is not None:
+            for symbol in getattr(trade, "selected_option_symbols", []) or []:
+                if symbol not in selected_symbols:
+                    selected_symbols.append(symbol)
+            for reason in getattr(trade, "guard_failure_reasons", []) or []:
+                if reason not in guard_failures:
+                    guard_failures.append(reason)
+            excluded_symbols = list(getattr(trade, "excluded_option_symbols", []) or [])
+            alternate_contract_attempted = bool(
+                getattr(trade, "alternate_contract_attempted", False)
+            )
+            revalidation_count = int(getattr(trade, "revalidation_count", 0) or 0)
+
+        details = {
+            "signal_uid": signal_uid,
+            "outcome": outcome,
+            "final_reason": final_reason,
+            "detected_at": lifecycle.get("detected_at"),
+            "approved_at": lifecycle.get("approved_at"),
+            "revalidation_timestamps": list(lifecycle.get("revalidation_timestamps") or []),
+            "completed_at": completed_at.isoformat(),
+            "execution_attempts": getattr(trade, "execution_attempts", 0),
+            "capacity_skip_count": getattr(
+                trade,
+                "capacity_skip_count",
+                lifecycle.get("capacity_skip_count", 0),
+            ),
+            "capacity_blocked_at": getattr(
+                trade,
+                "first_capacity_blocked_at",
+                None,
+            ).isoformat()
+            if getattr(trade, "first_capacity_blocked_at", None)
+            else lifecycle.get("capacity_blocked_at"),
+            "selected_option_symbols": selected_symbols,
+            "excluded_option_symbols": excluded_symbols,
+            "alternate_contract_attempted": alternate_contract_attempted,
+            "revalidation_count": revalidation_count,
+            "guard_failure_reasons": guard_failures,
+        }
+        details.update({key: value for key, value in extra.items() if value is not None})
+        append_order_event(
+            order_events_path,
+            "signal_outcome",
+            signal.symbol,
+            loop_count,
+            signal=signal,
+            state=state,
+            details=details,
+        )
+        terminal_signal_uids.add(signal_uid)
+
+    def live_open_position_count() -> Optional[int]:
+        """Return broker-truth open positions, or None when it cannot be read."""
+        if is_backtest:
+            return 0
+        if not order_manager or not hasattr(order_manager, "get_open_positions"):
+            return None
+        try:
+            return len(order_manager.get_open_positions())
+        except Exception as exc:
+            logger.error("Could not list open positions: %s", exc)
+            return None
 
     def finalize_live_session(reason: str) -> None:
         if is_backtest:
@@ -1890,6 +2051,7 @@ def main():
                     logger.info(f"TRADE SIGNAL DETECTED for {symbol}: {signal.setup_type} {signal.side.upper()} @ ${signal.entry_price:.2f}")
                     signal_uid = signal.signal_uid or f"{symbol}:{signal.timestamp.isoformat()}"
                     signal.signal_uid = signal_uid
+                    lifecycle = ensure_signal_lifecycle(signal_uid, current_utc)
                     if signal_uid not in recorded_signal_uids:
                         recorded_signal_uids.add(signal_uid)
                         signals.append(signal)
@@ -1921,11 +2083,27 @@ def main():
                         except Exception as e:
                             logger.error(f"Failed to save trade signal to database: {e}")
 
+                    force_revalidation = False
+                    if (
+                        not is_backtest
+                        and state.trade
+                        and state.trade.capacity_revalidation_pending
+                    ):
+                        open_n_before_validation = live_open_position_count()
+                        if should_revalidate_capacity(
+                            state.trade,
+                            open_n_before_validation,
+                            settings.trading.max_concurrent_trades,
+                        ):
+                            force_revalidation = True
+                            state.trade.revalidation_count += 1
+                            validation_cache.pop(signal_uid, None)
+
                     last_validation = validation_cache.get(signal_uid)
                     if settings.llm.enable_trade_validation and premarket_context:
                         if is_backtest:
                             logger.info(f"Would check with LLM for {symbol} trade validation (test mode - skipping API call)")
-                        elif last_validation is None and signal_uid not in validation_cache:
+                        elif force_revalidation or (last_validation is None and signal_uid not in validation_cache):
                             try:
                                 last_validation = validate_trade_with_llm(
                                     signal=signal,
@@ -1934,6 +2112,12 @@ def main():
                                     llm_client=llm_client,
                                 )
                                 validation_cache[signal_uid] = last_validation
+                                lifecycle = ensure_signal_lifecycle(signal_uid, current_utc)
+                                validation_phase = "revalidation" if force_revalidation else "initial"
+                                if force_revalidation:
+                                    lifecycle["revalidation_timestamps"].append(current_utc.isoformat())
+                                elif lifecycle.get("approved_at") is None and last_validation.should_execute:
+                                    lifecycle["approved_at"] = current_utc.isoformat()
                                 validation_event = "validation_approved" if last_validation.should_execute else "validation_rejected"
                                 reasoning_str = str(last_validation.reasoning or "")
                                 logger.info(
@@ -1959,6 +2143,7 @@ def main():
                                         "risk_assessment": last_validation.risk_assessment,
                                         "veto_flags": getattr(last_validation, "veto_flags", []),
                                         "gate_results": getattr(last_validation, "gate_results", []),
+                                        "validation_phase": validation_phase,
                                     },
                                 )
                                 if storage and signal_id is not None:
@@ -1975,6 +2160,18 @@ def main():
                                         })
                                     except Exception as e:
                                         logger.error(f"Failed to save LLM validation to database: {e}")
+                                if force_revalidation:
+                                    state.trade.capacity_revalidation_pending = False
+                                    state.trade.first_capacity_blocked_at = None
+                                if not last_validation.should_execute:
+                                    emit_signal_outcome(
+                                        signal,
+                                        state,
+                                        "validation_rejected",
+                                        "rejected_after_revalidation" if force_revalidation else "rejected_by_validation",
+                                        current_utc,
+                                        validation_phase=validation_phase,
+                                    )
                             except Exception as e:
                                 logger.error(f"Trade validation failed: {e}; skipping execution")
                                 validation_cache[signal_uid] = None
@@ -1987,6 +2184,15 @@ def main():
                                     state=state,
                                     details={"signal_uid": signal_uid, "error": str(e)},
                                 )
+                                emit_signal_outcome(
+                                    signal,
+                                    state,
+                                    "validation_error",
+                                    "revalidation_failed" if force_revalidation else "initial_validation_failed",
+                                    current_utc,
+                                    validation_phase="revalidation" if force_revalidation else "initial",
+                                    error=str(e),
+                                )
                                 state.reset_to_idle()
                                 continue
                         if last_validation is not None and not last_validation.should_execute:
@@ -1995,21 +2201,118 @@ def main():
                             state.reset_to_idle()
                             continue
                     elif settings.llm.enable_trade_validation and not premarket_context:
+                        if force_revalidation:
+                            logger.warning(
+                                "Fresh validation required for %s after capacity release, but premarket context is unavailable; failing closed",
+                                symbol,
+                            )
+                            emit_signal_outcome(
+                                signal,
+                                state,
+                                "validation_error",
+                                "revalidation_context_unavailable",
+                                current_utc,
+                                validation_phase="revalidation",
+                            )
+                            state.reset_to_idle()
+                            continue
                         if is_backtest:
                             logger.debug(f"LLM trade validation skipped (no premarket context for {symbol} in test mode)")
                         else:
                             logger.debug(f"LLM trade validation skipped (no premarket context for {symbol})")
 
                     if state.trade:
-                        if state.trade.first_execution_attempt is None:
-                            state.trade.first_execution_attempt = current_utc
-                        state.trade.execution_attempts += 1
-                        attempt_num = state.trade.execution_attempts
-                        
-                        if state.trade.first_execution_attempt:
-                            time_since_first_attempt = current_utc - state.trade.first_execution_attempt
+                        trade = state.trade
+                        if not is_backtest:
+                            open_n = live_open_position_count()
+                            if open_n is None:
+                                emit_signal_outcome(
+                                    signal,
+                                    state,
+                                    "execution_guard_failed",
+                                    "position_query_failed",
+                                    current_utc,
+                                )
+                                state.reset_to_idle()
+                                continue
+
+                            if open_n >= settings.trading.max_concurrent_trades:
+                                if trade.first_capacity_blocked_at is None:
+                                    trade.first_capacity_blocked_at = current_utc
+                                    trade.capacity_revalidation_pending = True
+                                trade.capacity_skip_count += 1
+                                lifecycle["capacity_skip_count"] = trade.capacity_skip_count
+                                lifecycle["capacity_blocked_at"] = trade.first_capacity_blocked_at.isoformat()
+                                elapsed_capacity = current_utc - trade.first_capacity_blocked_at
+                                logger.warning(
+                                    "Max concurrent trades (%s) reached; skipping execution for %s",
+                                    settings.trading.max_concurrent_trades,
+                                    symbol,
+                                )
+                                append_order_event(
+                                    order_events_path,
+                                    "max_concurrent_skipped",
+                                    symbol,
+                                    loop_count,
+                                    signal=signal,
+                                    state=state,
+                                    details={
+                                        "signal_uid": signal_uid,
+                                        "open_positions": open_n,
+                                        "max_concurrent_trades": settings.trading.max_concurrent_trades,
+                                        "capacity_skip_count": trade.capacity_skip_count,
+                                        "capacity_blocked_at": trade.first_capacity_blocked_at.isoformat(),
+                                    },
+                                )
+                                if capacity_block_expired(
+                                    trade.first_capacity_blocked_at,
+                                    current_utc,
+                                ):
+                                    append_order_event(
+                                        order_events_path,
+                                        "execution_timeout",
+                                        symbol,
+                                        loop_count,
+                                        signal=signal,
+                                        state=state,
+                                        details={
+                                            "phase": "capacity",
+                                            "attempts": trade.execution_attempts,
+                                            "capacity_skip_count": trade.capacity_skip_count,
+                                            "elapsed_seconds": elapsed_capacity.total_seconds(),
+                                        },
+                                    )
+                                    emit_signal_outcome(
+                                        signal,
+                                        state,
+                                        "capacity_expired",
+                                        "no_position_slot_before_expiry",
+                                        current_utc,
+                                    )
+                                    state.reset_to_idle()
+                                continue
+
+                            if trade.capacity_revalidation_pending:
+                                emit_signal_outcome(
+                                    signal,
+                                    state,
+                                    "validation_error",
+                                    "revalidation_not_available",
+                                    current_utc,
+                                    validation_phase="revalidation",
+                                )
+                                state.reset_to_idle()
+                                continue
+
+                        if trade.first_execution_attempt:
+                            time_since_first_attempt = current_utc - trade.first_execution_attempt
                             if time_since_first_attempt > timedelta(minutes=5):
-                                logger.warning(f"TRADE EXECUTION TIMEOUT for {symbol}: Attempted {attempt_num} times over {time_since_first_attempt}, resetting")
+                                logger.warning(
+                                    "TRADE EXECUTION TIMEOUT for %s: Attempted %s times over %s, resetting",
+                                    symbol,
+                                    trade.execution_attempts,
+                                    time_since_first_attempt,
+                                )
                                 append_order_event(
                                     order_events_path,
                                     "execution_timeout",
@@ -2018,39 +2321,28 @@ def main():
                                     signal=signal,
                                     state=state,
                                     details={
-                                        "attempts": attempt_num,
+                                        "phase": "execution",
+                                        "attempts": trade.execution_attempts,
+                                        "capacity_skip_count": trade.capacity_skip_count,
                                         "elapsed_seconds": time_since_first_attempt.total_seconds(),
                                     },
                                 )
-                                state.trade = None
-                                state.status = "idle"
+                                emit_signal_outcome(
+                                    signal,
+                                    state,
+                                    "execution_expired",
+                                    "execution_retry_window_expired",
+                                    current_utc,
+                                )
+                                state.reset_to_idle()
                                 continue
+
+                        if trade.first_execution_attempt is None:
+                            trade.first_execution_attempt = current_utc
+                        trade.execution_attempts += 1
+                        attempt_num = trade.execution_attempts
                     else:
                         attempt_num = 1
-                    
-                    if not is_backtest:
-                        open_n = 0
-                        if order_manager and hasattr(order_manager, "get_open_positions"):
-                            try:
-                                open_n = len(order_manager.get_open_positions())
-                            except Exception as e:
-                                logger.error(f"Could not list open positions: {e}")
-                        if open_n >= settings.trading.max_concurrent_trades:
-                            logger.warning(
-                                "Max concurrent trades (%s) reached; skipping execution for %s",
-                                settings.trading.max_concurrent_trades,
-                                symbol,
-                            )
-                            append_order_event(
-                                order_events_path,
-                                "max_concurrent_skipped",
-                                symbol,
-                                loop_count,
-                                signal=signal,
-                                state=state,
-                                details={"max_concurrent_trades": settings.trading.max_concurrent_trades},
-                            )
-                            continue
                     
                     if is_backtest and hasattr(order_manager, 'execute_stock_trade'):
                         from src.execution.mock_order_manager import execute_trade_from_signal
@@ -2082,8 +2374,16 @@ def main():
                                     last_validation,
                                 ),
                             )
-                            state.trade = None
-                            state.status = "idle"
+                            emit_signal_outcome(
+                                signal,
+                                state,
+                                "execution_succeeded",
+                                "order_submitted",
+                                current_utc,
+                                order_id=result.get("order_id"),
+                                option_symbol=result.get("option_symbol") or result.get("symbol"),
+                            )
+                            state.reset_to_idle()
                         elif hasattr(order_manager, 'open_positions') and symbol in order_manager.open_positions:
                             logger.info(f"TRADE ALREADY EXISTS for {symbol}: Position already open, clearing trade plan")
                             append_order_event(
@@ -2095,8 +2395,14 @@ def main():
                                 state=state,
                                 details={"attempt": attempt_num, "mode": "backtest"},
                             )
-                            state.trade = None
-                            state.status = "idle"
+                            emit_signal_outcome(
+                                signal,
+                                state,
+                                "existing_position_detected",
+                                "position_already_open",
+                                current_utc,
+                            )
+                            state.reset_to_idle()
                         else:
                             fail_reason = execution_failure_reason(result)
                             logger.warning(
@@ -2117,6 +2423,21 @@ def main():
                                     fail_reason,
                                 ),
                             )
+                            if isinstance(result, dict) and result.get("terminal_for_signal"):
+                                emit_signal_outcome(
+                                    signal,
+                                    state,
+                                    str(result.get("terminal_outcome") or "execution_failed"),
+                                    fail_reason,
+                                    current_utc,
+                                    terminal_details=build_execution_failure_details(
+                                        result,
+                                        attempt_num,
+                                        "backtest",
+                                        fail_reason,
+                                    ),
+                                )
+                                state.reset_to_idle()
                     else:
                         logger.info(f"ENTERING {symbol} TRADE: {signal.side.upper()} {signal.setup_type} @ ${signal.entry_price:.2f} (attempt #{attempt_num})")
                         append_order_event(
@@ -2298,8 +2619,16 @@ def main():
                                         )
                                 except Exception as e:
                                     logger.error(f"Failed to persist trade/position: {e}")
-                            state.trade = None
-                            state.status = "idle"
+                            emit_signal_outcome(
+                                signal,
+                                state,
+                                "execution_succeeded",
+                                "order_submitted",
+                                current_utc,
+                                order_id=oid,
+                                option_symbol=option_symbol,
+                            )
+                            state.reset_to_idle()
                         else:
                             fail_reason = execution_failure_reason(result)
                             if order_manager and hasattr(order_manager, 'get_open_positions'):
@@ -2317,8 +2646,15 @@ def main():
                                             state=state,
                                             details={"attempt": attempt_num, "position": existing_pos},
                                         )
-                                        state.trade = None
-                                        state.status = "idle"
+                                        emit_signal_outcome(
+                                            signal,
+                                            state,
+                                            "existing_position_detected",
+                                            "position_already_open",
+                                            current_utc,
+                                            position=existing_pos,
+                                        )
+                                        state.reset_to_idle()
                                     else:
                                         logger.warning(
                                             f"TRADE EXECUTION FAILED for {symbol}: "
@@ -2338,6 +2674,21 @@ def main():
                                                 fail_reason,
                                             ),
                                         )
+                                        if isinstance(result, dict) and result.get("terminal_for_signal"):
+                                            emit_signal_outcome(
+                                                signal,
+                                                state,
+                                                str(result.get("terminal_outcome") or "execution_failed"),
+                                                fail_reason,
+                                                current_utc,
+                                                terminal_details=build_execution_failure_details(
+                                                    result,
+                                                    attempt_num,
+                                                    "paper_live",
+                                                    fail_reason,
+                                                ),
+                                            )
+                                            state.reset_to_idle()
                                 except Exception as e:
                                     logger.error(f"Error checking open positions for {symbol}: {e}")
                                     logger.warning(
@@ -2359,6 +2710,22 @@ def main():
                                             error=str(e),
                                         ),
                                     )
+                                    if isinstance(result, dict) and result.get("terminal_for_signal"):
+                                        emit_signal_outcome(
+                                            signal,
+                                            state,
+                                            str(result.get("terminal_outcome") or "execution_failed"),
+                                            fail_reason,
+                                            current_utc,
+                                            terminal_details=build_execution_failure_details(
+                                                result,
+                                                attempt_num,
+                                                "paper_live",
+                                                fail_reason,
+                                                error=str(e),
+                                            ),
+                                        )
+                                        state.reset_to_idle()
                             else:
                                 logger.warning(
                                     f"TRADE EXECUTION FAILED for {symbol}: "
@@ -2378,6 +2745,21 @@ def main():
                                         fail_reason,
                                     ),
                                 )
+                                if isinstance(result, dict) and result.get("terminal_for_signal"):
+                                    emit_signal_outcome(
+                                        signal,
+                                        state,
+                                        str(result.get("terminal_outcome") or "execution_failed"),
+                                        fail_reason,
+                                        current_utc,
+                                        terminal_details=build_execution_failure_details(
+                                            result,
+                                            attempt_num,
+                                            "paper_live",
+                                            fail_reason,
+                                        ),
+                                    )
+                                    state.reset_to_idle()
             
             # Check for position exits (stop loss/take profit) - for mock manager
             if is_backtest and order_manager and hasattr(order_manager, 'check_exits'):

@@ -15,6 +15,8 @@ from typing import Any, Iterable
 from urllib.parse import urlencode
 from urllib.request import Request, urlopen
 
+from src.analytics.ops_metrics import signal_level_funnel
+
 
 FUNNEL_EVENTS = (
     "signal_detected",
@@ -37,6 +39,7 @@ class DayFunnel:
     position_notional: float = 0.0
     position_samples: int = 0
     sources: set[str] = field(default_factory=set)
+    events: list[dict[str, Any]] = field(default_factory=list, repr=False)
 
     def as_dict(self) -> dict[str, Any]:
         return {
@@ -52,6 +55,7 @@ class DayFunnel:
                 else None
             ),
             "sources": sorted(self.sources),
+            "signal_funnel": signal_level_funnel(self.events),
         }
 
 
@@ -90,6 +94,8 @@ def _details(event: dict[str, Any]) -> dict[str, Any]:
 
 def _add_events(day: DayFunnel, events: Iterable[dict[str, Any]]) -> None:
     for event in events:
+        if isinstance(event, dict):
+            day.events.append(event)
         event_type = str(event.get("event_type") or "").strip()
         if not event_type:
             continue
@@ -189,7 +195,7 @@ def _supabase_rows(table: str, query: dict[str, str]) -> list[dict[str, Any]]:
 
 
 def collect_supabase(start: str | None, end: str | None) -> dict[str, DayFunnel]:
-    filters = ["select=run_date,event_type,details"]
+    filters = ["select=run_date,event_ts,event_type,details"]
     if start:
         filters.append(f"run_date=gte.{start}")
     if end:
@@ -238,20 +244,39 @@ def build_report(days: dict[str, DayFunnel]) -> dict[str, Any]:
         total.position_notional += day.position_notional
         total.position_samples += day.position_samples
         total.sources.update(day.sources)
+        total.events.extend(day.events)
     return {"days": [days[key].as_dict() for key in sorted(days)], "total": total.as_dict()}
 
 
 def render_markdown(report: dict[str, Any]) -> str:
     rows = [*report["days"], report["total"]]
     lines = [
-        "| Date | Signals | Approved | Rejected | Attempts | Failed | Filled | Trades | PnL |",
-        "|---|---:|---:|---:|---:|---:|---:|---:|---:|",
+        "| Date | Signals | Approved | Rejected | Attempted | Succeeded | Approved/no attempt | Capacity blocked | Guard failed | Trades | PnL |",
+        "|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|",
     ]
     for row in rows:
+        signal_funnel = row["signal_funnel"]
         lines.append(
-            "| {run_date} | {signal_detected} | {validation_approved} | {validation_rejected} | "
-            "{execution_attempt} | {execution_failed} | {execution_succeeded} | {trade_count} | ${total_pnl:,.2f} |".format(**row)
+            "| {run_date} | {detected} | {approved} | {rejected} | {attempted} | "
+            "{execution_succeeded} | {approved_no_attempt} | {capacity_blocked} | "
+            "{execution_guard_failed} | {trade_count} | ${total_pnl:,.2f} |".format(
+                run_date=row["run_date"],
+                trade_count=row["trade_count"],
+                total_pnl=row["total_pnl"],
+                **signal_funnel,
+            )
         )
+    periods = report["total"]["signal_funnel"]["session_periods"]
+    lines.extend(
+        [
+            "",
+            "Late-session signal outcomes (ET): "
+            f"11:00–13:00 succeeded={periods['11_to_13']['execution_succeeded']}, "
+            f"approved/no attempt={periods['11_to_13']['approved_no_attempt']}; "
+            f"13:00+ succeeded={periods['13_plus']['execution_succeeded']}, "
+            f"approved/no attempt={periods['13_plus']['approved_no_attempt']}",
+        ]
+    )
     total = report["total"]
     lines.extend(["", "Failure reasons: " + (", ".join(f"`{k}` ({v})" for k, v in total["failure_reasons"].items()) or "none recorded")])
     lines.append("Exit reasons: " + (", ".join(f"`{k}` ({v})" for k, v in total["exit_reasons"].items()) or "none recorded"))

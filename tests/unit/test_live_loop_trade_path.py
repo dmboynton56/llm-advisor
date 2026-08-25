@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import json
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import pytest
@@ -12,11 +12,14 @@ from src.live.loop import (
     build_execution_failure_details,
     build_execution_success_details,
     build_live_session_summary,
+    capacity_block_expired,
+    capacity_slot_available,
     execute_trade,
     entry_window_is_open,
     et_dt,
     reconcile_positions_with_alpaca,
     sync_state_with_positions,
+    should_revalidate_capacity,
     write_live_session_summary,
 )
 from src.core.config import TradingSettings
@@ -58,6 +61,19 @@ def test_default_entry_window_allows_afternoon_but_blocks_after_1530() -> None:
     assert settings.trading_window_end == "15:30"
     assert entry_window_is_open(et_dt(trading_day, "14:00"), run_end)
     assert not entry_window_is_open(et_dt(trading_day, "15:35"), run_end)
+
+
+def test_capacity_block_helpers_preserve_five_minute_expiry_and_slot_revalidation() -> None:
+    now = datetime(2026, 5, 21, 15, 0, tzinfo=timezone.utc)
+    st = _minimal_state()
+    st.trade.capacity_revalidation_pending = True
+    st.trade.first_capacity_blocked_at = now - timedelta(minutes=5, seconds=1)
+
+    assert capacity_slot_available(2, 3)
+    assert not capacity_slot_available(3, 3)
+    assert capacity_block_expired(st.trade.first_capacity_blocked_at, now)
+    assert should_revalidate_capacity(st.trade, 2, 3)
+    assert not should_revalidate_capacity(st.trade, 3, 3)
 
 
 def test_execute_trade_returns_order_dict(monkeypatch: pytest.MonkeyPatch) -> None:
