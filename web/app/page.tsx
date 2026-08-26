@@ -326,9 +326,9 @@ export default async function OverviewPage() {
                   baseline={windowStart?.equity ?? null}
                 />
                 <p className="mt-3 text-[11.5px] text-ink-3">
-                  Curve uses cubic interpolation between broker snapshots for readability;
-                  tooltips retain the raw value and change at each timestamp. The dashed
-                  rule marks equity at the start of the window
+                  Curve shows the last snapshot per calendar day (America/New_York) with
+                  cubic interpolation between days; tooltips show the raw broker value at
+                  each daily snapshot. The dashed rule marks equity at the start of the window
                   {accountCapturedAt ? ` · last value ${relativeTime(accountCapturedAt)}` : ""}
                   .
                 </p>
