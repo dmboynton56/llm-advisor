@@ -167,7 +167,7 @@ export function EquityCurve({
             cursor={{ stroke: AXIS_LINE, strokeDasharray: "3 4" }}
           />
           <Area
-            type="monotoneX"
+            type="monotone"
             dataKey="chartEquity"
             stroke={stroke}
             strokeWidth={2}

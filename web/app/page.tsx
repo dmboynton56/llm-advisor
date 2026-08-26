@@ -326,9 +326,9 @@ export default async function OverviewPage() {
                   baseline={windowStart?.equity ?? null}
                 />
                 <p className="mt-3 text-[11.5px] text-ink-3">
-                  Intraday account snapshots are smoothed for readability;
-                  tooltips retain the raw broker value and change at each
-                  timestamp. The dashed rule marks equity at the start of the window
+                  Curve uses cubic interpolation between broker snapshots for readability;
+                  tooltips retain the raw value and change at each timestamp. The dashed
+                  rule marks equity at the start of the window
                   {accountCapturedAt ? ` · last value ${relativeTime(accountCapturedAt)}` : ""}
                   .
                 </p>
