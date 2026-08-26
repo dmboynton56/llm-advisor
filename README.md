@@ -14,7 +14,7 @@ with mean-reversion and trend-continuation setups.
 From there, the project grew through several layers:
 
 - Machine-learning models added a daily bias for each symbol.
-- Google Gemini added a periodic review of market conditions and adjusted
+- OpenAI gpt-5.4-nano added a periodic review of market conditions and adjusted
   signal thresholds.
 - Alpaca added paper execution and position tracking.
 - Risk checks and state recovery made the loop safer to run.
@@ -38,7 +38,7 @@ opt-in. The system does not trade live money.
 ### Built with
 
 - Python, pandas, NumPy, scikit-learn, and XGBoost
-- Google Gemini
+- OpenAI gpt-5.4-nano
 - Alpaca Markets paper trading API
 - Google BigQuery
 - Supabase and Postgres

@@ -2099,6 +2099,40 @@ def main():
                             state.trade.revalidation_count += 1
                             validation_cache.pop(signal_uid, None)
 
+                    # If revalidation is required but cannot be performed (no premarket
+                    # context or LLM validation disabled), fail closed immediately.
+                    if force_revalidation:
+                        if not settings.llm.enable_trade_validation:
+                            logger.warning(
+                                "Revalidation required for %s after capacity release, but LLM validation is disabled; failing closed",
+                                symbol,
+                            )
+                            emit_signal_outcome(
+                                signal,
+                                state,
+                                "validation_error",
+                                "revalidation_disabled",
+                                current_utc,
+                                validation_phase="revalidation",
+                            )
+                            state.reset_to_idle()
+                            continue
+                        if not premarket_context:
+                            logger.warning(
+                                "Revalidation required for %s after capacity release, but premarket context is unavailable; failing closed",
+                                symbol,
+                            )
+                            emit_signal_outcome(
+                                signal,
+                                state,
+                                "validation_error",
+                                "revalidation_context_unavailable",
+                                current_utc,
+                                validation_phase="revalidation",
+                            )
+                            state.reset_to_idle()
+                            continue
+
                     last_validation = validation_cache.get(signal_uid)
                     if settings.llm.enable_trade_validation and premarket_context:
                         if is_backtest:
@@ -2292,19 +2326,7 @@ def main():
                                     state.reset_to_idle()
                                 continue
 
-                            if trade.capacity_revalidation_pending:
-                                emit_signal_outcome(
-                                    signal,
-                                    state,
-                                    "validation_error",
-                                    "revalidation_not_available",
-                                    current_utc,
-                                    validation_phase="revalidation",
-                                )
-                                state.reset_to_idle()
-                                continue
-
-                        if trade.first_execution_attempt:
+                            # Capacity constraint check - if blocked, wait for next loop.                        if trade.first_execution_attempt:
                             time_since_first_attempt = current_utc - trade.first_execution_attempt
                             if time_since_first_attempt > timedelta(minutes=5):
                                 logger.warning(

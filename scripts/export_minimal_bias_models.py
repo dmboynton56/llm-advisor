@@ -66,16 +66,30 @@ def main() -> None:
     )
     clf.fit(X, y_enc)
 
+    # Mark these placeholder models with provenance metadata so they cannot
+    # silently masquerade as production models.
+    provenance = {
+        "source": "export_minimal_bias_models.py",
+        "purpose": "CI/dev placeholder prior",
+        "created_at": str(Path(__file__).stat().st_mtime),
+        "warning": "This is a synthetic prior. Replace with real trained artifacts for production.",
+    }
+
     for sym in symbols:
         pkl = MODELS / f"{sym}_daily_bias.pkl"
         enc = MODELS / f"{sym}_label_encoder.pkl"
         feat_path = MODELS / f"{sym}_feature_names.json"
+        prov_path = MODELS / f"{sym}_provenance.json"
+        
         with open(pkl, "wb") as f:
             pickle.dump(clf, f)
         with open(enc, "wb") as f:
             pickle.dump(le, f)
         feat_path.write_text(json.dumps(DEFAULT_FEATURES), encoding="utf-8")
-        print(f"Wrote {pkl.name}, {enc.name}, {feat_path.name}")
+        prov_path.write_text(json.dumps(provenance, indent=2), encoding="utf-8")
+        
+        print(f"Wrote {pkl.name}, {enc.name}, {feat_path.name}, {prov_path.name}")
+        print(f"  ⚠️  Placeholder model - do not use in production")
 
 
 if __name__ == "__main__":

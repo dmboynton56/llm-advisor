@@ -1,0 +1,6 @@
+{
+  "source": "export_minimal_bias_models.py",
+  "purpose": "CI/dev placeholder prior",
+  "created_at": "1787752315.1877563",
+  "warning": "This is a synthetic prior. Replace with real trained artifacts for production."
+}
