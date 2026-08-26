@@ -150,7 +150,7 @@ class AnthropicLLMClient(LLMClient):
 class GoogleLLMClient(LLMClient):
     """Google Gemini API client."""
     
-    def __init__(self, model: str = "gemini-2.0-flash", api_key: Optional[str] = None):
+    def __init__(self, model: str = "gemini-3-flash-preview", api_key: Optional[str] = None):
         try:
             import google.generativeai as genai
         except ImportError:

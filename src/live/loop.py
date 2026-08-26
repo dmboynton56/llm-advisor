@@ -2326,7 +2326,8 @@ def main():
                                     state.reset_to_idle()
                                 continue
 
-                            # Capacity constraint check - if blocked, wait for next loop.                        if trade.first_execution_attempt:
+                        # Execution timeout check - fail if we've been retrying too long.
+                        if trade.first_execution_attempt:
                             time_since_first_attempt = current_utc - trade.first_execution_attempt
                             if time_since_first_attempt > timedelta(minutes=5):
                                 logger.warning(
