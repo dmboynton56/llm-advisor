@@ -266,7 +266,29 @@ def _compute_open_features_today(symbol: str, ddf_et, m1df_et, h1df, h4df, featu
 
 # ---------------------- ML model I/O ---------------------- #
 def _load_model_and_encoder(symbol: str):
+    """Load trained daily-bias model and encoder for a symbol.
+    
+    Raises RuntimeError if the model is a placeholder (CI/dev) artifact and
+    ALLOW_PLACEHOLDER_BIAS is not explicitly enabled.
+    """
     models_dir = PROJECT_ROOT / "models"
+    prov_path = models_dir / f"{symbol}_provenance.json"
+    
+    # Check provenance before loading the model.
+    if prov_path.exists():
+        provenance = json.loads(prov_path.read_text(encoding="utf-8"))
+        source = provenance.get("source", "")
+        purpose = provenance.get("purpose", "")
+        
+        if "placeholder" in purpose.lower() or "export_minimal_bias_models" in source:
+            allow_placeholder = os.getenv("ALLOW_PLACEHOLDER_BIAS", "false").lower() == "true"
+            if not allow_placeholder:
+                raise RuntimeError(
+                    f"Daily-bias model for {symbol} is a placeholder (CI/dev) artifact. "
+                    f"Source: {source}, purpose: {purpose}. "
+                    f"Set ALLOW_PLACEHOLDER_BIAS=true to override, or replace with a production model."
+                )
+    
     with open(models_dir / f"{symbol}_daily_bias.pkl", "rb") as f:
         model = pickle.load(f)
     with open(models_dir / f"{symbol}_label_encoder.pkl", "rb") as f:

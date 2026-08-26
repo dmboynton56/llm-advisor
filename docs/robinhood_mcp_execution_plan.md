@@ -43,7 +43,7 @@ The repo already has the right separation of concerns:
 |---|---|---|
 | Deterministic STDEV engine (z-scores, MR/TC setups) | `src/features/`, `src/live/feature_computer.py`, `src/live/threshold_evaluator.py` | Keep unchanged |
 | Risk sizing & R:R validation | `src/execution/risk_calculator.py` | Keep; reuse for notional caps |
-| LLM layer (Gemini threshold multipliers, trade validation) | `src/analysis/` | Keep as analysis/validation only — never the sole signal source |
+| LLM layer (OpenAI threshold multipliers, trade validation) | `src/analysis/` | Keep as analysis/validation only — never the sole signal source |
 | Execution adapters (pluggable) | `src/execution/order_manager.py` (Alpaca stocks), `options_order_manager.py`, `mock_order_manager.py`, selected in `src/live/loop.py` (~line 1244) | Keep Alpaca for paper validation; **add** a Robinhood MCP path alongside, not replacing |
 | Trade-plan structure | `SymbolState.trade` serialized as `trade_plan` in `append_order_event` (`src/live/loop.py` ~line 329): setup, side, entry_price, sl_price, tp_price, triggered_at, execution_attempts | Formalize into an exported `trade_plan.json` contract |
 | Audit trail | `order_events.jsonl`, BigQuery `trading_signals`, Supabase EOD telemetry | Extend with Robinhood execution events |
@@ -56,7 +56,7 @@ default (`OPTIONS_PAPER_ONLY=true`), market-calendar checks,
 ## 3. Target architecture
 
 ```
-premarket pipeline ──► live loop (STDEV engine + Gemini overlay)
+premarket pipeline ──► live loop (STDEV engine + OpenAI overlay)
                             │
                             ├── Alpaca paper (unchanged): options-first paper
                             │   execution for strategy validation

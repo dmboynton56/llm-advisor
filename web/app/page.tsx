@@ -189,8 +189,8 @@ export default async function OverviewPage() {
     }));
 
   const totalPnl30d = pnlPoints.reduce((acc, point) => acc + point.pnl, 0);
-  const closed30d = runs.reduce((acc, run) => acc + (run.closed_trades ?? 0), 0);
-  const won30d = runs.reduce((acc, run) => acc + (run.winning_trades ?? 0), 0);
+  const closed30d = pnlPoints.reduce((acc, point) => acc + point.trades, 0);
+  const won30d = lifecycles.filter(lc => lc.closed_at && Number(lc.realized_pnl ?? 0) > 0).length;
   const winRate30d = closed30d > 0 ? won30d / closed30d : null;
   const cohortPnl = runs.reduce((acc, run) => acc + Number(run.total_pnl ?? 0), 0);
   // BQ-backed run rows often have no final_equity, while the account snapshot

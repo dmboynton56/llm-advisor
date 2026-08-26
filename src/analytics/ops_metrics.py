@@ -251,7 +251,12 @@ def dte_bucket(dte: Any) -> Optional[str]:
 
 
 def is_closed(trade: Dict[str, Any]) -> bool:
-    return str(trade.get("status") or "").lower() == "closed" and trade.get("pnl") is not None
+    """A trade is closed if status='closed' AND it has a realized P&L value.
+    
+    Accepts both 'pnl' (legacy backtest_trades) and 'realized_pnl' (trade_lifecycles).
+    """
+    pnl_value = trade.get("pnl") if trade.get("pnl") is not None else trade.get("realized_pnl")
+    return str(trade.get("status") or "").lower() == "closed" and pnl_value is not None
 
 
 def _per_trade_rr(trade: Dict[str, Any]) -> Optional[float]:
@@ -271,7 +276,12 @@ def _per_trade_rr(trade: Dict[str, Any]) -> Optional[float]:
 def summarize_trades(trades: List[Dict[str, Any]]) -> Dict[str, Any]:
     """Win rate / PnL / RR stats for one cell (overall or a breakdown slice)."""
     closed = [t for t in trades if is_closed(t)]
-    pnls = [float(t["pnl"]) for t in closed]
+    # Accept both 'pnl' (legacy) and 'realized_pnl' (lifecycles).
+    pnls = [
+        float(t["pnl"]) if "pnl" in t and t["pnl"] is not None
+        else float(t["realized_pnl"])
+        for t in closed
+    ]
     wins = [p for p in pnls if p > 0]
     losses = [p for p in pnls if p <= 0]
 
@@ -348,8 +358,11 @@ def biggest_losers(
     n: int = 5,
 ) -> List[Dict[str, Any]]:
     """Bottom-N closed trades by PnL, with validation reasoning joined from order events."""
-    closed = sorted((t for t in trades if is_closed(t)), key=lambda t: float(t["pnl"]))
-    losers = [t for t in closed if float(t["pnl"]) < 0][:n]
+    def _pnl(t: Dict[str, Any]) -> float:
+        return float(t["pnl"]) if "pnl" in t and t["pnl"] is not None else float(t["realized_pnl"])
+    
+    closed = sorted((t for t in trades if is_closed(t)), key=_pnl)
+    losers = [t for t in closed if _pnl(t) < 0][:n]
 
     events_by_order: Dict[str, List[Dict[str, Any]]] = {}
     reasoning_by_correlation: Dict[tuple[str, str, str], str] = {}
@@ -404,7 +417,12 @@ def biggest_losers(
                 "side": _side_key(trade),
                 "setup_type": trade.get("setup_type"),
                 "option_dte": trade.get("option_dte"),
-                "pnl": round(float(trade["pnl"]), 2),
+                "pnl": round(
+                    float(trade["pnl"])
+                    if "pnl" in trade and trade["pnl"] is not None
+                    else float(trade["realized_pnl"]),
+                    2,
+                ),
                 "exit_reason": trade.get("exit_reason"),
                 "validation_reasoning": reasoning,
             }
