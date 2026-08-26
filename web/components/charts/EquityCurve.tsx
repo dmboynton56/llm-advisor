@@ -24,34 +24,30 @@ export type EquityPoint = {
   deltaFromPrevious: number | null;
 };
 
-type EquityChartPoint = EquityPoint & {
-  chartEquity: number;
-};
-
 /**
- * Smooth only the value used to draw the line. The original equity remains on
- * every point so the tooltip continues to report the broker snapshot exactly.
- * A wider window is useful when the live loop has added many intraday ticks,
- * while the first and last points stay anchored to the real period bounds.
+ * Downsample to one point per America/New_York calendar day (the last snapshot
+ * that day) for chart display. This prevents the step-function appearance from
+ * sparse snapshots on a time-scale axis. The full series is still available for
+ * tooltip hover.
  */
-function smoothEquity(data: EquityPoint[]): EquityChartPoint[] {
-  if (data.length < 5) {
-    return data.map((point) => ({ ...point, chartEquity: point.equity }));
+function downsampleToDaily(data: EquityPoint[]): EquityPoint[] {
+  if (data.length === 0) return [];
+
+  const dailyMap = new Map<string, EquityPoint>();
+  for (const point of data) {
+    const etDate = new Date(point.timestamp).toLocaleDateString("en-US", {
+      timeZone: "America/New_York",
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+    });
+    const existing = dailyMap.get(etDate);
+    if (!existing || point.timestamp > existing.timestamp) {
+      dailyMap.set(etDate, point);
+    }
   }
 
-  const radius = Math.min(6, Math.max(2, Math.round(data.length / 80)));
-  return data.map((point, index) => {
-    if (index === 0 || index === data.length - 1) {
-      return { ...point, chartEquity: point.equity };
-    }
-
-    const start = Math.max(0, index - radius);
-    const end = Math.min(data.length - 1, index + radius);
-    const window = data.slice(start, end + 1);
-    const chartEquity =
-      window.reduce((total, candidate) => total + candidate.equity, 0) / window.length;
-    return { ...point, chartEquity };
-  });
+  return Array.from(dailyMap.values()).sort((a, b) => a.timestamp - b.timestamp);
 }
 
 function money(value: number | null): string {
@@ -107,7 +103,7 @@ export function EquityCurve({
   // last tick went.
   const up = data.length > 1 && data[data.length - 1].equity >= data[0].equity;
   const stroke = up ? "var(--gain)" : "var(--loss)";
-  const chartData = smoothEquity(data);
+  const chartData = downsampleToDaily(data);
   const intraday =
     data.length > 1 && data[data.length - 1].timestamp - data[0].timestamp <= 2 * 86_400_000;
 
@@ -168,7 +164,7 @@ export function EquityCurve({
           />
           <Area
             type="monotoneX"
-            dataKey="chartEquity"
+            dataKey="equity"
             stroke={stroke}
             strokeWidth={2}
             strokeLinecap="round"
