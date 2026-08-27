@@ -441,7 +441,21 @@ def build_broker_reconciliations(
     account_snapshots: list[AccountSnapshotRow],
     tolerance: float = 50.0,
 ) -> list[BrokerReconciliationRow]:
-    """Reconcile final flat-account daily PnL to actual lifecycle fill events."""
+    """Reconcile final flat-account daily PnL to actual lifecycle fill events.
+    
+    NOTE: broker daily_pnl (from Alpaca /v2/account) = equity - last_equity,
+    where last_equity is prior trading day's 16:00 ET close. This includes:
+    - All realized P&L from fills
+    - Any open position unrealized P&L at snapshot time
+    - Commissions, fees, adjustments
+    
+    booked_realized_pnl only sums realized_pnl from option_exit_filled events.
+    A non-zero gap may indicate:
+    - Open positions held past EOD (unrealized P&L in broker, not in booked)
+    - Fees/commissions not captured in fill event details
+    - Timezone differences in day boundaries
+    - Missing or delayed fill event telemetry
+    """
     fills_by_date: dict[str, list[OrderEventRow]] = {}
     requests_by_date: dict[str, list[OrderEventRow]] = {}
     for event in order_events:
@@ -483,6 +497,28 @@ def build_broker_reconciliations(
         status = "pending"
         if gap is not None:
             status = "ok" if abs(gap) <= tolerance else "alert"
+        
+        # Capture broker equity context for gap analysis
+        details = {
+            "booked_source": source,
+            "snapshot_captured_at": snapshot.captured_at if snapshot else None,
+            "final_exit_at": final_exit_ts,
+            "snapshot_after_final_exit": snapshot_is_final,
+            "flat_account_required": True,
+        }
+        if snapshot:
+            details["broker_equity"] = snapshot.equity
+            details["broker_last_equity"] = snapshot.last_equity
+            details["broker_daily_pnl"] = snapshot.daily_pnl
+            # Gap explanation hints
+            if gap is not None and abs(gap) > tolerance:
+                gap_hints = []
+                if abs(gap) < 500:
+                    gap_hints.append("likely_fees_or_open_positions")
+                else:
+                    gap_hints.append("significant_gap_investigate")
+                details["gap_analysis_hints"] = gap_hints
+        
         rows.append(
             BrokerReconciliationRow(
                 reconciliation_date=run_date,
@@ -492,13 +528,7 @@ def build_broker_reconciliations(
                 lifecycle_exit_count=len(events),
                 tolerance=tolerance,
                 status=status,
-                details={
-                    "booked_source": source,
-                    "snapshot_captured_at": snapshot.captured_at if snapshot else None,
-                    "final_exit_at": final_exit_ts,
-                    "snapshot_after_final_exit": snapshot_is_final,
-                    "flat_account_required": True,
-                },
+                details=details,
             )
         )
     return rows

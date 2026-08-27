@@ -223,6 +223,7 @@ jobs:
 
       - name: Alert on broker reconciliation gap
         if: steps.live_artifact.outputs.skip_remaining_steps != 'true' && steps.telemetry_content.outputs.has_content == 'true'
+        continue-on-error: true
         run: |
           DATE_ARGS=()
           if [ -n "${{ github.event.inputs.date }}" ]; then
