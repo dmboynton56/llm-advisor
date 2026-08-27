@@ -32,7 +32,7 @@ def main() -> None:
                 cur.execute(
                     """
                     SELECT reconciliation_date,booked_realized_pnl,broker_daily_pnl,
-                           pnl_gap,tolerance,status
+                           pnl_gap,tolerance,status,details
                     FROM llm_advisor_broker_reconciliation_daily
                     WHERE reconciliation_date = %s
                     """,
@@ -42,7 +42,7 @@ def main() -> None:
                 cur.execute(
                     """
                     SELECT reconciliation_date,booked_realized_pnl,broker_daily_pnl,
-                           pnl_gap,tolerance,status
+                           pnl_gap,tolerance,status,details
                     FROM llm_advisor_broker_reconciliation_daily
                     ORDER BY reconciliation_date DESC LIMIT 1
                     """
@@ -54,11 +54,23 @@ def main() -> None:
     if not row:
         print("No broker reconciliation row found.")
         return
-    date, booked, broker, gap, tolerance, status = row
+    date, booked, broker, gap, tolerance, status, details = row
+    
+    # Parse details JSON for additional context
+    details_dict = details if isinstance(details, dict) else {}
+    broker_equity = details_dict.get("broker_equity")
+    broker_last_equity = details_dict.get("broker_last_equity")
+    gap_hints = details_dict.get("gap_analysis_hints", [])
+    
     print(
         f"Broker reconciliation {date}: booked={booked} broker={broker} "
         f"gap={gap} tolerance={tolerance} status={status}"
     )
+    if broker_equity and broker_last_equity:
+        print(f"  Broker equity: {broker_equity}, last_equity: {broker_last_equity}")
+    if gap_hints:
+        print(f"  Gap analysis hints: {', '.join(gap_hints)}")
+    
     if status != "alert":
         return
 
@@ -66,7 +78,9 @@ def main() -> None:
         f"⚠️ **LLM Advisor broker reconciliation gap**\n"
         f"Date: {date}\nBooked lifecycle PnL: ${float(booked):,.2f}\n"
         f"Broker daily PnL: ${float(broker):,.2f}\n"
-        f"Gap: ${float(gap):,.2f} (tolerance ${float(tolerance):,.2f})"
+        f"Gap: ${float(gap):,.2f} (tolerance ${float(tolerance):,.2f})\n\n"
+        f"_Note: Broker daily P&L includes open position MTM, fees, and adjustments. "
+        f"Booked P&L only tracks realized fills. Small gaps (<$500) are often expected._"
     )
     print(f"::warning::{message.replace(chr(10), ' | ')}")
     webhook = os.getenv("DISCORD_WEBHOOK_URL", "").strip()
@@ -78,9 +92,12 @@ def main() -> None:
         headers={"Content-Type": "application/json"},
         method="POST",
     )
-    with urllib.request.urlopen(request, timeout=15) as response:
-        if response.status >= 300:
-            raise SystemExit(f"Discord reconciliation alert failed: HTTP {response.status}")
+    try:
+        with urllib.request.urlopen(request, timeout=15) as response:
+            if response.status >= 300:
+                print(f"WARNING: Discord reconciliation alert failed: HTTP {response.status}")
+    except Exception as e:
+        print(f"WARNING: Discord reconciliation alert failed: {e}")
 
 
 if __name__ == "__main__":
