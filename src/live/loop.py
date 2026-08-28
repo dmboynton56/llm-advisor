@@ -1647,7 +1647,7 @@ def main():
         )
         terminal_signal_uids.add(signal_uid)
 
-    def live_open_position_count() -> Optional[int]:
+    def broker_open_position_count() -> Optional[int]:
         """Return broker-truth open positions, or None when it cannot be read."""
         if is_backtest:
             return 0
@@ -1755,7 +1755,11 @@ def main():
                         order_events_path=order_events_path,
                         loop_count=loop_count,
                     )
-                    overnight_n = live_open_position_count(order_manager)
+                    overnight_n = broker_open_position_count()
+                    if overnight_n is None:
+                        logger.warning("EOD policy complete but unable to confirm position count. Retrying.")
+                        time.sleep(args.fast)
+                        continue
                     if overnight_n:
                         logger.info("End-of-day policy complete; holding %s option position(s) overnight.", overnight_n)
                         finalize_live_session("eod_overnight_hold")
@@ -1795,8 +1799,17 @@ def main():
                 trading_date=trading_date,
                 loop_count=loop_count,
             )
-            open_n = live_open_position_count(order_manager)
-            if open_n <= 0:
+            open_n = broker_open_position_count()
+            if open_n is None:
+                if not entry_window_close_logged:
+                    logger.warning(
+                        "Entry window closed but unable to confirm position count. Continuing to monitor until %s ET cutoff.",
+                        settings.trading.end_of_day_close_time,
+                    )
+                    entry_window_close_logged = True
+                time.sleep(args.fast)
+                continue
+            if open_n == 0:
                 logger.info("Entry window closed and Alpaca is flat. Trading session complete.")
                 append_order_event(
                     order_events_path,
@@ -2089,7 +2102,7 @@ def main():
                         and state.trade
                         and state.trade.capacity_revalidation_pending
                     ):
-                        open_n_before_validation = live_open_position_count()
+                        open_n_before_validation = broker_open_position_count()
                         if should_revalidate_capacity(
                             state.trade,
                             open_n_before_validation,
@@ -2258,7 +2271,7 @@ def main():
                     if state.trade:
                         trade = state.trade
                         if not is_backtest:
-                            open_n = live_open_position_count()
+                            open_n = broker_open_position_count()
                             if open_n is None:
                                 emit_signal_outcome(
                                     signal,
