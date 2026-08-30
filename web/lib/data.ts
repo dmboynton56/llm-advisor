@@ -12,6 +12,7 @@ import {
 } from "@/lib/json";
 import type {
   AccountSnapshot,
+  BrokerReconciliation,
   Decision,
   DecisionEvent,
   DailyBiasSummary,
@@ -43,6 +44,16 @@ export async function getAccountSnapshots(days = 90): Promise<AccountSnapshot[]>
   const rows = await supabaseSelectPaged<AccountSnapshot>(
     "llm_advisor_account_snapshots",
     `select=snapshot_date,captured_at,equity,last_equity,buying_power,daily_pnl,daily_pnl_pct,source&snapshot_date=gte.${daysAgoIso(days)}&order=captured_at.asc`,
+  );
+  return rows ?? [];
+}
+
+export async function getBrokerReconciliations(
+  days = 90,
+): Promise<BrokerReconciliation[]> {
+  const rows = await supabaseSelect<BrokerReconciliation>(
+    "llm_advisor_broker_reconciliation_daily",
+    `select=reconciliation_date,booked_realized_pnl,broker_daily_pnl,pnl_gap,lifecycle_exit_count,tolerance,status,details&reconciliation_date=gte.${daysAgoIso(days)}&order=reconciliation_date.asc`,
   );
   return rows ?? [];
 }

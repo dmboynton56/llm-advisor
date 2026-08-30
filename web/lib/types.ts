@@ -9,6 +9,17 @@ export type AccountSnapshot = {
   source: string;
 };
 
+export type BrokerReconciliation = {
+  reconciliation_date: string;
+  booked_realized_pnl: number;
+  broker_daily_pnl: number | null;
+  pnl_gap: number | null;
+  lifecycle_exit_count: number;
+  tolerance: number;
+  status: "pending" | "ok" | "alert";
+  details: JsonRecord;
+};
+
 export type DailyBiasValue = "bullish" | "bearish" | "choppy" | "unavailable";
 
 export type DailyBiasSummary = {

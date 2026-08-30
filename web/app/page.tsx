@@ -1,7 +1,7 @@
 import clsx from "clsx";
 import { DecisionLedger } from "@/components/DecisionLedger";
 import { Disclosure } from "@/components/Disclosure";
-import { EquityCurve } from "@/components/charts/EquityCurve";
+import { PnlReconciliationChart } from "@/components/charts/PnlReconciliationChart";
 import { DailyPnlBars } from "@/components/charts/DailyPnlBars";
 import { PositionRail } from "@/components/PositionRail";
 import {
@@ -16,6 +16,7 @@ import {
 } from "@/components/ui";
 import {
   getAccountSnapshots,
+  getBrokerReconciliations,
   getDecisionLog,
   getLatestHeartbeat,
   getLiveState,
@@ -25,7 +26,6 @@ import {
 import { getTodayOverviewPositions } from "@/lib/positions";
 import { supabaseConfigured, checkSupabaseAccess } from "@/lib/supabase";
 import {
-  fmtDate,
   fmtPct,
   fmtSignedUsd,
   fmtUsd,
@@ -61,9 +61,10 @@ function heartbeatStatus(heartbeatTs: string | null): HeartbeatStatus {
 }
 
 export default async function OverviewPage() {
-  const [snapshots, runs, heartbeat, liveState, lifecycles, decisionLog] =
+  const [snapshots, reconciliations, runs, heartbeat, liveState, lifecycles, decisionLog] =
     await Promise.all([
       getAccountSnapshots(90),
+      getBrokerReconciliations(90),
       getRuns(30),
       getLatestHeartbeat(),
       getLiveState("paper"),
@@ -93,13 +94,6 @@ export default async function OverviewPage() {
   const accountDailyPnl = liveAccountIsNewer
     ? liveState?.daily_pnl
     : latestSnapshot?.daily_pnl;
-  const accountLastEquity = liveAccountIsNewer
-    ? liveState?.last_equity
-    : latestSnapshot?.last_equity;
-  const accountDailyPnlPct =
-    accountDailyPnl != null && accountLastEquity
-      ? accountDailyPnl / accountLastEquity
-      : null;
   const accountCapturedAt = liveAccountIsNewer
     ? liveAccountCapturedAt
     : snapshotCapturedAt;
@@ -114,61 +108,16 @@ export default async function OverviewPage() {
   const sessionLiveState =
     liveState?.session_date === accountSessionDate ? liveState : null;
 
-  const equitySeries = snapshots
-    .filter((s) => s.equity !== null && Number.isFinite(Number(s.equity)))
-    .map((s) => ({
-      capturedAt: s.captured_at,
-      timestamp: new Date(s.captured_at).getTime(),
-      equity: Number(s.equity),
-      dailyPnl: s.daily_pnl == null ? null : Number(s.daily_pnl),
+  const reconciliationPoints = reconciliations
+    .filter((row) => row.broker_daily_pnl != null && row.pnl_gap != null)
+    .map((row) => ({
+      date: row.reconciliation_date,
+      lifecyclePnl: Number(row.booked_realized_pnl),
+      brokerMtm: Number(row.broker_daily_pnl),
+      gap: Number(row.pnl_gap),
+      exits: row.lifecycle_exit_count,
     }));
-  if (
-    liveAccountIsNewer &&
-    liveState?.equity != null &&
-    liveAccountCapturedAt != null &&
-    Number.isFinite(new Date(liveAccountCapturedAt).getTime())
-  ) {
-    equitySeries.push({
-      capturedAt: liveAccountCapturedAt,
-      timestamp: new Date(liveAccountCapturedAt).getTime(),
-      equity: Number(liveState.equity),
-      dailyPnl: liveState.daily_pnl == null ? null : Number(liveState.daily_pnl),
-    });
-  }
-  equitySeries.sort((a, b) => a.timestamp - b.timestamp);
-  const equityPoints = equitySeries.reduce<{
-    timestamp: number;
-    capturedAt: string;
-    equity: number;
-    dailyPnl: number | null;
-    deltaFromPrevious: number | null;
-  }[]>((points, point) => {
-    const previous = points.at(-1);
-    if (previous && previous.timestamp === point.timestamp) {
-      points[points.length - 1] = {
-        ...point,
-        deltaFromPrevious: point.equity - (points.at(-2)?.equity ?? point.equity),
-      };
-      return points;
-    }
-    points.push({
-      ...point,
-      deltaFromPrevious: previous ? point.equity - previous.equity : null,
-    });
-    return points;
-  }, []);
-
-  // "Since" is measured from the oldest snapshot actually in the window, not
-  // from an assumed starting balance.
-  const windowStart = equityPoints[0] ?? null;
-  const sinceStart =
-    windowStart && accountEquity != null
-      ? Number(accountEquity) - windowStart.equity
-      : null;
-  const sinceStartPct =
-    sinceStart != null && windowStart && windowStart.equity !== 0
-      ? sinceStart / windowStart.equity
-      : null;
+  const latestReconciliation = reconciliationPoints.at(-1) ?? null;
 
   const exitDaily = new Map<string, { pnl: number; trades: number }>();
   for (const lifecycle of lifecycles) {
@@ -256,7 +205,7 @@ export default async function OverviewPage() {
           </div>
         ) : null}
 
-        <section aria-labelledby="equity-heading">
+        <section aria-labelledby="reconciliation-heading">
           <div className="mb-4 flex flex-wrap items-center gap-2.5">
             <span
               aria-hidden
@@ -280,74 +229,66 @@ export default async function OverviewPage() {
             <span className="num text-[11.5px] text-ink-3">{statusMeta}</span>
           </div>
 
-          <h1 id="equity-heading" className="tag mb-2.5">
-            Paper account equity
+          <h1 id="reconciliation-heading" className="tag mb-2.5">
+            Latest completed P&amp;L reconciliation
           </h1>
-          <span className="num block text-[clamp(40px,6vw,62px)] font-medium leading-none tracking-[-0.04em]">
-            {fmtUsd(accountEquity ?? null, 2)}
-          </span>
+          <p className="num text-[12px] text-ink-3">
+            {latestReconciliation?.date ?? "No completed reconciliation"}
+          </p>
 
-          <div className="mt-3.5 flex flex-wrap items-baseline gap-x-5 gap-y-2">
-            <span
-              className={clsx(
-                "num inline-flex items-baseline gap-1.5 text-[13.5px]",
-                pnlColor(accountDailyPnl ?? null),
-              )}
-            >
-              {fmtSignedUsd(accountDailyPnl ?? null)}
-              {accountDailyPnlPct != null ? (
-                <span>{fmtPct(Number(accountDailyPnlPct), 2)}</span>
-              ) : null}
-              <span className="font-sans text-[12.5px] text-ink-3">
-                {accountSessionDate === dateEtIso() ? "today" : `${accountSessionDate} session`}
-              </span>
-            </span>
-            {sinceStart != null && windowStart ? (
-              <span
-                className={clsx(
-                  "num inline-flex items-baseline gap-1.5 text-[13.5px]",
-                  pnlColor(sinceStart),
-                )}
-              >
-                {fmtSignedUsd(sinceStart)}
-                {sinceStartPct != null ? <span>{fmtPct(sinceStartPct, 2)}</span> : null}
-                <span className="font-sans text-[12.5px] text-ink-3">
-                  since {fmtDate(windowStart.capturedAt)}
-                </span>
-              </span>
-            ) : null}
+          <div className="mt-5 grid gap-px overflow-hidden rounded-panel-lg border border-line bg-line sm:grid-cols-3">
+            {[
+              {
+                label: "Lifecycle P&L",
+                value: latestReconciliation?.lifecyclePnl ?? null,
+                hint: "booked realized exits",
+              },
+              {
+                label: "Broker MTM",
+                value: latestReconciliation?.brokerMtm ?? null,
+                hint: "equity − prior close",
+              },
+              {
+                label: "Gap",
+                value: latestReconciliation?.gap ?? null,
+                hint: "broker − lifecycle",
+              },
+            ].map((metric) => (
+              <div key={metric.label} className="bg-card px-5 py-4">
+                <p className="tag">{metric.label}</p>
+                <p
+                  className={clsx(
+                    "num mt-2 text-[clamp(25px,4vw,38px)] font-medium leading-none tracking-[-0.04em]",
+                    pnlColor(metric.value),
+                  )}
+                >
+                  {fmtSignedUsd(metric.value)}
+                </p>
+                <p className="mt-2 text-[11.5px] text-ink-3">{metric.hint}</p>
+              </div>
+            ))}
           </div>
 
           <Panel className="mt-6 p-5 pb-4">
-            {equityPoints.length >= 2 ? (
+            {reconciliationPoints.length >= 2 ? (
               <>
-                <EquityCurve
-                  data={equityPoints}
-                  baseline={windowStart?.equity ?? null}
-                />
+                <PnlReconciliationChart data={reconciliationPoints} />
                 <p className="mt-3 text-[11.5px] text-ink-3">
-                  Curve shows the last snapshot per calendar day (America/New_York) with
-                  cubic interpolation between days; tooltips show the raw broker value at
-                  each daily snapshot. The dashed rule marks equity at the start of the window
-                  {accountCapturedAt ? ` · last value ${relativeTime(accountCapturedAt)}` : ""}
-                  .
+                  Raw daily EOD observations. Solid is booked lifecycle P&amp;L;
+                  dashed is broker mark-to-market. Straight segments connect recorded
+                  dates only; hover for the exact gap.
                 </p>
               </>
             ) : (
-              <EmptyState message="Not enough equity snapshots yet — the live loop records account values during the session and at shutdown." />
+              <EmptyState message="Not enough completed reconciliation days to compare lifecycle P&L with broker MTM." />
             )}
           </Panel>
 
           <StatRow className="mt-8">
             <Stat
-              label="Broker daily P&L"
-              value={fmtSignedUsd(accountDailyPnl ?? null)}
-              tone={toneOf(accountDailyPnl ?? null)}
-              hint={
-                accountDailyPnlPct != null
-                  ? `${fmtPct(Number(accountDailyPnlPct), 2)} vs prior close`
-                  : "equity change vs prior close"
-              }
+              label="Broker account equity"
+              value={fmtUsd(accountEquity ?? null, 0)}
+              hint={accountCapturedAt ? `captured ${relativeTime(accountCapturedAt)}` : "no account snapshot"}
             />
             <Stat
               label="Opened, last entry date"
