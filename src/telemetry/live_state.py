@@ -436,8 +436,8 @@ def publish_live_state(row: Dict[str, Any]) -> bool:
 
 
 def publish_interval_ticks() -> int:
-    """LIVE_STATE_PUBLISH_TICKS env (default 1)."""
-    raw = os.getenv("LIVE_STATE_PUBLISH_TICKS", "1").strip() or "1"
+    """LIVE_STATE_PUBLISH_TICKS env (default 5, about every five minutes)."""
+    raw = os.getenv("LIVE_STATE_PUBLISH_TICKS", "5").strip() or "5"
     try:
         return max(1, int(raw))
     except ValueError:
