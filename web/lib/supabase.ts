@@ -6,6 +6,32 @@ const SUPABASE_API_KEY =
   process.env.SUPABASE_SERVICE_ROLE_KEY ??
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ??
   process.env.SUPABASE_ANON_KEY;
+const SUPABASE_FETCH_TIMEOUT_MS = Number(
+  process.env.SUPABASE_FETCH_TIMEOUT_MS ?? 8000,
+);
+
+async function fetchWithTimeout(
+  input: RequestInfo | URL,
+  init?: RequestInit,
+): Promise<Response> {
+  const controller = new AbortController();
+  const timeout = setTimeout(
+    () => controller.abort(),
+    Number.isFinite(SUPABASE_FETCH_TIMEOUT_MS) && SUPABASE_FETCH_TIMEOUT_MS > 0
+      ? SUPABASE_FETCH_TIMEOUT_MS
+      : 8000,
+  );
+  const upstreamSignal = init?.signal;
+  const abortUpstream = () => controller.abort();
+  upstreamSignal?.addEventListener("abort", abortUpstream, { once: true });
+
+  try {
+    return await fetch(input, { ...init, signal: controller.signal });
+  } finally {
+    clearTimeout(timeout);
+    upstreamSignal?.removeEventListener("abort", abortUpstream);
+  }
+}
 
 function normalizeSupabaseUrl(url: string): string {
   return url.replace(/\/rest\/v1\/?$/i, "").replace(/\/$/, "");
@@ -31,9 +57,12 @@ export async function checkSupabaseAccess(): Promise<
 > {
   if (!SUPABASE_URL || !SUPABASE_API_KEY) return null;
   try {
-    const res = await fetch(
+    const res = await fetchWithTimeout(
       `${SUPABASE_URL}/rest/v1/llm_advisor_backtest_runs?select=run_date&limit=1`,
-      { headers: buildSupabaseHeaders(SUPABASE_API_KEY), cache: "no-store" },
+      {
+        headers: buildSupabaseHeaders(SUPABASE_API_KEY),
+        cache: "no-store",
+      },
     );
     return res.ok ? { ok: true } : { ok: false, status: res.status };
   } catch {
@@ -51,7 +80,7 @@ export async function supabaseSelect<T>(
 ): Promise<T[] | null> {
   if (!SUPABASE_URL || !SUPABASE_API_KEY) return null;
   try {
-    const res = await fetch(`${SUPABASE_URL}/rest/v1/${table}?${query}`, {
+    const res = await fetchWithTimeout(`${SUPABASE_URL}/rest/v1/${table}?${query}`, {
       headers: buildSupabaseHeaders(SUPABASE_API_KEY),
       cache: "no-store",
     });
@@ -79,7 +108,7 @@ export async function supabaseSelectPaged<T>(
   try {
     for (let offset = 0; offset < maxRows; offset += pageSize) {
       const separator = query ? "&" : "";
-      const res = await fetch(
+      const res = await fetchWithTimeout(
         `${SUPABASE_URL}/rest/v1/${table}?${query}${separator}limit=${pageSize}&offset=${offset}`,
         {
           headers: buildSupabaseHeaders(SUPABASE_API_KEY),

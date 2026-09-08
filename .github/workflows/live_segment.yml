@@ -99,7 +99,9 @@ jobs:
       SUPABASE_DB_USER: ${{ secrets.SUPABASE_DB_USER }}
       SUPABASE_DB_PORT: ${{ secrets.SUPABASE_DB_PORT }}
       SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
-      LIVE_STATE_PUBLISH_TICKS: "1"
+      # The live-state row is a dashboard heartbeat, not a tick log.  The
+      # detailed tick/event history is retained in the BigQuery-backed artifact.
+      LIVE_STATE_PUBLISH_TICKS: "5"
       LIVE_ENTRY_MODE: ${{ inputs.entry_mode }}
 
     steps:
