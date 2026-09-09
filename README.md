@@ -55,8 +55,5 @@ for its own sake.
 
 ## Contact
 
-If you want to talk about trading systems, machine learning, or a collaboration:
-
 - Email: [dmboynton6@gmail.com](mailto:dmboynton6@gmail.com)
 - LinkedIn: [Drew Boynton](https://www.linkedin.com/in/drew-boynton-1bba16180/)
-- GitHub: [dmboynton56](https://github.com/dmboynton56)
