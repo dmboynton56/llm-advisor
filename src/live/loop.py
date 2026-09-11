@@ -26,7 +26,11 @@ if str(PROJECT_ROOT) not in sys.path:
 
 from src.core.config import Settings
 from src.core.logging import setup_logging
-from src.data.alpaca_client import AlpacaDataClient, AlpacaDataUnavailable
+from src.data.alpaca_client import (
+    AlpacaDataClient,
+    AlpacaDataUnavailable,
+    fetch_seed_window_bars,
+)
 from src.data.storage import Storage, StorageAdapter
 from src.premarket.bias_gatherer import load_premarket_context, PremarketContext
 from src.premarket.snapshot_builder import SymbolSnapshot
@@ -1383,13 +1387,29 @@ def main():
         # Get today's premarket (04:00-09:30 ET) - 5-minute bars (more available)
         today_premarket_start_utc = to_utc(et_dt(trading_date, "04:00"))
         
-        # Fetch previous day's 1-minute bars
+        # Fetch previous day's 1-minute bars. In-loop ticks skip 504s; startup
+        # cannot — retry until deadline, then fail closed. Skip unused 5m to
+        # avoid a second Alpaca call that can 504 after 1m already succeeded.
         logger.info(f"Fetching previous day's 1m bars from {prev_day_start_utc} to {prev_day_close_utc}")
-        prev_day_bars = alpaca_client.fetch_window_bars(symbols, prev_day_start_utc, prev_day_close_utc)
-        
-        # Fetch today's premarket 5-minute bars
+        prev_day_bars = fetch_seed_window_bars(
+            alpaca_client,
+            symbols,
+            prev_day_start_utc,
+            prev_day_close_utc,
+            include_1m=True,
+            include_5m=False,
+        )
+
+        # Fetch today's premarket 5-minute bars (1m premarket is unreliable).
         logger.info(f"Fetching today's premarket 5m bars from {today_premarket_start_utc} to {run_start_utc}")
-        premarket_bars = alpaca_client.fetch_window_bars(symbols, today_premarket_start_utc, run_start_utc)
+        premarket_bars = fetch_seed_window_bars(
+            alpaca_client,
+            symbols,
+            today_premarket_start_utc,
+            run_start_utc,
+            include_1m=False,
+            include_5m=True,
+        )
         
         # Combine: use 1m bars from previous day, convert 5m bars from premarket to 1m-equivalent
         bars_1m_dict = {}
