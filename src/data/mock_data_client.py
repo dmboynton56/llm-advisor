@@ -24,7 +24,8 @@ class MockDataClient:
         self,
         symbols: List[str],
         start: datetime,
-        end: datetime
+        end: datetime,
+        **_kwargs: Any,
     ) -> Dict[str, Dict[str, List[Dict[str, Any]]]]:
         """
         Slice historical bars based on time window.

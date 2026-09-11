@@ -4,7 +4,7 @@ import logging
 import os
 import time
 from datetime import datetime
-from typing import Dict, List, Optional, Any
+from typing import Any, Callable, Dict, List, Optional
 from dotenv import load_dotenv
 
 from alpaca.common.exceptions import APIError
@@ -23,6 +23,14 @@ logger = logging.getLogger(__name__)
 
 class AlpacaDataUnavailable(RuntimeError):
     """Raised when Alpaca market data remains unavailable after bounded retries."""
+
+
+# Live-loop ticks can skip an iteration on AlpacaDataUnavailable. Process start
+# cannot: RollingStats need a historical seed. Keep retrying until this deadline,
+# then fail closed. Override with ALPACA_SEED_FETCH_DEADLINE_SECONDS.
+DEFAULT_SEED_FETCH_DEADLINE_SECONDS = 900.0
+SEED_RETRY_INITIAL_WAIT_SECONDS = 2.0
+SEED_RETRY_MAX_WAIT_SECONDS = 32.0
 
 
 class AlpacaDataClient:
@@ -150,16 +158,31 @@ class AlpacaDataClient:
         self,
         symbols: List[str],
         start: datetime,
-        end: datetime
+        end: datetime,
+        *,
+        include_1m: bool = True,
+        include_5m: bool = True,
     ) -> Dict[str, Dict[str, List[Dict[str, Any]]]]:
-        """Fetch 1m and 5m bars, returning as records."""
-        df_1m = self.fetch_bars(symbols, start, end, TimeFrame(1, TimeFrameUnit.Minute))
-        df_5m = self.fetch_bars(symbols, start, end, TimeFrame(5, TimeFrameUnit.Minute))
-        
+        """Fetch 1m and/or 5m bars, returning as records.
+
+        Live seeding only needs one timeframe per window (prev-day 1m,
+        premarket 5m). Fetching the unused timeframe doubles Alpaca calls
+        and can 504 after the needed bars already succeeded.
+        """
+        if not include_1m and not include_5m:
+            raise ValueError("fetch_window_bars requires include_1m or include_5m")
+
+        df_1m: Dict[str, pd.DataFrame] = {}
+        df_5m: Dict[str, pd.DataFrame] = {}
+        if include_1m:
+            df_1m = self.fetch_bars(symbols, start, end, TimeFrame(1, TimeFrameUnit.Minute))
+        if include_5m:
+            df_5m = self.fetch_bars(symbols, start, end, TimeFrame(5, TimeFrameUnit.Minute))
+
         return {
             sym: {
-                "bars_1m": self._df_to_records(df_1m.get(sym, pd.DataFrame())),
-                "bars_5m": self._df_to_records(df_5m.get(sym, pd.DataFrame())),
+                "bars_1m": self._df_to_records(df_1m.get(sym, pd.DataFrame())) if include_1m else [],
+                "bars_5m": self._df_to_records(df_5m.get(sym, pd.DataFrame())) if include_5m else [],
             }
             for sym in symbols
         }
@@ -181,3 +204,106 @@ class AlpacaDataClient:
                 "v": float(row.get("volume", 0.0)),
             })
         return records
+
+
+def seed_fetch_deadline_seconds() -> float:
+    raw = os.getenv("ALPACA_SEED_FETCH_DEADLINE_SECONDS")
+    if raw is None or str(raw).strip() == "":
+        return DEFAULT_SEED_FETCH_DEADLINE_SECONDS
+    try:
+        return max(0.0, float(raw))
+    except (TypeError, ValueError):
+        return DEFAULT_SEED_FETCH_DEADLINE_SECONDS
+
+
+def _invoke_fetch_window_bars(
+    client: Any,
+    symbols: List[str],
+    start: datetime,
+    end: datetime,
+    include_1m: bool,
+    include_5m: bool,
+) -> Dict[str, Dict[str, List[Dict[str, Any]]]]:
+    kwargs: Dict[str, Any] = {}
+    try:
+        params = inspect.signature(client.fetch_window_bars).parameters
+        accepts_kwargs = any(
+            param.kind == inspect.Parameter.VAR_KEYWORD for param in params.values()
+        )
+        if "include_1m" in params or accepts_kwargs:
+            kwargs["include_1m"] = include_1m
+            kwargs["include_5m"] = include_5m
+    except (TypeError, ValueError):
+        pass
+    return client.fetch_window_bars(symbols, start, end, **kwargs)
+
+
+def fetch_seed_window_bars(
+    client: Any,
+    symbols: List[str],
+    start: datetime,
+    end: datetime,
+    *,
+    include_1m: bool = True,
+    include_5m: bool = True,
+    deadline_seconds: Optional[float] = None,
+    sleep: Callable[[float], None] = time.sleep,
+    monotonic: Callable[[], float] = time.monotonic,
+) -> Dict[str, Dict[str, List[Dict[str, Any]]]]:
+    """Fetch historical bars required to seed a live segment.
+
+    In-loop ticks skip on AlpacaDataUnavailable. Startup cannot: fail closed
+    only after deadline_seconds of exponential backoff. After a multi-symbol
+    batch failure, try each symbol once before waiting to retry the round.
+    """
+    if deadline_seconds is None:
+        deadline_seconds = seed_fetch_deadline_seconds()
+
+    def try_fetch() -> Dict[str, Dict[str, List[Dict[str, Any]]]]:
+        try:
+            return _invoke_fetch_window_bars(
+                client, symbols, start, end, include_1m, include_5m
+            )
+        except AlpacaDataUnavailable as batch_exc:
+            if len(symbols) <= 1:
+                raise
+            logger.warning(
+                "Seed batch bar fetch failed for %s; retrying per symbol: %s",
+                ",".join(symbols),
+                batch_exc,
+            )
+            merged: Dict[str, Dict[str, List[Dict[str, Any]]]] = {}
+            for sym in symbols:
+                piece = _invoke_fetch_window_bars(
+                    client, [sym], start, end, include_1m, include_5m
+                )
+                merged[sym] = piece[sym]
+            return merged
+
+    started = monotonic()
+    delay = SEED_RETRY_INITIAL_WAIT_SECONDS
+    attempt = 0
+    while True:
+        attempt += 1
+        try:
+            return try_fetch()
+        except AlpacaDataUnavailable as exc:
+            elapsed = monotonic() - started
+            remaining = deadline_seconds - elapsed
+            if remaining <= 0:
+                raise AlpacaDataUnavailable(
+                    "Alpaca seed bars unavailable after "
+                    f"{attempt} rounds / {elapsed:.0f}s for {','.join(symbols)}: {exc}"
+                ) from exc
+            wait = min(delay, remaining)
+            logger.warning(
+                "Alpaca seed bar fetch failed (round %s, %.0fs elapsed, %.0fs left): "
+                "%s; retrying in %.1fs",
+                attempt,
+                elapsed,
+                remaining,
+                exc,
+                wait,
+            )
+            sleep(wait)
+            delay = min(delay * 2, SEED_RETRY_MAX_WAIT_SECONDS)
