@@ -206,7 +206,9 @@ def test_fetch_window_bars_skips_unused_timeframe() -> None:
         include_5m=False,
     )
 
-    assert calls == [TimeFrame(1, TimeFrameUnit.Minute)]
+    assert len(calls) == 1
+    assert calls[0].amount == 1
+    assert calls[0].unit == TimeFrameUnit.Minute
     assert result["SPY"]["bars_1m"] == []
     assert result["SPY"]["bars_5m"] == []
     assert result["QQQ"]["bars_5m"] == []
@@ -287,6 +289,28 @@ def test_seed_fetch_per_symbol_fallback_after_batch_504() -> None:
     assert result["QQQ"]["bars_1m"][0]["c"] == 1.0
     assert clock.sleeps == []
     assert [call[0] for call in client.calls] == [("SPY", "QQQ"), ("SPY",), ("QQQ",)]
+
+
+def test_seed_fetch_per_symbol_missing_payload_is_unavailable() -> None:
+    clock = _Clock()
+    client = _ScriptedWindowClient(
+        [
+            AlpacaDataUnavailable("batch timeout"),
+            _bars("SPY"),
+            {"IWM": {"bars_1m": [], "bars_5m": []}},
+        ]
+    )
+
+    with pytest.raises(AlpacaDataUnavailable, match="no payload for QQQ"):
+        fetch_seed_window_bars(
+            client,
+            ["SPY", "QQQ"],
+            START,
+            END,
+            deadline_seconds=0,
+            sleep=clock.sleep,
+            monotonic=clock.monotonic,
+        )
 
 
 def test_seed_fetch_deadline_env_override(monkeypatch) -> None:

@@ -216,28 +216,6 @@ def seed_fetch_deadline_seconds() -> float:
         return DEFAULT_SEED_FETCH_DEADLINE_SECONDS
 
 
-def _invoke_fetch_window_bars(
-    client: Any,
-    symbols: List[str],
-    start: datetime,
-    end: datetime,
-    include_1m: bool,
-    include_5m: bool,
-) -> Dict[str, Dict[str, List[Dict[str, Any]]]]:
-    kwargs: Dict[str, Any] = {}
-    try:
-        params = inspect.signature(client.fetch_window_bars).parameters
-        accepts_kwargs = any(
-            param.kind == inspect.Parameter.VAR_KEYWORD for param in params.values()
-        )
-        if "include_1m" in params or accepts_kwargs:
-            kwargs["include_1m"] = include_1m
-            kwargs["include_5m"] = include_5m
-    except (TypeError, ValueError):
-        pass
-    return client.fetch_window_bars(symbols, start, end, **kwargs)
-
-
 def fetch_seed_window_bars(
     client: Any,
     symbols: List[str],
@@ -261,8 +239,12 @@ def fetch_seed_window_bars(
 
     def try_fetch() -> Dict[str, Dict[str, List[Dict[str, Any]]]]:
         try:
-            return _invoke_fetch_window_bars(
-                client, symbols, start, end, include_1m, include_5m
+            return client.fetch_window_bars(
+                symbols,
+                start,
+                end,
+                include_1m=include_1m,
+                include_5m=include_5m,
             )
         except AlpacaDataUnavailable as batch_exc:
             if len(symbols) <= 1:
@@ -274,9 +256,17 @@ def fetch_seed_window_bars(
             )
             merged: Dict[str, Dict[str, List[Dict[str, Any]]]] = {}
             for sym in symbols:
-                piece = _invoke_fetch_window_bars(
-                    client, [sym], start, end, include_1m, include_5m
+                piece = client.fetch_window_bars(
+                    [sym],
+                    start,
+                    end,
+                    include_1m=include_1m,
+                    include_5m=include_5m,
                 )
+                if sym not in piece:
+                    raise AlpacaDataUnavailable(
+                        f"Per-symbol seed fetch returned no payload for {sym}"
+                    )
                 merged[sym] = piece[sym]
             return merged
 
@@ -307,3 +297,4 @@ def fetch_seed_window_bars(
             )
             sleep(wait)
             delay = min(delay * 2, SEED_RETRY_MAX_WAIT_SECONDS)
+
