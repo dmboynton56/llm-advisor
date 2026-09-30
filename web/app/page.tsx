@@ -1,18 +1,16 @@
 import clsx from "clsx";
 import { DecisionLedger } from "@/components/DecisionLedger";
 import { Disclosure } from "@/components/Disclosure";
+import { EquityOverview } from "@/components/EquityOverview";
 import { PnlReconciliationChart } from "@/components/charts/PnlReconciliationChart";
 import { DailyPnlBars } from "@/components/charts/DailyPnlBars";
 import { PositionRail } from "@/components/PositionRail";
+import { StockTrial } from "@/components/StockTrial";
 import {
   EmptyState,
-  Meter,
   Panel,
   PanelHead,
   Section,
-  Stat,
-  StatRow,
-  toneOf,
 } from "@/components/ui";
 import {
   getAccountSnapshots,
@@ -21,14 +19,14 @@ import {
   getLatestHeartbeat,
   getLiveState,
   getRuns,
+  getShadowDecisions,
   getTradeLifecycles,
 } from "@/lib/data";
 import { getTodayOverviewPositions } from "@/lib/positions";
+import { equityHistoryDays, equityRange, equitySeries } from "@/lib/equity";
 import { supabaseConfigured, checkSupabaseAccess } from "@/lib/supabase";
 import {
-  fmtPct,
   fmtSignedUsd,
-  fmtUsd,
   isRegularSessionEt,
   pnlColor,
   relativeTime,
@@ -60,16 +58,22 @@ function heartbeatStatus(heartbeatTs: string | null): HeartbeatStatus {
   return { label: "Stale", stale: true };
 }
 
-export default async function OverviewPage() {
-  const [snapshots, reconciliations, runs, heartbeat, liveState, lifecycles, decisionLog] =
+export default async function OverviewPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ range?: string | string[] }>;
+}) {
+  const range = equityRange((await searchParams).range);
+  const [snapshots, reconciliations, runs, heartbeat, liveState, lifecycles, decisionLog, shadowDecisions] =
     await Promise.all([
-      getAccountSnapshots(90),
+      getAccountSnapshots(equityHistoryDays(range)),
       getBrokerReconciliations(90),
       getRuns(30),
       getLatestHeartbeat(),
       getLiveState("paper"),
       getTradeLifecycles(30),
       getDecisionLog(8),
+      getShadowDecisions(),
     ]);
 
   const access =
@@ -78,9 +82,8 @@ export default async function OverviewPage() {
       : null;
 
   const latestSnapshot = snapshots.at(-1) ?? null;
-  const latestRun = runs.at(-1) ?? null;
   const liveAccountCapturedAt =
-    liveState?.updated_at ?? liveState?.heartbeat_ts ?? null;
+    liveState?.heartbeat_ts ?? null;
   const snapshotCapturedAt = latestSnapshot?.captured_at ?? null;
   const liveAccountIsNewer =
     liveState?.equity != null &&
@@ -88,15 +91,7 @@ export default async function OverviewPage() {
     (snapshotCapturedAt == null ||
       new Date(liveAccountCapturedAt).getTime() >
         new Date(snapshotCapturedAt).getTime());
-  const accountEquity = liveAccountIsNewer
-    ? liveState?.equity
-    : latestSnapshot?.equity;
-  const accountDailyPnl = liveAccountIsNewer
-    ? liveState?.daily_pnl
-    : latestSnapshot?.daily_pnl;
-  const accountCapturedAt = liveAccountIsNewer
-    ? liveAccountCapturedAt
-    : snapshotCapturedAt;
+  const equityPoints = equitySeries(snapshots, liveState);
   // The account API's daily P&L is tied to the session represented by the
   // latest account record, not necessarily the server's current calendar
   // date. This matters after midnight ET and across weekends/holidays.
@@ -138,18 +133,6 @@ export default async function OverviewPage() {
     }));
 
   const totalPnl30d = pnlPoints.reduce((acc, point) => acc + point.pnl, 0);
-  const closed30d = pnlPoints.reduce((acc, point) => acc + point.trades, 0);
-  const won30d = lifecycles.filter(lc => lc.closed_at && Number(lc.realized_pnl ?? 0) > 0).length;
-  const winRate30d = closed30d > 0 ? won30d / closed30d : null;
-  const cohortPnl = runs.reduce((acc, run) => acc + Number(run.total_pnl ?? 0), 0);
-  // BQ-backed run rows often have no final_equity, while the account snapshot
-  // captured on the same entry date is the authoritative cohort fallback.
-  const snapshotEquityByDate = new Map<string, number>();
-  for (const snapshot of snapshots) {
-    if (snapshot.equity == null) continue;
-    const equity = Number(snapshot.equity);
-    if (Number.isFinite(equity)) snapshotEquityByDate.set(snapshot.snapshot_date, equity);
-  }
 
   const liveFresh = liveStateFresh(sessionLiveState);
   const inSession = isRegularSessionEt();
@@ -205,117 +188,22 @@ export default async function OverviewPage() {
           </div>
         ) : null}
 
-        <section aria-labelledby="reconciliation-heading">
-          <div className="mb-4 flex flex-wrap items-center gap-2.5">
-            <span
-              aria-hidden
-              className={clsx(
-                "relative size-[7px] shrink-0 rounded-full",
-                status.tone === "live" ? "bg-gain" : "bg-ink-3",
-              )}
-            >
-              {status.tone === "live" ? (
-                <span className="absolute -inset-1 animate-ping rounded-full border border-gain" />
-              ) : null}
-            </span>
-            <span
-              className={clsx(
-                "num text-[11px] font-semibold uppercase tracking-[0.1em]",
-                status.tone === "live" ? "text-gain" : "text-ink-3",
-              )}
-            >
-              {status.label}
-            </span>
-            <span className="num text-[11.5px] text-ink-3">{statusMeta}</span>
-          </div>
+        <div className="mb-7 flex flex-wrap items-center gap-2.5">
+          <span
+            aria-hidden
+            className={clsx("size-[7px] shrink-0 rounded-full", status.tone === "live" ? "bg-gain" : "bg-ink-3")}
+          />
+          <span className={clsx("num text-[11px] font-semibold uppercase tracking-[0.1em]", status.tone === "live" ? "text-gain" : "text-ink-3")}>
+            {status.label}
+          </span>
+          <span className="num text-[11.5px] text-ink-3">{statusMeta}</span>
+        </div>
 
-          <h1 id="reconciliation-heading" className="tag mb-2.5">
-            Latest completed P&amp;L reconciliation
-          </h1>
-          <p className="num text-[12px] text-ink-3">
-            {latestReconciliation?.date ?? "No completed reconciliation"}
-          </p>
-
-          <div className="mt-5 grid gap-px overflow-hidden rounded-panel-lg border border-line bg-line sm:grid-cols-3">
-            {[
-              {
-                label: "Lifecycle P&L",
-                value: latestReconciliation?.lifecyclePnl ?? null,
-                hint: "booked realized exits",
-              },
-              {
-                label: "Broker MTM",
-                value: latestReconciliation?.brokerMtm ?? null,
-                hint: "equity − prior close",
-              },
-              {
-                label: "Gap",
-                value: latestReconciliation?.gap ?? null,
-                hint: "broker − lifecycle",
-              },
-            ].map((metric) => (
-              <div key={metric.label} className="bg-card px-5 py-4">
-                <p className="tag">{metric.label}</p>
-                <p
-                  className={clsx(
-                    "num mt-2 text-[clamp(25px,4vw,38px)] font-medium leading-none tracking-[-0.04em]",
-                    pnlColor(metric.value),
-                  )}
-                >
-                  {fmtSignedUsd(metric.value)}
-                </p>
-                <p className="mt-2 text-[11.5px] text-ink-3">{metric.hint}</p>
-              </div>
-            ))}
-          </div>
-
-          <Panel className="mt-6 p-5 pb-4">
-            {reconciliationPoints.length >= 2 ? (
-              <>
-                <PnlReconciliationChart data={reconciliationPoints} />
-                <p className="mt-3 text-[11.5px] text-ink-3">
-                  Raw daily EOD observations. Solid is booked lifecycle P&amp;L;
-                  dashed is broker mark-to-market. Straight segments connect recorded
-                  dates only; hover for the exact gap.
-                </p>
-              </>
-            ) : (
-              <EmptyState message="Not enough completed reconciliation days to compare lifecycle P&L with broker MTM." />
-            )}
-          </Panel>
-
-          <StatRow className="mt-8">
-            <Stat
-              label="Broker account equity"
-              value={fmtUsd(accountEquity ?? null, 0)}
-              hint={accountCapturedAt ? `captured ${relativeTime(accountCapturedAt)}` : "no account snapshot"}
-            />
-            <Stat
-              label="Opened, last entry date"
-              value={latestRun ? latestRun.total_trades : "—"}
-              hint={latestRun ? `on ${latestRun.run_date}` : "no runs recorded"}
-            />
-            <Stat
-              label="Win rate · 30d"
-              value={fmtPct(winRate30d)}
-              hint={`${closed30d} closed positions`}
-            />
-            <Stat
-              label="Realized · 30d"
-              value={fmtSignedUsd(totalPnl30d)}
-              tone={toneOf(totalPnl30d)}
-              hint={
-                pnlPoints.length > 0
-                  ? `across ${pnlPoints.length} exit days`
-                  : "no exits in window"
-              }
-            />
-          </StatRow>
-        </section>
+        <EquityOverview data={equityPoints} range={range} />
 
         <Section
           title="P&L by exit date"
-          subtitle="Broker-position lifecycle P&L, grouped by the ET date each position closed."
+          subtitle="Last 30 days · gains and losses from closed positions, on the day they exited (ET)."
           figure={
             <span className={pnlColor(totalPnl30d)}>
               {fmtSignedUsd(totalPnl30d)}
@@ -333,91 +221,39 @@ export default async function OverviewPage() {
 
         <section className="mt-11">
           <Disclosure
-            title="Entry-date cohorts"
-            subtitle="Trades and full-lifecycle P&L grouped by the day each position opened"
-            aggregates={[
-              { label: "Sessions", value: runs.length },
-              { label: "Win rate", value: fmtPct(winRate30d) },
-              {
-                label: "Lifetime",
-                value: fmtSignedUsd(cohortPnl),
-                tone:
-                  cohortPnl > 0 ? "positive" : cohortPnl < 0 ? "negative" : "neutral",
-              },
-            ]}
+            title="Why P&L numbers differ"
+            subtitle={`Latest completed reconciliation · ${latestReconciliation?.date ?? "waiting for EOD"}`}
           >
-            {runs.length > 0 ? (
-              <div className="overflow-x-auto">
-                <table className="w-full text-[13px]">
-                  <thead>
-                    <tr>
-                      {[
-                        "Entry date",
-                        "Opened",
-                        "Closed",
-                        "Win rate",
-                        "Lifetime P&L",
-                        "Equity",
-                      ].map((head, i) => (
-                        <th
-                          key={head}
-                          className={clsx(
-                            "tag whitespace-nowrap border-b border-line px-[18px] py-3 font-medium",
-                            i >= 1 && i !== 3 ? "text-right" : "text-left",
-                          )}
-                        >
-                          {head}
-                        </th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {[...runs]
-                      .reverse()
-                      .slice(0, 10)
-                      .map((run) => (
-                        <tr
-                          key={run.run_date}
-                          className="border-b border-line transition-colors last:border-0 hover:bg-sunk"
-                        >
-                          <td className="num whitespace-nowrap px-[18px] py-3">
-                            {run.run_date}
-                          </td>
-                          <td className="num whitespace-nowrap px-[18px] py-3 text-right">
-                            {run.total_trades}
-                          </td>
-                          <td className="num whitespace-nowrap px-[18px] py-3 text-right">
-                            {run.closed_trades}
-                          </td>
-                          <td className="whitespace-nowrap px-[18px] py-3">
-                            <Meter value={run.win_rate} />
-                          </td>
-                          <td
-                            className={clsx(
-                              "num whitespace-nowrap px-[18px] py-3 text-right",
-                              pnlColor(Number(run.total_pnl ?? 0)),
-                            )}
-                          >
-                            {fmtSignedUsd(Number(run.total_pnl ?? 0))}
-                          </td>
-                          <td className="num whitespace-nowrap px-[18px] py-3 text-right text-ink-2">
-                            {fmtUsd(
-                              run.final_equity ??
-                                snapshotEquityByDate.get(run.run_date) ??
-                                null,
-                              0,
-                            )}
-                          </td>
-                        </tr>
-                      ))}
-                  </tbody>
-                </table>
+            <div className="p-5">
+              <div className="grid gap-5 sm:grid-cols-3">
+                {[
+                  { label: "Booked lifecycle P&L", value: latestReconciliation?.lifecyclePnl, hint: "Realized gains and losses from completed position lifecycles." },
+                  { label: "Broker daily P&L", value: latestReconciliation?.brokerMtm, hint: "Account equity minus the prior close, including open positions." },
+                  { label: "Difference", value: latestReconciliation?.gap, hint: "Broker minus booked. Open positions, fees, and day boundaries can create gaps." },
+                ].map((metric) => (
+                  <div key={metric.label}>
+                    <p className="tag">{metric.label}</p>
+                    <p className={clsx("num mt-2 text-[22px] font-medium", pnlColor(metric.value))}>
+                      {fmtSignedUsd(metric.value)}
+                    </p>
+                    <p className="mt-2 text-[11.5px] leading-relaxed text-ink-3">{metric.hint}</p>
+                  </div>
+                ))}
               </div>
-            ) : (
-              <div className="p-[18px]">
-                <EmptyState message="No sessions recorded yet." />
+              <div className="mt-7 border-t border-line pt-5">
+                {reconciliationPoints.length >= 2 ? (
+                  <>
+                    <PnlReconciliationChart data={reconciliationPoints} />
+                    <p className="mt-3 text-[11.5px] text-ink-3">
+                      Daily observations, not account balances. Solid is booked lifecycle P&amp;L;
+                      dashed is broker daily P&amp;L. Hover for each recorded difference.
+                    </p>
+                  </>
+                ) : (
+                  <EmptyState message="Not enough completed days to compare booked P&L and broker daily P&L." />
+                )}
               </div>
-            )}
+            </div>
           </Disclosure>
         </section>
       </div>
@@ -433,8 +269,9 @@ export default async function OverviewPage() {
           liveFresh={liveFresh}
           capturedAt={sessionLiveState ? liveAccountCapturedAt : null}
           sessionDate={accountSessionDate}
-          brokerDailyPnl={accountDailyPnl == null ? null : Number(accountDailyPnl)}
         />
+
+        <StockTrial decisions={shadowDecisions} />
 
         <Panel>
           <PanelHead

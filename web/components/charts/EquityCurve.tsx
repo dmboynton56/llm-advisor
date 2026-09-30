@@ -15,40 +15,7 @@ import {
   AXIS_TICK,
   GRID_STROKE,
 } from "./chartTheme";
-
-export type EquityPoint = {
-  timestamp: number;
-  capturedAt: string;
-  equity: number;
-  dailyPnl: number | null;
-  deltaFromPrevious: number | null;
-};
-
-/**
- * Downsample to one point per America/New_York calendar day (the last snapshot
- * that day) for chart display. This prevents the step-function appearance from
- * sparse snapshots on a time-scale axis. The full series is still available for
- * tooltip hover.
- */
-function downsampleToDaily(data: EquityPoint[]): EquityPoint[] {
-  if (data.length === 0) return [];
-
-  const dailyMap = new Map<string, EquityPoint>();
-  for (const point of data) {
-    const etDate = new Date(point.timestamp).toLocaleDateString("en-US", {
-      timeZone: "America/New_York",
-      year: "numeric",
-      month: "2-digit",
-      day: "2-digit",
-    });
-    const existing = dailyMap.get(etDate);
-    if (!existing || point.timestamp > existing.timestamp) {
-      dailyMap.set(etDate, point);
-    }
-  }
-
-  return Array.from(dailyMap.values()).sort((a, b) => a.timestamp - b.timestamp);
-}
+import type { EquityPoint } from "@/lib/equity";
 
 function money(value: number | null): string {
   if (value === null || !Number.isFinite(value)) return "—";
@@ -83,10 +50,7 @@ function EquityTooltip({
       <p className="tag">{captured}</p>
       <p className="num mt-1 text-[14px] font-medium">{money(point.equity)}</p>
       <p className="num mt-1 text-[10px] text-ink-3">
-        Point change {money(point.deltaFromPrevious)}
-      </p>
-      <p className="num text-[10px] text-ink-3">
-        Daily P&amp;L {money(point.dailyPnl)}
+        Since previous snapshot {money(point.deltaFromPrevious)}
       </p>
     </div>
   );
@@ -95,22 +59,21 @@ function EquityTooltip({
 export function EquityCurve({
   data,
   baseline,
+  intraday = false,
 }: {
   data: EquityPoint[];
   baseline?: number | null;
+  intraday?: boolean;
 }) {
   // The curve takes its colour from where the period ended, not from where the
   // last tick went.
-  const up = data.length > 1 && data[data.length - 1].equity >= data[0].equity;
+  const up = data.length > 0 && data[data.length - 1].equity >= (baseline ?? data[0].equity);
   const stroke = up ? "var(--gain)" : "var(--loss)";
-  const chartData = downsampleToDaily(data);
-  const intraday =
-    data.length > 1 && data[data.length - 1].timestamp - data[0].timestamp <= 2 * 86_400_000;
 
   return (
-    <div className="h-64 w-full">
+    <div className="h-72 w-full sm:h-80" role="img" aria-label="Broker account equity over the selected period">
       <ResponsiveContainer width="100%" height="100%">
-        <AreaChart data={chartData} margin={{ top: 8, right: 8, bottom: 0, left: 8 }}>
+        <AreaChart data={data} margin={{ top: 8, right: 8, bottom: 0, left: 0 }}>
           <defs>
             <linearGradient id="equityFill" x1="0" y1="0" x2="0" y2="1">
               <stop offset="0%" stopColor={stroke} stopOpacity={0.16} />
@@ -129,8 +92,8 @@ export function EquityCurve({
             tickFormatter={(value: number) =>
               new Date(value).toLocaleString("en-US", {
                 timeZone: "America/New_York",
-                month: "short",
-                day: "numeric",
+                month: intraday ? undefined : "short",
+                day: intraday ? undefined : "numeric",
                 hour: intraday ? "numeric" : undefined,
                 minute: intraday ? "2-digit" : undefined,
               })
@@ -163,13 +126,14 @@ export function EquityCurve({
             cursor={{ stroke: AXIS_LINE, strokeDasharray: "3 4" }}
           />
           <Area
-            type="monotoneX"
+            type="linear"
             dataKey="equity"
             stroke={stroke}
             strokeWidth={2}
             strokeLinecap="round"
             fill="url(#equityFill)"
-            dot={false}
+            dot={data.length === 1 ? { r: 4 } : false}
+            isAnimationActive={false}
             activeDot={{ r: 4, strokeWidth: 2, fill: "var(--card)", stroke }}
           />
         </AreaChart>

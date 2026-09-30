@@ -13,7 +13,7 @@ import {
   dateEtIso,
 } from "@/lib/format";
 import type { LiveStateRow, OverviewPosition } from "@/lib/types";
-import { formatPositionStatus, getOverviewSessionMetrics } from "@/lib/positions";
+import { formatPositionStatus } from "@/lib/positions";
 
 function PositionRow({
   position,
@@ -59,36 +59,19 @@ export function PositionRail({
   liveFresh,
   capturedAt,
   sessionDate,
-  brokerDailyPnl,
 }: {
   positions: OverviewPosition[];
   liveState: LiveStateRow | null;
   liveFresh: boolean;
   capturedAt: string | null;
   sessionDate: string;
-  brokerDailyPnl: number | null;
 }) {
   const [selected, setSelected] = useState<OverviewPosition | null>(null);
   const open = useMemo(() => positions.filter((position) => position.status === "open"), [positions]);
   const closed = useMemo(() => positions.filter((position) => position.status === "closed"), [positions]);
-  const metrics = useMemo(
-    () => getOverviewSessionMetrics(positions, sessionDate),
-    [positions, sessionDate],
-  );
   const isCurrentSession = sessionDate === dateEtIso();
   const positionTitle = isCurrentSession ? "Today's positions" : "Last session's positions";
   const closedLabel = isCurrentSession ? "Closed today" : "Closed session";
-  const hasPositionData = Boolean(liveState) || positions.length > 0;
-  const accountDelta =
-    brokerDailyPnl != null && hasPositionData
-      ? brokerDailyPnl - metrics.realizedPnl - metrics.openUnrealizedPnl
-      : null;
-  // Prefer the broker's session total so this headline reconciles exactly with
-  // the account P&L shown above the chart. Fall back to the position rollup
-  // when the account record is unavailable.
-  const sessionPnl = hasPositionData
-    ? brokerDailyPnl ?? metrics.realizedPnl + metrics.openUnrealizedPnl
-    : null;
 
   return (
     <>
@@ -97,16 +80,8 @@ export function PositionRail({
           title={positionTitle}
           aside={`${open.length} open · ${closed.length} closed`}
         />
-        <p
-          className={clsx(
-            "num text-[24px] font-medium tracking-[-0.03em]",
-            pnlColor(sessionPnl),
-          )}
-        >
-          {fmtSignedUsd(sessionPnl)}
-        </p>
-        <p className="mt-1 text-[11px] text-ink-3">
-          total session P&amp;L · open + closed positions · tap a position for its trail
+        <p className="text-[11px] text-ink-3">
+          Tap a position for its trade history.
         </p>
 
         {positions.length > 0 ? (
@@ -150,38 +125,9 @@ export function PositionRail({
           </p>
         )}
 
-        <div className="mt-3.5 flex gap-6 border-t border-line pt-3.5">
-          <div className="flex-1">
-            <span className="tag">Session</span>
-            <span className="num mt-1.5 block text-[15px] font-medium">
-              {metrics.wins}W <span className="text-ink-3">/</span> {metrics.losses}L
-            </span>
-          </div>
-          <div className="flex-1">
-            <span className="tag">Realized lifecycle</span>
-            <span
-              className={clsx(
-                "num mt-1.5 block text-[15px] font-medium",
-                pnlColor(hasPositionData ? metrics.realizedPnl : null),
-              )}
-            >
-              {hasPositionData
-                ? fmtSignedUsd(metrics.realizedPnl)
-                : "—"}
-            </span>
-          </div>
-        </div>
-
-        {accountDelta != null && Math.abs(accountDelta) >= 0.01 ? (
-          <p className="mt-3 text-[11px] leading-relaxed text-ink-3">
-            Broker daily P&L also includes {fmtSignedUsd(accountDelta)} outside position lifecycle P&L
-            (fees, cash adjustments, or pending reconciliation).
-          </p>
-        ) : null}
-
         {!isCurrentSession ? (
           <p className="mt-3 text-[11px] text-ink-3">
-            Account P&L and positions are anchored to {sessionDate} ET, the latest recorded trading session.
+            Positions from {sessionDate} ET, the latest recorded trading session.
           </p>
         ) : null}
 

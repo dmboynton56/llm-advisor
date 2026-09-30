@@ -41,6 +41,7 @@ from src.live.threshold_evaluator import evaluate_thresholds, SignalEvent
 from src.analysis.llm_client import create_llm_client
 from src.analysis.market_analyzer import MarketAnalyzer
 from src.analysis.trade_validator import validate_trade_with_llm
+from src.live.shadow_trading import evaluate_shadow_trade
 from src.execution.order_manager import is_execution_success, execution_failure_reason
 from config.thresholds import STDEVThresholds
 from src.utils.notifications import send_discord_alert, send_trade_alert
@@ -1243,8 +1244,8 @@ def main():
     
     logger.info(f"Starting live loop for {date_str}")
     logger.info(f"Symbols: {', '.join(symbols)}")
-    logger.info("Entry eligible: %s", ", ".join(symbol for symbol in symbols if settings.trading.allows_entry(symbol)))
-    logger.info("Monitor only: %s", ", ".join(symbol for symbol in symbols if not settings.trading.allows_entry(symbol)))
+    logger.info("Entry eligible: %s", ", ".join(symbol for symbol in symbols if settings.trading.allows_entry(symbol, trading_date)))
+    logger.info("Monitor only: %s", ", ".join(symbol for symbol in symbols if not settings.trading.allows_entry(symbol, trading_date)))
     logger.info("Entry mode: %s", args.entry_mode)
     
     # Initialize storage if requested
@@ -2085,7 +2086,7 @@ def main():
                     )
                 
                 if signal:
-                    entry_eligible = settings.trading.allows_entry(symbol)
+                    entry_eligible = settings.trading.allows_entry(symbol, trading_date)
                     logger.info(
                         "%s SIGNAL DETECTED for %s: %s %s @ $%.2f",
                         "TRADE" if entry_eligible else "MONITOR",
@@ -2127,6 +2128,16 @@ def main():
                             logger.error(f"Failed to save trade signal to database: {e}")
 
                     if not entry_eligible:
+                        if not is_backtest:
+                            shadow = evaluate_shadow_trade(
+                                signal, state, premarket_context, llm_client,
+                                order_manager, settings,
+                            )
+                            append_order_event(
+                                order_events_path, "shadow_trade_decision", symbol,
+                                loop_count, signal=signal, state=state, details=shadow,
+                            )
+                            logger.info("SHADOW %s %s: %s", symbol, shadow["action"], shadow["reason"])
                         emit_signal_outcome(
                             signal,
                             state,
@@ -2187,6 +2198,18 @@ def main():
                             state.reset_to_idle()
                             continue
 
+                    if (
+                        not is_backtest
+                        and not settings.llm.enable_trade_validation
+                        and not settings.trading.requires_ml_bias(symbol)
+                    ):
+                        emit_signal_outcome(
+                            signal, state, "validation_error",
+                            "experiment_validation_disabled", current_utc,
+                        )
+                        state.reset_to_idle()
+                        continue
+
                     last_validation = validation_cache.get(signal_uid)
                     if settings.llm.enable_trade_validation and premarket_context:
                         if is_backtest:
@@ -2198,6 +2221,7 @@ def main():
                                     state=state,
                                     premarket_context=premarket_context,
                                     llm_client=llm_client,
+                                    require_ml_bias=settings.trading.requires_ml_bias(symbol),
                                 )
                                 validation_cache[signal_uid] = last_validation
                                 lifecycle = ensure_signal_lifecycle(signal_uid, current_utc)
@@ -2307,7 +2331,12 @@ def main():
                         if is_backtest:
                             logger.debug(f"LLM trade validation skipped (no premarket context for {symbol} in test mode)")
                         else:
-                            logger.debug(f"LLM trade validation skipped (no premarket context for {symbol})")
+                            emit_signal_outcome(
+                                signal, state, "validation_error",
+                                "premarket_context_unavailable", current_utc,
+                            )
+                            state.reset_to_idle()
+                            continue
 
                     if state.trade:
                         trade = state.trade

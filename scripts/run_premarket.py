@@ -98,7 +98,8 @@ def main():
         ]
         available_count = len(premarket_context.symbols) - len(unavailable_bias)
         unavailable_entry_bias = [
-            (sym, reason) for sym, reason in unavailable_bias if settings.trading.allows_entry(sym)
+            (sym, reason) for sym, reason in unavailable_bias
+            if settings.trading.allows_entry(sym, trading_date) and settings.trading.requires_ml_bias(sym)
         ]
         print(
             f"[OK] Gathered premarket context for {len(premarket_context.symbols)} symbols "

@@ -12,6 +12,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 from src.core.config import Settings, TradingSettings
 from src.execution.options_order_manager import OptionsOrderManager
 from src.execution.options_strategy_mapper import OptionTradePlan
+from src.live.shadow_trading import evaluate_shadow_trade
 
 
 def call_api(prompt: str, options: dict, context: dict) -> dict:
@@ -36,6 +37,10 @@ def call_api(prompt: str, options: dict, context: dict) -> dict:
         trading.watchlist = scenario["entry_symbols"]
     if "monitor_symbols" in scenario:
         trading.monitor_only_symbols = scenario["monitor_symbols"]
+    if scenario.get("trial") == "before_start":
+        trading.experimental_paper_start = datetime.now(timezone.utc).date() + timedelta(days=1)
+    elif scenario.get("trial") == "after_start":
+        trading.experimental_paper_start = datetime.now(timezone.utc).date() - timedelta(days=1)
 
     manager = OptionsOrderManager.__new__(OptionsOrderManager)
     manager.settings = Settings(trading=trading)
@@ -65,6 +70,37 @@ def call_api(prompt: str, options: dict, context: dict) -> dict:
 
     manager.get_open_orders = open_orders
     manager.trading_client = SimpleNamespace(submit_order=submit_order)
-    result = manager.execute_option_trade(plan)
-    decision = result.get("error", "entry_allowed")
+    if scenario.get("operation") == "shadow":
+        signal = SimpleNamespace(symbol=underlying, setup_type="TC", side="long", signal_uid="eval-shadow")
+        state = SimpleNamespace(
+            trade=SimpleNamespace(entry_price=100, sl_price=99, tp_price=102, selected_option_symbols=[]),
+            last_z=2.5, atr_percentile=80, htf_bias="bullish", status="tc_triggered",
+        )
+        if scenario.get("bad_rr"):
+            state.trade.tp_price = 100.5
+        bias = SimpleNamespace(
+            bias_available=not scenario.get("missing_ml"),
+            bias_error="model_load_failed" if scenario.get("missing_ml") else None,
+            model_output={}, daily_bias="choppy", confidence=0, news_summary="Fixture news",
+        )
+        llm_client = SimpleNamespace(call_structured=lambda *args: SimpleNamespace(content={
+            "should_execute": scenario.get("llm_approval", True), "confidence": 65,
+            "reasoning": "Fixture verdict", "risk_assessment": "medium",
+            "veto_flags": scenario.get("veto_flags", []),
+        }))
+        manager.mapper = SimpleNamespace(
+            build_trade_plan=lambda **kwargs: None if scenario.get("no_candidate") else plan,
+            last_rejection={"reason": "liquidity"},
+        )
+        manager.options_client = object()
+        manager.get_account_equity = lambda: 100000
+        manager.get_buying_power = lambda: scenario.get("buying_power", 100000)
+        result = evaluate_shadow_trade(
+            signal, state, SimpleNamespace(symbols={underlying: bias}),
+            llm_client, manager, manager.settings,
+        )
+        decision = result["action"]
+    else:
+        result = manager.execute_option_trade(plan)
+        decision = result.get("error", "entry_allowed")
     return {"output": f"{decision}:{len(submissions)}"}

@@ -2,6 +2,8 @@
 from pydantic import BaseModel, Field
 from typing import List, Optional
 from pathlib import Path
+from datetime import date, datetime
+from zoneinfo import ZoneInfo
 import os
 from dotenv import load_dotenv
 
@@ -20,6 +22,7 @@ def normalize_symbols(symbols: List[str]) -> List[str]:
 class TradingSettings(BaseModel):
     watchlist: List[str] = Field(default_factory=lambda: list(DEFAULT_ENTRY_SYMBOLS))
     monitor_only_symbols: List[str] = Field(default_factory=lambda: list(DEFAULT_MONITOR_ONLY_SYMBOLS))
+    experimental_paper_start: Optional[date] = None
     trading_window_start: str = "09:30"
     trading_window_end: str = "15:30"
     end_of_day_close_time: str = "15:50"
@@ -31,13 +34,22 @@ class TradingSettings(BaseModel):
         """Include observation symbols even when the scheduler passes an entry list."""
         return normalize_symbols([*self.watchlist, *self.monitor_only_symbols])
 
-    def allows_entry(self, symbol: str) -> bool:
-        """An explicit entry list never promotes a monitor-only symbol."""
+    def allows_entry(self, symbol: str, as_of: Optional[date] = None) -> bool:
+        """Promote only the first experimental cohort after its configured trial."""
         symbol = symbol.strip().upper()
-        return (
-            symbol in normalize_symbols(self.watchlist)
-            and symbol not in normalize_symbols(self.monitor_only_symbols)
-        )
+        monitors = normalize_symbols(self.monitor_only_symbols)
+        session_date = as_of or datetime.now(ZoneInfo("America/New_York")).date()
+        if symbol in monitors:
+            return (
+                symbol in DEFAULT_MONITOR_ONLY_SYMBOLS
+                and self.experimental_paper_start is not None
+                and session_date >= self.experimental_paper_start
+            )
+        return symbol in normalize_symbols(self.watchlist)
+
+    def requires_ml_bias(self, symbol: str) -> bool:
+        """The four stock experiments use news/technicals until models exist."""
+        return symbol.strip().upper() not in DEFAULT_MONITOR_ONLY_SYMBOLS
 
 
 class RiskSettings(BaseModel):
@@ -127,6 +139,7 @@ class Settings(BaseModel):
                 monitor_only_symbols=normalize_symbols(
                     os.getenv("MONITOR_ONLY_SYMBOLS", ",".join(DEFAULT_MONITOR_ONLY_SYMBOLS)).split(",")
                 ),
+                experimental_paper_start=os.getenv("EXPERIMENTAL_PAPER_START") or None,
                 trading_window_start=os.getenv("TRADING_WINDOW_START", "09:30"),
                 trading_window_end=os.getenv("TRADING_WINDOW_END", "15:30"),
                 end_of_day_close_time=os.getenv("END_OF_DAY_CLOSE_TIME", "15:50"),

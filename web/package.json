@@ -9,7 +9,8 @@
     "start": "next start",
     "lint": "oxlint --config oxlint.config.ts",
     "lint:anti-slop": "npm run lint",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test:equity": "tsc --module commonjs --moduleResolution node --target es2023 --esModuleInterop --skipLibCheck --outDir ../tmp/equity-tests lib/equity.test.ts && node --test ../tmp/equity-tests/equity.test.js"
   },
   "dependencies": {
     "clsx": "^2.1.1",

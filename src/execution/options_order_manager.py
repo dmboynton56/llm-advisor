@@ -423,6 +423,28 @@ class OptionsOrderManager:
                 guard_failure_reason="monitor_only_symbol",
             )
 
+        plan = self._prepare_signal_plan(signal, state)
+        if not isinstance(plan, OptionTradePlan):
+            return plan
+        result = self.execute_option_trade(plan)
+        if result and result.get("guard_failure_reason"):
+            state.trade.guard_failure_reasons.append(result["guard_failure_reason"])
+        return result
+
+    def preview_signal_trade(self, signal: Any, state: Any) -> Dict[str, Any]:
+        """Select and check a real option candidate without submitting an order."""
+        plan = self._prepare_signal_plan(signal, state)
+        if not isinstance(plan, OptionTradePlan):
+            return {**plan, "would_execute": False}
+        guard = self._broker_exposure_guard(plan)
+        if guard:
+            return {**guard, "would_execute": False}
+        return {"success": True, "would_execute": True, "option_plan": plan.to_dict()}
+
+    def _prepare_signal_plan(self, signal: Any, state: Any) -> OptionTradePlan | Dict[str, Any]:
+        """The same candidate, pricing and buying-power checks serve both modes."""
+        if not state.trade:
+            return self._failure("no_trade_plan")
         trade_state = state.trade
         excluded_symbols = {
             str(symbol).upper()
@@ -452,6 +474,9 @@ class OptionsOrderManager:
                 diagnostics=getattr(self.mapper, "last_rejection", None),
             )
 
+        if plan.side != "buy" or plan.position_intent != "buy_to_open":
+            return self._failure("unsupported_option_order", option_plan=plan.to_dict())
+
         buying_power = self.get_buying_power()
         if plan.max_loss > buying_power:
             return self._failure(
@@ -465,10 +490,7 @@ class OptionsOrderManager:
         if plan.option_symbol not in selected_symbols:
             selected_symbols.append(plan.option_symbol)
 
-        result = self.execute_option_trade(plan)
-        if result and result.get("guard_failure_reason"):
-            trade_state.guard_failure_reasons.append(result["guard_failure_reason"])
-        return result
+        return plan
 
     def execute_option_trade(self, plan: OptionTradePlan) -> Optional[Dict[str, Any]]:
         if plan.side != "buy" or plan.position_intent != "buy_to_open":
@@ -529,7 +551,10 @@ class OptionsOrderManager:
         """Enforce broker-truth exposure limits, including pending buy orders."""
         if not self.settings.trading.allows_entry(plan.underlying_symbol):
             return self._failure("monitor_only_symbol", option_plan=plan.to_dict())
+        return self._broker_exposure_guard(plan)
 
+    def _broker_exposure_guard(self, plan: OptionTradePlan) -> Optional[Dict[str, Any]]:
+        """Check current risk, including pending entries, for execution or preview."""
         try:
             positions = self.get_open_positions(raise_on_error=True)
         except Exception as exc:

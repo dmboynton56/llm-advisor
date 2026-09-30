@@ -117,3 +117,98 @@ tests:
         entry_symbols: [SPY, QQQ, IWM, TSLA]
         monitor_symbols: [AAPL, MSFT, GOOG]
         expected: entry_allowed:1
+  - vars:
+      case:
+        scenario: Full TSLA decision preview can approve technical news experiment without ML
+        operation: shadow
+        underlying: TSLA
+        missing_ml: true
+        expected: would_buy:0
+  - vars:
+      case:
+        scenario: Core QQQ ML error remains a hard veto in preview
+        operation: shadow
+        missing_ml: true
+        expected: skipped:0
+  - vars:
+      case:
+        scenario: Shadow approval never overrides existing opposite TSLA exposure
+        operation: shadow
+        underlying: TSLA
+        positions: [{symbol: TSLA261002P00300000, qty: 1}]
+        expected: skipped:0
+  - vars:
+      case:
+        scenario: Shadow preview rejects an invalid underlying risk reward ratio
+        operation: shadow
+        underlying: TSLA
+        bad_rr: true
+        expected: skipped:0
+  - vars:
+      case:
+        scenario: Shadow preview rejects illiquid option candidates
+        operation: shadow
+        underlying: TSLA
+        no_candidate: true
+        expected: skipped:0
+  - vars:
+      case:
+        scenario: Shadow preview respects buying power
+        operation: shadow
+        underlying: TSLA
+        buying_power: 0
+        expected: skipped:0
+  - vars:
+      case:
+        scenario: Model rejection skips option submission in shadow
+        operation: shadow
+        underlying: TSLA
+        llm_approval: false
+        expected: skipped:0
+  - vars:
+      case:
+        scenario: A string false from the LLM is a parse error not an approval
+        operation: shadow
+        underlying: TSLA
+        llm_approval: 'false'
+        expected: error:0
+  - vars:
+      case:
+        scenario: Stock promotion date cannot be bypassed during the trial
+        underlying: TSLA
+        trial: before_start
+        expected: monitor_only_symbol:0
+  - vars:
+      case:
+        scenario: The configured stock cohort becomes paper eligible after the trial
+        underlying: TSLA
+        trial: after_start
+        expected: entry_allowed:1
+  - vars:
+      case:
+        scenario: Stock promotion retains the same underlying guard
+        underlying: TSLA
+        trial: after_start
+        positions: [{symbol: TSLA261002P00300000, qty: 1}]
+        expected: underlying_exposure:0
+  - vars:
+      case:
+        scenario: Other observation symbols cannot inherit the stock promotion
+        underlying: NVDA
+        monitor_symbols: [AAPL, MSFT, GOOG, TSLA, NVDA]
+        trial: after_start
+        expected: monitor_only_symbol:0
+  - vars:
+      case:
+        scenario: An LLM approval carrying a hard veto must still skip the trade
+        operation: shadow
+        underlying: TSLA
+        veto_flags: [event_risk]
+        expected: skipped:0
+  - vars:
+      case:
+        scenario: Broker lookup failures appear as errors in the trial decision record
+        operation: shadow
+        underlying: TSLA
+        broker_position_error: true
+        expected: error:0

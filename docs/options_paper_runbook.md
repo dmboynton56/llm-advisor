@@ -15,6 +15,7 @@ ALLOW_STOCK_FALLBACK=false
 OPTIONS_STRATEGY_TYPE=single_long
 WATCHLIST=SPY,QQQ,IWM
 MONITOR_ONLY_SYMBOLS=AAPL,MSFT,GOOG,TSLA
+EXPERIMENTAL_PAPER_START=2026-10-05
 OPTION_DTE_MIN=7
 OPTION_DTE_MAX=14
 OPTION_DELTA_MIN=0.35
@@ -120,14 +121,33 @@ do not become fabricated neutral approvals or daily degraded-mode alerts.
 
 Signals for observation symbols emit `monitor_signal_detected` and a terminal
 `signal_outcome` with `outcome=monitor_only`. They are also saved in the
-warehouse signal table. They bypass trade validation, option-chain requests,
-and order submission, and do not enter the trading approval-rate denominator.
+warehouse signal table. Live signals also emit `shadow_trade_decision` with
+`action=would_buy|skipped|error`, validation evidence, the proposed option plan
+when one exists, and entry-check failures. The preview shares candidate,
+pricing, risk, buying-power, and broker exposure checks with real paper entry,
+but never calls order submission. Backtests continue to record monitor signals
+without broker/LLM calls. Previews do not enter trading approval-rate or fill
+counts. EOD sync makes them available in the Overview's Stock experiments card.
 
-Promote a symbol only after reviewing its data and signals, providing its
-trained bias artifacts, adding it to the entry list (`WATCHLIST` or `--symbols`),
-and removing it from `MONITOR_ONLY_SYMBOLS` in both workflow environments.
-An overlap remains observation only. An empty `MONITOR_ONLY_SYMBOLS` environment
-value disables the extra observation list for local experiments/backtests.
+These are decisions at the observed quotes, **not simulated fills or a shadow
+portfolio**: they do not reserve hypothetical capital or produce hypothetical
+P&L. Each later preview checks the actual paper account at that moment.
+
+The configured trial is October 1 and October 2, 2026. Both Premarket and
+Live Segment set `EXPERIMENTAL_PAPER_START=2026-10-05`; on/after that ET date,
+only the four named stock experiments become entry eligible even though the
+scheduler still passes three ETFs. This date controls eligibility, not a
+guarantee that trades will pass the normal gates. Unset the date or move it
+later in both environments to extend the trial if a bug appears. Other monitor
+symbols remain blocked regardless of this date.
+
+The four stocks do not yet have trained daily-bias models. They can use their
+recorded news and technical context, with an explicit `premarket_data_quality`
+warning for missing ML. Missing symbol context, invalid LLM responses, risk,
+HTF alignment, liquidity, and broker checks still reject. ETF ML failures remain
+hard vetoes. Any future stock outside this first cohort requires available ML
+bias and explicit promotion through the entry list and monitor-list removal.
+An empty `MONITOR_ONLY_SYMBOLS` value disables the extra list locally.
 
 Every option buy checks broker positions and pending buys immediately before
 submission. Any open option or pending buy on the same underlying blocks the
