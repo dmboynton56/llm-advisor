@@ -102,12 +102,14 @@ class OptionsOrderManager:
         account = self.trading_client.get_account()
         return float(getattr(account, "options_buying_power", None) or account.buying_power)
 
-    def get_open_positions(self) -> List[Dict[str, Any]]:
+    def get_open_positions(self, *, raise_on_error: bool = False) -> List[Dict[str, Any]]:
         try:
             positions = self.trading_client.get_all_positions()
             return [self._position_to_dict(pos) for pos in positions]
         except Exception as exc:
             print(f"  ! Failed to get positions: {exc}")
+            if raise_on_error:
+                raise
             return []
 
     def get_open_orders(
@@ -412,6 +414,15 @@ class OptionsOrderManager:
         if not state.trade:
             return self._failure("no_trade_plan")
 
+        if not self.settings.trading.allows_entry(signal.symbol):
+            return self._failure(
+                "monitor_only_symbol",
+                underlying_symbol=signal.symbol,
+                terminal_for_signal=True,
+                terminal_outcome="execution_guard_failed",
+                guard_failure_reason="monitor_only_symbol",
+            )
+
         trade_state = state.trade
         excluded_symbols = {
             str(symbol).upper()
@@ -454,133 +465,27 @@ class OptionsOrderManager:
         if plan.option_symbol not in selected_symbols:
             selected_symbols.append(plan.option_symbol)
 
-        guard_failure = self._entry_guard(plan)
-        if guard_failure:
-            guard_reason = str(guard_failure.get("error") or "unknown_guard_failure")
-            failure_reasons = getattr(trade_state, "guard_failure_reasons", [])
-            failure_reasons.append(guard_reason)
-
-            if guard_reason == "underlying_direction_exposure":
-                return self._terminal_signal_guard_failure(
-                    guard_failure,
-                    plan=plan,
-                    reason="same_underlying_direction_exposure",
-                )
-
-            if guard_reason == "duplicate_option_contract":
-                if getattr(trade_state, "alternate_contract_attempted", False):
-                    return self._terminal_signal_guard_failure(
-                        guard_failure,
-                        plan=plan,
-                        reason="duplicate_after_alternate_attempt",
-                    )
-
-                trade_state.alternate_contract_attempted = True
-                excluded_symbols.add(plan.option_symbol.upper())
-                trade_state.excluded_option_symbols = sorted(excluded_symbols)
-
-                try:
-                    alternate_plan = self.mapper.build_trade_plan(
-                        signal=signal,
-                        state=state,
-                        options_client=self.options_client,
-                        account_equity=account_equity,
-                        excluded_option_symbols=excluded_symbols,
-                    )
-                except Exception as exc:
-                    return self._failure(
-                        "alternate_option_plan_failed",
-                        detail=str(exc),
-                        terminal_for_signal=True,
-                        terminal_outcome="execution_failed",
-                        alternate_contract_attempted=True,
-                        original_guard_failure=guard_failure,
-                        diagnostics=getattr(self.mapper, "last_rejection", None),
-                    )
-
-                if alternate_plan is None:
-                    return self._failure(
-                        "no_alternate_option_candidate",
-                        terminal_for_signal=True,
-                        terminal_outcome="execution_guard_failed",
-                        alternate_contract_attempted=True,
-                        original_guard_failure=guard_failure,
-                        diagnostics=getattr(self.mapper, "last_rejection", None),
-                    )
-
-                alternate_symbol = alternate_plan.option_symbol.upper()
-                if alternate_symbol in excluded_symbols:
-                    return self._failure(
-                        "alternate_option_repeated",
-                        terminal_for_signal=True,
-                        terminal_outcome="execution_guard_failed",
-                        alternate_contract_attempted=True,
-                        original_guard_failure=guard_failure,
-                        option_plan=alternate_plan.to_dict(),
-                    )
-                selected_symbols.append(alternate_plan.option_symbol)
-                excluded_symbols.add(alternate_symbol)
-                trade_state.excluded_option_symbols = sorted(excluded_symbols)
-
-                alternate_guard_failure = self._entry_guard(alternate_plan)
-                if alternate_guard_failure:
-                    alternate_reason = str(
-                        alternate_guard_failure.get("error") or "unknown_guard_failure"
-                    )
-                    failure_reasons.append(alternate_reason)
-                    return self._terminal_signal_guard_failure(
-                        alternate_guard_failure,
-                        plan=alternate_plan,
-                        reason=f"alternate_{alternate_reason}",
-                        alternate_contract_attempted=True,
-                        original_guard_failure=guard_failure,
-                    )
-
-                result = self.execute_option_trade(alternate_plan)
-                if not result or not result.get("success"):
-                    result = dict(result or self._failure("alternate_option_submit_failed"))
-                    result.update(
-                        {
-                            "terminal_for_signal": True,
-                            "terminal_outcome": "execution_failed",
-                            "alternate_contract_attempted": True,
-                            "original_guard_failure": guard_failure,
-                        }
-                    )
-                else:
-                    result["alternate_contract_attempted"] = True
-                return result
-
-            return guard_failure
-
-        return self.execute_option_trade(plan)
-
-    def _terminal_signal_guard_failure(
-        self,
-        failure: Dict[str, Any],
-        *,
-        plan: OptionTradePlan,
-        reason: str,
-        alternate_contract_attempted: bool = False,
-        original_guard_failure: Optional[Dict[str, Any]] = None,
-    ) -> Dict[str, Any]:
-        result = dict(failure)
-        result.update(
-            {
-                "terminal_for_signal": True,
-                "terminal_outcome": "execution_guard_failed",
-                "guard_failure_reason": reason,
-                "alternate_contract_attempted": alternate_contract_attempted,
-                "option_plan": plan.to_dict(),
-            }
-        )
-        if original_guard_failure is not None:
-            result["original_guard_failure"] = original_guard_failure
+        result = self.execute_option_trade(plan)
+        if result and result.get("guard_failure_reason"):
+            trade_state.guard_failure_reasons.append(result["guard_failure_reason"])
         return result
 
     def execute_option_trade(self, plan: OptionTradePlan) -> Optional[Dict[str, Any]]:
         if plan.side != "buy" or plan.position_intent != "buy_to_open":
             return self._failure("unsupported_option_order", option_plan=plan.to_dict())
+
+        guard_failure = self._entry_guard(plan)
+        if guard_failure:
+            reason = str(guard_failure["error"])
+            result = {**guard_failure, "guard_failure_reason": reason}
+            if reason in {"underlying_exposure", "duplicate_option_contract", "monitor_only_symbol"}:
+                result.update(
+                    terminal_for_signal=True,
+                    terminal_outcome="execution_guard_failed",
+                    alternate_contract_attempted=False,
+                    option_plan=plan.to_dict(),
+                )
+            return result
 
         order_request = LimitOrderRequest(
             symbol=plan.option_symbol,
@@ -622,7 +527,17 @@ class OptionsOrderManager:
 
     def _entry_guard(self, plan: OptionTradePlan) -> Optional[Dict[str, Any]]:
         """Enforce broker-truth exposure limits, including pending buy orders."""
-        positions = self.get_open_positions()
+        if not self.settings.trading.allows_entry(plan.underlying_symbol):
+            return self._failure("monitor_only_symbol", option_plan=plan.to_dict())
+
+        try:
+            positions = self.get_open_positions(raise_on_error=True)
+        except Exception as exc:
+            return self._failure(
+                "broker_position_query_failed",
+                detail=str(exc),
+                option_plan=plan.to_dict(),
+            )
         try:
             open_orders = self.get_open_orders(raise_on_error=True)
         except Exception as exc:
@@ -666,13 +581,9 @@ class OptionsOrderManager:
                     {"symbol": symbol, "underlying": underlying, "direction": direction or ""}
                 )
 
-        if any(
-            item["underlying"] == desired_underlying
-            and item["direction"] == desired_direction
-            for item in exposure
-        ):
+        if any(item["underlying"] == desired_underlying for item in exposure):
             return self._failure(
-                "underlying_direction_exposure",
+                "underlying_exposure",
                 underlying_symbol=plan.underlying_symbol,
                 direction=desired_direction,
                 existing_exposure=exposure,

@@ -24,7 +24,7 @@ PROJECT_ROOT = Path(__file__).resolve().parents[2]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.append(str(PROJECT_ROOT))
 
-from src.core.config import Settings
+from src.core.config import Settings, normalize_symbols
 from src.core.logging import setup_logging
 from src.data.alpaca_client import (
     AlpacaDataClient,
@@ -1218,7 +1218,9 @@ def main():
     
     # Load settings
     settings = Settings.load()
-    symbols = args.symbols or settings.trading.watchlist
+    if args.symbols:
+        settings.trading.watchlist = normalize_symbols(args.symbols)
+    symbols = settings.trading.monitoring_symbols()
     
     # Determine trading date
     if args.date:
@@ -1241,6 +1243,8 @@ def main():
     
     logger.info(f"Starting live loop for {date_str}")
     logger.info(f"Symbols: {', '.join(symbols)}")
+    logger.info("Entry eligible: %s", ", ".join(symbol for symbol in symbols if settings.trading.allows_entry(symbol)))
+    logger.info("Monitor only: %s", ", ".join(symbol for symbol in symbols if not settings.trading.allows_entry(symbol)))
     logger.info("Entry mode: %s", args.entry_mode)
     
     # Initialize storage if requested
@@ -2081,21 +2085,27 @@ def main():
                     )
                 
                 if signal:
-                    logger.info(f"TRADE SIGNAL DETECTED for {symbol}: {signal.setup_type} {signal.side.upper()} @ ${signal.entry_price:.2f}")
+                    entry_eligible = settings.trading.allows_entry(symbol)
+                    logger.info(
+                        "%s SIGNAL DETECTED for %s: %s %s @ $%.2f",
+                        "TRADE" if entry_eligible else "MONITOR",
+                        symbol, signal.setup_type, signal.side.upper(), signal.entry_price,
+                    )
                     signal_uid = signal.signal_uid or f"{symbol}:{signal.timestamp.isoformat()}"
                     signal.signal_uid = signal_uid
                     lifecycle = ensure_signal_lifecycle(signal_uid, current_utc)
                     if signal_uid not in recorded_signal_uids:
                         recorded_signal_uids.add(signal_uid)
-                        signals.append(signal)
+                        if entry_eligible:
+                            signals.append(signal)
                         append_order_event(
                             order_events_path,
-                            "signal_detected",
+                            "signal_detected" if entry_eligible else "monitor_signal_detected",
                             symbol,
                             loop_count,
                             signal=signal,
                             state=state,
-                            details={"signal_uid": signal_uid},
+                            details={"signal_uid": signal_uid, "entry_eligible": entry_eligible},
                         )
 
                     signal_id: Optional[int] = None
@@ -2115,6 +2125,17 @@ def main():
                             logger.debug(f"[DB] Saved trade signal for {symbol} (ID: {signal_id})")
                         except Exception as e:
                             logger.error(f"Failed to save trade signal to database: {e}")
+
+                    if not entry_eligible:
+                        emit_signal_outcome(
+                            signal,
+                            state,
+                            "monitor_only",
+                            "symbol_not_entry_eligible",
+                            current_utc,
+                        )
+                        state.reset_to_idle()
+                        continue
 
                     force_revalidation = False
                     if (

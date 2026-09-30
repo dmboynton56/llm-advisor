@@ -64,6 +64,10 @@ def test_execute_option_trade_submits_limit_buy_to_open() -> None:
 
     manager = OptionsOrderManager.__new__(OptionsOrderManager)
     manager.trading_client = FakeTradingClient()
+    manager.settings = _settings()
+    manager._stopout_cooldowns = {}
+    manager.get_open_positions = lambda **kwargs: []
+    manager.get_open_orders = lambda **kwargs: []
 
     result = manager.execute_option_trade(_plan())
 
@@ -132,6 +136,7 @@ def test_execute_signal_trade_returns_option_candidate_diagnostics() -> None:
             return None
 
     manager = OptionsOrderManager.__new__(OptionsOrderManager)
+    manager.settings = _settings()
     manager.mapper = FakeMapper()
     manager.options_client = object()
     manager.get_account_equity = lambda: 100000.0
@@ -146,68 +151,27 @@ def test_execute_signal_trade_returns_option_candidate_diagnostics() -> None:
     assert result["diagnostics"] == diagnostics
 
 
-def test_execute_signal_trade_tries_one_alternate_after_duplicate_guard() -> None:
-    first = _plan()
-    alternate = replace(first, option_symbol="SPY260116C00510000")
+@pytest.mark.parametrize("reason", ["duplicate_option_contract", "underlying_exposure"])
+def test_execute_signal_trade_stops_after_exposure_guard(reason: str) -> None:
+    plans_built = []
 
     class FakeMapper:
         last_rejection = None
 
         def build_trade_plan(self, **kwargs):
-            excluded = kwargs.get("excluded_option_symbols") or set()
-            return alternate if first.option_symbol in excluded else first
+            plans_built.append(_plan())
+            return plans_built[-1]
 
     manager = OptionsOrderManager.__new__(OptionsOrderManager)
+    manager.settings = _settings()
     manager.mapper = FakeMapper()
     manager.options_client = object()
     manager.get_account_equity = lambda: 100000.0
     manager.get_buying_power = lambda: 100000.0
-    manager._entry_guard = lambda plan: (
-        {"success": False, "error": "duplicate_option_contract"}
-        if plan.option_symbol == first.option_symbol
-        else None
+    manager._entry_guard = lambda plan: {"success": False, "error": reason}
+    manager.trading_client = SimpleNamespace(
+        submit_order=lambda **kwargs: pytest.fail("blocked entry must never be submitted")
     )
-    submitted = []
-    manager.execute_option_trade = lambda plan: submitted.append(plan) or {
-        "success": True,
-        "order_id": "alt-1",
-        "option_symbol": plan.option_symbol,
-    }
-    state = SimpleNamespace(
-        trade=SimpleNamespace(
-            selected_option_symbols=[],
-            excluded_option_symbols=[],
-            alternate_contract_attempted=False,
-            guard_failure_reasons=[],
-        )
-    )
-    signal = SimpleNamespace(symbol="SPY", side="long", entry_price=500.0)
-
-    result = manager.execute_signal_trade(signal, state)
-
-    assert result["success"] is True
-    assert [plan.option_symbol for plan in submitted] == [alternate.option_symbol]
-    assert state.trade.alternate_contract_attempted is True
-    assert state.trade.excluded_option_symbols == [first.option_symbol, alternate.option_symbol]
-
-
-def test_execute_signal_trade_fails_fast_on_same_underlying_direction_exposure() -> None:
-    class FakeMapper:
-        last_rejection = None
-
-        def build_trade_plan(self, **kwargs):
-            return _plan()
-
-    manager = OptionsOrderManager.__new__(OptionsOrderManager)
-    manager.mapper = FakeMapper()
-    manager.options_client = object()
-    manager.get_account_equity = lambda: 100000.0
-    manager.get_buying_power = lambda: 100000.0
-    manager._entry_guard = lambda plan: {
-        "success": False,
-        "error": "underlying_direction_exposure",
-    }
-    manager.execute_option_trade = lambda plan: pytest.fail("exposure guard must fail fast")
     state = SimpleNamespace(
         trade=SimpleNamespace(
             selected_option_symbols=[],
@@ -223,6 +187,21 @@ def test_execute_signal_trade_fails_fast_on_same_underlying_direction_exposure()
     assert result["success"] is False
     assert result["terminal_for_signal"] is True
     assert result["terminal_outcome"] == "execution_guard_failed"
+    assert len(plans_built) == 1
+    assert state.trade.alternate_contract_attempted is False
+    assert state.trade.excluded_option_symbols == []
+    assert state.trade.guard_failure_reasons == [reason]
+
+
+@pytest.mark.parametrize("symbol", ["AAPL", "MSFT", "GOOG", "TSLA", "UNKNOWN"])
+def test_monitor_only_signal_never_fetches_candidates(symbol: str) -> None:
+    manager = OptionsOrderManager.__new__(OptionsOrderManager)
+    manager.settings = _settings()
+    result = manager.execute_signal_trade(
+        SimpleNamespace(symbol=symbol), SimpleNamespace(trade=object())
+    )
+    assert result["error"] == "monitor_only_symbol"
+    assert result["terminal_for_signal"] is True
 
 
 def test_ensure_protective_stop_uses_actual_position_fill() -> None:
@@ -297,12 +276,12 @@ def test_partial_close_uses_exact_sell_to_close_market_request() -> None:
     assert request.client_order_id == "llma-tier-life-1-tp1-1"
 
 
-def test_entry_guard_blocks_same_contract_and_underlying_direction() -> None:
+def test_entry_guard_blocks_same_contract_and_underlying() -> None:
     manager = OptionsOrderManager.__new__(OptionsOrderManager)
     manager.settings = _settings()
     manager._stopout_cooldowns = {}
     manager.get_open_orders = lambda symbols=None, **kwargs: []
-    manager.get_open_positions = lambda: [
+    manager.get_open_positions = lambda **kwargs: [
         {
             "symbol": "SPY260116C00500000",
             "asset_class": "option",
@@ -315,7 +294,107 @@ def test_entry_guard_blocks_same_contract_and_underlying_direction() -> None:
 
     other_call = replace(_plan(), option_symbol="SPY260116C00510000")
     exposure = manager._entry_guard(other_call)
-    assert exposure["error"] == "underlying_direction_exposure"
+    assert exposure["error"] == "underlying_exposure"
+
+
+@pytest.mark.parametrize("held_right,desired_right", [("C", "P"), ("P", "C"), ("C", "C"), ("P", "P")])
+@pytest.mark.parametrize("pending", [False, True])
+def test_entry_guard_blocks_same_underlying_in_either_direction(
+    held_right: str, desired_right: str, pending: bool
+) -> None:
+    held = f"QQQ260930{held_right}00745000"
+    manager = OptionsOrderManager.__new__(OptionsOrderManager)
+    manager.settings = _settings()
+    manager._stopout_cooldowns = {}
+    manager.get_open_positions = lambda **kwargs: [] if pending else [{"symbol": held, "qty": 4}]
+    manager.get_open_orders = lambda **kwargs: (
+        [SimpleNamespace(symbol=held, side="buy", status="partially_filled")] if pending else []
+    )
+    plan = replace(
+        _plan(), underlying_symbol="QQQ", option_symbol=f"QQQ261007{desired_right}00748000",
+        contract_type="call" if desired_right == "C" else "put",
+        signal_side="long" if desired_right == "C" else "short",
+    )
+
+    result = manager._entry_guard(plan)
+
+    assert result["error"] == "underlying_exposure"
+    assert result["existing_exposure"][0]["symbol"] == held
+
+
+@pytest.mark.parametrize("side,status", [("sell", "accepted"), ("buy", "canceled"), ("buy", "rejected")])
+def test_entry_guard_ignores_exit_orders_and_inactive_entries(side: str, status: str) -> None:
+    manager = OptionsOrderManager.__new__(OptionsOrderManager)
+    manager.settings = _settings()
+    manager._stopout_cooldowns = {}
+    manager.get_open_positions = lambda **kwargs: []
+    manager.get_open_orders = lambda **kwargs: [
+        SimpleNamespace(symbol="SPY260116P00510000", side=side, status=status)
+    ]
+    assert manager._entry_guard(_plan()) is None
+
+
+def test_entry_guard_allows_another_underlying_below_capacity() -> None:
+    manager = OptionsOrderManager.__new__(OptionsOrderManager)
+    manager.settings = _settings()
+    manager._stopout_cooldowns = {}
+    manager.get_open_positions = lambda **kwargs: [{"symbol": "QQQ260930P00745000", "qty": 4}]
+    manager.get_open_orders = lambda **kwargs: []
+    assert manager._entry_guard(_plan()) is None
+
+
+def test_direct_option_submission_checks_existing_underlying() -> None:
+    manager = OptionsOrderManager.__new__(OptionsOrderManager)
+    manager.settings = _settings()
+    manager._stopout_cooldowns = {}
+    manager.get_open_positions = lambda **kwargs: [{"symbol": "SPY260116P00510000", "qty": 1}]
+    manager.get_open_orders = lambda **kwargs: []
+    manager.trading_client = SimpleNamespace(
+        submit_order=lambda **kwargs: pytest.fail("opposing contract must not be submitted")
+    )
+    result = manager.execute_option_trade(_plan())
+    assert result["error"] == "underlying_exposure"
+    assert result["terminal_for_signal"] is True
+
+
+def test_direct_option_submission_blocks_monitor_only_underlying() -> None:
+    manager = OptionsOrderManager.__new__(OptionsOrderManager)
+    manager.settings = _settings()
+    plan = replace(_plan(), underlying_symbol="TSLA", option_symbol="TSLA260930C00450000")
+    assert manager.execute_option_trade(plan)["error"] == "monitor_only_symbol"
+
+
+def test_entry_guard_fails_closed_when_open_order_query_fails() -> None:
+    manager = OptionsOrderManager.__new__(OptionsOrderManager)
+    manager.settings = _settings()
+    manager.get_open_positions = lambda **kwargs: []
+
+    def unavailable_orders(**kwargs):
+        raise RuntimeError("broker unavailable")
+
+    manager.get_open_orders = unavailable_orders
+    manager.trading_client = SimpleNamespace(
+        submit_order=lambda **kwargs: pytest.fail("unknown exposure must not be submitted")
+    )
+    assert manager.execute_option_trade(_plan())["error"] == "broker_order_query_failed"
+
+
+def test_entry_guard_does_not_treat_a_failed_position_lookup_as_flat() -> None:
+    class UnavailableBroker:
+        def get_all_positions(self):
+            raise RuntimeError("broker unavailable")
+
+        def submit_order(self, **kwargs):
+            pytest.fail("unknown position exposure must not be submitted")
+
+    manager = OptionsOrderManager.__new__(OptionsOrderManager)
+    manager.settings = _settings()
+    manager.trading_client = UnavailableBroker()
+
+    result = manager.execute_option_trade(_plan())
+
+    assert result["error"] == "broker_position_query_failed"
+    assert result["success"] is False
 
 
 def test_entry_guard_honors_persisted_stopout_cooldown() -> None:
@@ -326,7 +405,7 @@ def test_entry_guard_honors_persisted_stopout_cooldown() -> None:
     }
     manager._stopout_cooldowns["SPY"] += timedelta(minutes=30)
     manager.get_open_orders = lambda symbols=None, **kwargs: []
-    manager.get_open_positions = lambda: []
+    manager.get_open_positions = lambda **kwargs: []
 
     result = manager._entry_guard(_plan())
 

@@ -35,6 +35,7 @@ jobs:
       - name: Execute notebook
         working-directory: notebooks
         run: |
+          mkdir -p outputs
           papermill "${{ matrix.notebook }}.ipynb" "outputs/${{ matrix.notebook }}.ipynb"
 
       - name: Convert to HTML

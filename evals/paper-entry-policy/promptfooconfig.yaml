@@ -1,0 +1,119 @@
+# yaml-language-server: $schema=https://promptfoo.dev/config-schema.json
+description: Paper entry policy at the broker submission boundary
+prompts:
+  - "{{case.scenario}}"
+providers:
+  - id: file://provider.py
+    label: Real entry guard with simulated broker state
+commandLineOptions:
+  maxConcurrency: 1
+defaultTest:
+  assert:
+    - type: equals
+      value: "{{case.expected}}"
+tests:
+  - vars:
+      case:
+        scenario: Flat QQQ account allows a directional call
+        expected: entry_allowed:1
+  - vars:
+      case:
+        scenario: Open QQQ put blocks a call at a different strike and expiry
+        positions: [{symbol: QQQ260930P00745000, qty: 4}]
+        expected: underlying_exposure:0
+  - vars:
+      case:
+        scenario: Open QQQ call blocks a put
+        contract_type: put
+        positions: [{symbol: QQQ260930C00745000, qty: 5}]
+        expected: underlying_exposure:0
+  - vars:
+      case:
+        scenario: Open QQQ call blocks another call
+        positions: [{symbol: QQQ260930C00745000, qty: 5}]
+        expected: underlying_exposure:0
+  - vars:
+      case:
+        scenario: Accepted QQQ put buy blocks a call
+        orders: [{symbol: QQQ260930P00745000, side: buy, status: accepted}]
+        expected: underlying_exposure:0
+  - vars:
+      case:
+        scenario: Partially filled QQQ call buy blocks a put
+        contract_type: put
+        orders: [{symbol: QQQ260930C00745000, side: buy, status: partially_filled}]
+        expected: underlying_exposure:0
+  - vars:
+      case:
+        scenario: Cancel request does not release exposure before broker confirmation
+        orders: [{symbol: QQQ260930P00745000, side: buy, status: pending_cancel}]
+        expected: underlying_exposure:0
+  - vars:
+      case:
+        scenario: Exact held contract cannot be retried
+        positions: [{symbol: QQQ261007C00748000, qty: 1}]
+        expected: duplicate_option_contract:0
+  - vars:
+      case:
+        scenario: Another underlying does not block a free QQQ slot
+        positions: [{symbol: SPY260930P00600000, qty: 1}]
+        expected: entry_allowed:1
+  - vars:
+      case:
+        scenario: Exit sell order does not count as a pending entry
+        orders: [{symbol: QQQ260930P00745000, side: sell, status: accepted}]
+        expected: entry_allowed:1
+  - vars:
+      case:
+        scenario: Canceled buy order no longer blocks entry
+        orders: [{symbol: QQQ260930P00745000, side: buy, status: canceled}]
+        expected: entry_allowed:1
+  - vars:
+      case:
+        scenario: Unknown broker position state fails closed
+        broker_position_error: true
+        expected: broker_position_query_failed:0
+  - vars:
+      case:
+        scenario: Unknown broker order state fails closed
+        broker_order_error: true
+        expected: broker_order_query_failed:0
+  - vars:
+      case:
+        scenario: Existing stopout cooldown still blocks entry
+        stopout: true
+        expected: stopout_cooldown:0
+  - vars:
+      case:
+        scenario: Pending entries count toward the three position cap
+        positions: [{symbol: SPY260930P00600000, qty: 1}, {symbol: IWM260930C00250000, qty: 1}]
+        orders: [{symbol: SPY261007C00600000, side: buy, status: accepted}]
+        expected: max_concurrent_trades:0
+  - vars:
+      case:
+        scenario: AAPL is observation only
+        underlying: AAPL
+        expected: monitor_only_symbol:0
+  - vars:
+      case:
+        scenario: MSFT is observation only
+        underlying: MSFT
+        expected: monitor_only_symbol:0
+  - vars:
+      case:
+        scenario: GOOG is observation only
+        underlying: GOOG
+        expected: monitor_only_symbol:0
+  - vars:
+      case:
+        scenario: TSLA remains observation only even when explicitly requested for entry
+        underlying: TSLA
+        entry_symbols: [SPY, QQQ, IWM, TSLA]
+        expected: monitor_only_symbol:0
+  - vars:
+      case:
+        scenario: Explicit local promotion requires removal from the observation list
+        underlying: TSLA
+        entry_symbols: [SPY, QQQ, IWM, TSLA]
+        monitor_symbols: [AAPL, MSFT, GOOG]
+        expected: entry_allowed:1

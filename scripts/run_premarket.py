@@ -22,7 +22,7 @@ if str(PROJECT_ROOT) not in sys.path:
 
 from src.premarket.bias_gatherer import gather_premarket_bias, save_premarket_context
 from src.premarket.snapshot_builder import build_premarket_snapshots
-from src.core.config import Settings
+from src.core.config import Settings, normalize_symbols
 from src.data.storage import Storage
 from src.utils.notifications import send_discord_alert
 
@@ -48,7 +48,9 @@ def main():
     
     # Get symbols
     settings = Settings.load()
-    symbols = args.symbols or settings.trading.watchlist
+    if args.symbols:
+        settings.trading.watchlist = normalize_symbols(args.symbols)
+    symbols = settings.trading.monitoring_symbols()
     
     print(f"=" * 60)
     print(f"Premarket Pipeline for {date_str}")
@@ -95,16 +97,22 @@ def main():
             )
         ]
         available_count = len(premarket_context.symbols) - len(unavailable_bias)
+        unavailable_entry_bias = [
+            (sym, reason) for sym, reason in unavailable_bias if settings.trading.allows_entry(sym)
+        ]
         print(
             f"[OK] Gathered premarket context for {len(premarket_context.symbols)} symbols "
             f"({available_count} with ML bias, {len(unavailable_bias)} degraded)"
         )
         if unavailable_bias:
             details = "; ".join(f"{sym}: {reason}" for sym, reason in unavailable_bias)
-            print(f"[WARN] Premarket degraded mode: {details}")
+            print(f"[INFO] Symbols without ML bias: {details}")
+        if unavailable_entry_bias:
+            details = "; ".join(f"{sym}: {reason}" for sym, reason in unavailable_entry_bias)
+            print(f"[WARN] Entry symbols without ML bias: {details}")
             send_discord_alert(
                 f"Premarket degraded mode for {date_str}: "
-                f"{len(unavailable_bias)}/{len(premarket_context.symbols)} symbols without ML bias. "
+                f"{len(unavailable_entry_bias)} entry symbols without ML bias. "
                 f"Live loop will continue. {details[:500]}"
             )
         
@@ -184,7 +192,7 @@ def main():
         
         print(f"[OK] Saved combined output to {output_path}")
         print("\n" + "=" * 60)
-        if unavailable_bias:
+        if unavailable_entry_bias:
             print("Premarket pipeline completed in degraded mode; artifact is available for live loop.")
         else:
             print("Premarket pipeline completed successfully!")

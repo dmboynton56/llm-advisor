@@ -39,6 +39,23 @@ def _trade(**overrides):
     return base
 
 
+def test_observation_signals_do_not_inflate_the_trading_funnel() -> None:
+    events = [
+        {"event_type": "signal_detected", "details": {"signal_uid": "entry-1"}},
+        {"event_type": "validation_approved", "details": {"signal_uid": "entry-1"}},
+        {"event_type": "monitor_signal_detected", "details": {"signal_uid": "monitor-1"}},
+        {"event_type": "signal_outcome", "details": {"signal_uid": "monitor-1", "outcome": "monitor_only"}},
+    ]
+    funnel = execution_funnel(events)
+    assert funnel["stages"]["signals"] == 1
+    assert funnel["llm_approval_rate"] == 1.0
+    signals = signal_level_funnel(events)
+    assert signals["detected"] == 1
+    assert signals["execution_guard_failed"] == 0
+    assert signals["execution_failed"] == 0
+    assert signals["terminal_outcomes"]["monitor_only"] == 1
+
+
 FIXTURE_TRADES = [
     _trade(trade_uid="t1", order_id="o1", pnl=50.0),
     _trade(trade_uid="t2", order_id="o2", pnl=-30.0, exit_reason="option_stop_loss"),

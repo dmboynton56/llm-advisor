@@ -8,14 +8,36 @@ from dotenv import load_dotenv
 load_dotenv()
 
 
+DEFAULT_ENTRY_SYMBOLS = ("SPY", "QQQ", "IWM")
+DEFAULT_MONITOR_ONLY_SYMBOLS = ("AAPL", "MSFT", "GOOG", "TSLA")
+
+
+def normalize_symbols(symbols: List[str]) -> List[str]:
+    """Normalize a symbol list without changing its order."""
+    return list(dict.fromkeys(symbol.strip().upper() for symbol in symbols if symbol.strip()))
+
+
 class TradingSettings(BaseModel):
-    watchlist: List[str] = Field(default=["SPY", "QQQ", "IWM", "NVDA", "TSLA"])
+    watchlist: List[str] = Field(default_factory=lambda: list(DEFAULT_ENTRY_SYMBOLS))
+    monitor_only_symbols: List[str] = Field(default_factory=lambda: list(DEFAULT_MONITOR_ONLY_SYMBOLS))
     trading_window_start: str = "09:30"
     trading_window_end: str = "15:30"
     end_of_day_close_time: str = "15:50"
     max_concurrent_trades: int = Field(default=3, ge=1, le=20)
     instrument: str = Field(default="options")
     allow_stock_fallback: bool = False
+
+    def monitoring_symbols(self) -> List[str]:
+        """Include observation symbols even when the scheduler passes an entry list."""
+        return normalize_symbols([*self.watchlist, *self.monitor_only_symbols])
+
+    def allows_entry(self, symbol: str) -> bool:
+        """An explicit entry list never promotes a monitor-only symbol."""
+        symbol = symbol.strip().upper()
+        return (
+            symbol in normalize_symbols(self.watchlist)
+            and symbol not in normalize_symbols(self.monitor_only_symbols)
+        )
 
 
 class RiskSettings(BaseModel):
@@ -101,7 +123,10 @@ class Settings(BaseModel):
         # Load from .env - can be extended to load from config file
         return cls(
             trading=TradingSettings(
-                watchlist=os.getenv("WATCHLIST", "SPY,QQQ,IWM,NVDA,TSLA").split(","),
+                watchlist=normalize_symbols(os.getenv("WATCHLIST", ",".join(DEFAULT_ENTRY_SYMBOLS)).split(",")),
+                monitor_only_symbols=normalize_symbols(
+                    os.getenv("MONITOR_ONLY_SYMBOLS", ",".join(DEFAULT_MONITOR_ONLY_SYMBOLS)).split(",")
+                ),
                 trading_window_start=os.getenv("TRADING_WINDOW_START", "09:30"),
                 trading_window_end=os.getenv("TRADING_WINDOW_END", "15:30"),
                 end_of_day_close_time=os.getenv("END_OF_DAY_CLOSE_TIME", "15:50"),

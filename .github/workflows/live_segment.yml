@@ -36,6 +36,7 @@ jobs:
       ALPACA_SECRET_KEY: ${{ secrets.ALPACA_SECRET_KEY }}
       ALPACA_PAPER_TRADING: true
       TRADING_INSTRUMENT: options
+      MONITOR_ONLY_SYMBOLS: AAPL,MSFT,GOOG,TSLA
       OPTIONS_PAPER_ONLY: true
       ALLOW_STOCK_FALLBACK: false
       OPTIONS_STRATEGY_TYPE: single_long
@@ -43,8 +44,8 @@ jobs:
       OPTION_DTE_MAX: 14
       OPTION_DELTA_MIN: 0.35
       OPTION_DELTA_MAX: 0.55
-      # Paper sizing trial: larger individual orders while keeping gross
-      # planned premium exposure near the prior 2% x 3 = 6% profile.
+      # Paper sizing trial: up to three positions, each capped at 3% / $3,000.
+      # Gross planned premium exposure is at most 9% / $9,000.
       MAX_RISK_PER_TRADE_PERCENT: 3.0
       # Five-session paper-only late-session fill recovery canary.
       MAX_CONCURRENT_TRADES: 3
