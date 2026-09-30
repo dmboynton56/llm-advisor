@@ -36,16 +36,29 @@ The default execution mode is options-first paper trading. Stock execution is
 opt-in. The system does not trade live money.
 
 The first coverage expansion follows AAPL, MSFT, GOOG, and TSLA alongside
-SPY, QQQ, and IWM. The four stocks are observation only: price/news context,
-technical states, and detected signals are recorded while paper entries stay
-with the three ETFs. A ticker with an open option or pending buy cannot receive
-another entry, even in the opposite direction.
+SPY, QQQ, and IWM. On October 1 and October 2, 2026, the four stocks run
+full decision previews: validation, option selection, risk, buying power, and
+broker exposure checks. Proposed contracts and reasons to skip trades are
+recorded without placing orders. From October 5, they are eligible for paper
+entries under the same limits. A ticker with an open option or pending buy
+cannot receive another entry, even in the opposite direction.
 
 `WATCHLIST` (or `--symbols`) selects entry candidates. `MONITOR_ONLY_SYMBOLS`
-adds observation symbols and blocks their entries even if they also appear in
-the entry list. Both Premarket and Live Loop append this observation list, so
-the scheduler's existing inputs continue to work. See the
+adds tracked symbols and blocks their entries even if they also appear in
+the entry list. The explicit `EXPERIMENTAL_PAPER_START` date promotes only
+AAPL, MSFT, GOOG, and TSLA after their trial; leaving it unset keeps them in
+preview mode. Those four experiments use news and technical context while
+trained ML bias models are unavailable, with that limitation recorded as a
+warning. Core ETFs still require available ML bias. Both Premarket and Live
+Loop append the tracked list, so the scheduler's existing inputs continue to
+work. See the
 [options paper runbook](docs/options_paper_runbook.md) for promotion and checks.
+
+The Overview starts with actual broker equity (cash plus open-position value),
+with Day, Week, Month, and Year ranges. P&L by exit date stays below it. Booked
+lifecycle P&L, broker daily P&L, and their gap remain separately available under
+“Why P&L numbers differ.” The equity curve does not reconstruct balances from
+realized trade results.
 
 ### Built with
 

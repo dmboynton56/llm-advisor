@@ -23,6 +23,8 @@ jobs:
       GCP_SA_KEY: ${{ secrets.GCP_SA_KEY }}
       STORAGE_ENV: bq
       MONITOR_ONLY_SYMBOLS: AAPL,MSFT,GOOG,TSLA
+      # Oct 1 + Oct 2: full decision previews. Oct 5: eligible for paper entries.
+      EXPERIMENTAL_PAPER_START: '2026-10-05'
 
     steps:
       - name: Checkout Code

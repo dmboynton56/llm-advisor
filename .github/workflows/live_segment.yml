@@ -37,6 +37,8 @@ jobs:
       ALPACA_PAPER_TRADING: true
       TRADING_INSTRUMENT: options
       MONITOR_ONLY_SYMBOLS: AAPL,MSFT,GOOG,TSLA
+      # Oct 1 + Oct 2: full decision previews. Oct 5: eligible for paper entries.
+      EXPERIMENTAL_PAPER_START: '2026-10-05'
       OPTIONS_PAPER_ONLY: true
       ALLOW_STOCK_FALLBACK: false
       OPTIONS_STRATEGY_TYPE: single_long

@@ -43,7 +43,7 @@ function daysAgoIso(days: number): string {
 export async function getAccountSnapshots(days = 90): Promise<AccountSnapshot[]> {
   const rows = await supabaseSelectPaged<AccountSnapshot>(
     "llm_advisor_account_snapshots",
-    `select=snapshot_date,captured_at,equity,last_equity,buying_power,daily_pnl,daily_pnl_pct,source&snapshot_date=gte.${daysAgoIso(days)}&order=captured_at.asc`,
+    `select=snapshot_date,captured_at,equity,last_equity,buying_power,daily_pnl,daily_pnl_pct,source&source=in.(alpaca_paper,paper_live_loop)&snapshot_date=gte.${daysAgoIso(days)}&order=captured_at.asc,source.asc`,
   );
   return rows ?? [];
 }
@@ -571,6 +571,14 @@ export async function getDecisionLog(limit = 12): Promise<DecisionLog> {
     approved: countOf("validation_approved"),
     filled: countOf("execution_succeeded"),
   };
+}
+
+export async function getShadowDecisions(limit = 8): Promise<DecisionEvent[]> {
+  const rows = await supabaseSelect<DecisionEvent>(
+    "llm_advisor_order_events",
+    `select=run_date,event_ts,event_type,symbol,setup_type,side,details&event_type=eq.shadow_trade_decision&order=event_ts.desc&limit=${limit}`,
+  );
+  return rows ?? [];
 }
 
 export async function getLiveState(

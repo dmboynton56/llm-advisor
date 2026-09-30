@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 import sys
+from datetime import date
 from pathlib import Path
 
 import pytest
@@ -24,6 +25,21 @@ def test_explicit_entry_list_does_not_promote_monitor_symbols() -> None:
     assert trading.allows_entry("SPY")
     assert not trading.allows_entry("TSLA")
     assert not trading.allows_entry("UNKNOWN")
+
+
+def test_only_named_stock_experiments_promote_on_configured_session_date() -> None:
+    trading = TradingSettings(
+        experimental_paper_start=date(2026, 10, 2),
+        monitor_only_symbols=["AAPL", "MSFT", "GOOG", "TSLA", "NVDA"],
+    )
+    for symbol in ("AAPL", "MSFT", "GOOG", "TSLA"):
+        assert not trading.allows_entry(symbol, date(2026, 10, 1))
+        assert trading.allows_entry(symbol.lower(), date(2026, 10, 2))
+        assert not trading.requires_ml_bias(symbol)
+    assert not trading.allows_entry("NVDA", date(2026, 10, 2))
+    assert trading.requires_ml_bias("SPY")
+    assert trading.requires_ml_bias("NVDA")
+    assert trading.allows_entry("SPY", date(2026, 10, 1))
 
 
 def test_symbol_settings_normalize_and_allow_explicit_promotion(monkeypatch: pytest.MonkeyPatch) -> None:
