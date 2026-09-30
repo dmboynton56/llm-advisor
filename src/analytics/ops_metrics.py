@@ -32,6 +32,8 @@ _ET = ZoneInfo("America/New_York")
 _GUARD_FAILURE_REASONS = {
     "duplicate_option_contract",
     "underlying_direction_exposure",
+    "underlying_exposure",
+    "monitor_only_symbol",
     "max_concurrent_trades",
     "stopout_cooldown",
 }

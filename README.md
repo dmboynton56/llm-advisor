@@ -35,6 +35,18 @@ the weekday workflows. Discord sends alerts and heartbeat updates.
 The default execution mode is options-first paper trading. Stock execution is
 opt-in. The system does not trade live money.
 
+The first coverage expansion follows AAPL, MSFT, GOOG, and TSLA alongside
+SPY, QQQ, and IWM. The four stocks are observation only: price/news context,
+technical states, and detected signals are recorded while paper entries stay
+with the three ETFs. A ticker with an open option or pending buy cannot receive
+another entry, even in the opposite direction.
+
+`WATCHLIST` (or `--symbols`) selects entry candidates. `MONITOR_ONLY_SYMBOLS`
+adds observation symbols and blocks their entries even if they also appear in
+the entry list. Both Premarket and Live Loop append this observation list, so
+the scheduler's existing inputs continue to work. See the
+[options paper runbook](docs/options_paper_runbook.md) for promotion and checks.
+
 ### Built with
 
 - Python, pandas, NumPy, scikit-learn, and XGBoost

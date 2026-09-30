@@ -113,6 +113,67 @@ def test_execute_trade_returns_none_without_manager() -> None:
     assert execute_trade(sig, st, None) is None
 
 
+def test_loop_records_monitor_signals_without_attempting_a_trade(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    import sys
+    from types import SimpleNamespace
+    from src.core.config import Settings
+    from src.live import loop
+
+    settings = Settings()
+    requested = []
+    attempted = []
+    states = {symbol: _minimal_state(symbol) for symbol in ("SPY", "TSLA")}
+    bar = {"t": "2026-09-29T13:30:00+00:00", "c": 100.0}
+    cache = {symbol: {"bars_1m": [bar], "bars_5m": []} for symbol in states}
+
+    def fetch(symbols, *args):
+        requested.append(symbols)
+        return cache
+
+    def no_premarket(*args):
+        raise FileNotFoundError
+
+    def signal_for_state(state, **kwargs):
+        return SignalEvent(
+            symbol=state.symbol, setup_type="MR", side="long", entry_price=100.0,
+            z_score=-0.5, thresholds_used={}, timestamp=datetime(2026, 9, 29, 13, 30, tzinfo=timezone.utc),
+        )
+
+    def execute(signal, state, manager):
+        attempted.append(signal.symbol)
+        return {"success": False, "error": "fixture_block", "terminal_for_signal": True}
+
+    monkeypatch.setattr(loop.Settings, "load", lambda: settings)
+    monkeypatch.setattr(loop, "AlpacaDataClient", lambda: SimpleNamespace(fetch_window_bars=fetch))
+    monkeypatch.setattr(loop, "load_premarket_context", no_premarket)
+    monkeypatch.setattr(loop, "resolve_premarket_context_path", lambda *args: None)
+    monkeypatch.setattr(loop, "create_llm_client", lambda *args: object())
+    monkeypatch.setattr(loop, "seed_states_from_snapshots", lambda **kwargs: states)
+    monkeypatch.setattr(loop, "compute_features", lambda *args: SimpleNamespace(mu=100.0, sigma=1.0, z_score=-0.5))
+    monkeypatch.setattr(loop, "evaluate_thresholds", signal_for_state)
+    monkeypatch.setattr("src.execution.mock_order_manager.execute_trade_from_signal", execute)
+    monkeypatch.setattr(loop, "send_discord_alert", lambda message: pytest.fail(message))
+    monkeypatch.setattr(sys, "argv", [
+        "run_live_loop.py", "--date", "2026-09-29", "--test", "--fast", "40000",
+        "--symbols", "SPY", "QQQ", "IWM", "--output", str(tmp_path),
+    ])
+
+    loop.main()
+
+    assert requested[0] == settings.trading.monitoring_symbols()
+    assert attempted == ["SPY"]
+    assert states["TSLA"].trade is None
+    events = [json.loads(line) for line in (tmp_path / "order_events.jsonl").read_text().splitlines()]
+    monitor_events = [event for event in events if event["symbol"] == "TSLA"]
+    assert [event["event_type"] for event in monitor_events] == ["monitor_signal_detected", "signal_outcome"]
+    assert monitor_events[-1]["details"]["outcome"] == "monitor_only"
+    assert monitor_events[-1]["details"]["execution_attempts"] == 0
+    ticks = [json.loads(line) for line in (tmp_path / "live_loop_log.jsonl").read_text().splitlines()]
+    assert [signal["symbol"] for signal in ticks[0]["signals"]] == ["SPY"]
+
+
 def test_build_live_session_summary_from_sqlite(tmp_path: Path) -> None:
     db_path = tmp_path / "t.db"
     storage = Storage.create(env="dev", db_path=str(db_path))

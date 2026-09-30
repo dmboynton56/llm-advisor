@@ -13,12 +13,14 @@ TRADING_INSTRUMENT=options
 OPTIONS_PAPER_ONLY=true
 ALLOW_STOCK_FALLBACK=false
 OPTIONS_STRATEGY_TYPE=single_long
+WATCHLIST=SPY,QQQ,IWM
+MONITOR_ONLY_SYMBOLS=AAPL,MSFT,GOOG,TSLA
 OPTION_DTE_MIN=7
 OPTION_DTE_MAX=14
 OPTION_DELTA_MIN=0.35
 OPTION_DELTA_MAX=0.55
 MAX_RISK_PER_TRADE_PERCENT=3.0
-MAX_CONCURRENT_TRADES=2
+MAX_CONCURRENT_TRADES=3
 MAX_OPTION_PREMIUM_PER_TRADE=3000
 OPTION_FALLBACK_MAX_PREMIUM_PER_TRADE=3000
 MAX_OPTION_BID_ASK_SPREAD_PCT=0.15
@@ -90,11 +92,10 @@ legacy counterfactual before extending the trial.
   and bid/ask spread at most 15 percent.
 - Order type: paper limit buy to open at midpoint plus configured buffer.
 - Max loss: premium paid.
-- Current paper sizing trial: at most two concurrent positions, a 3 percent
+- Current paper sizing trial: at most three concurrent positions, a 3 percent
   equity premium budget (capped at $3,000) per trade, and a matching $3,000
-  fallback cap. This is approximately 6 percent gross planned premium
-  exposure, matching the prior 2 percent x 3 profile while increasing
-  individual contract counts. The 25 percent premium target, 35 percent
+  fallback cap. The current workflow's late-session canary caps gross planned
+  premium at 9 percent / $9,000. The 25 percent premium target, 35 percent
   premium stop, 48-hour time stop, and end-of-day/DTE safety rules remain in
   force; this sizing change is paper-only.
 - Tiered paper trial: newly filled SPY/QQQ positions with at least four
@@ -107,6 +108,44 @@ Debit spreads are intentionally not enabled yet. The SDK supports multi-leg
 request shapes, but single-leg long premium gives the first clean comparison
 between current STDEV signals and option expression without adding spread
 construction risk.
+
+## Monitoring Expansion
+
+Premarket and Live Loop monitor SPY, QQQ, IWM, AAPL, MSFT, GOOG, and TSLA.
+The scheduler still passes the existing three ETF entry candidates; both
+entrypoints append `MONITOR_ONLY_SYMBOLS` without changing workflow inputs or
+artifact paths. Stock bars remain batched across the universe. Missing bias
+models for observation symbols remain explicit in the premarket artifact and
+do not become fabricated neutral approvals or daily degraded-mode alerts.
+
+Signals for observation symbols emit `monitor_signal_detected` and a terminal
+`signal_outcome` with `outcome=monitor_only`. They are also saved in the
+warehouse signal table. They bypass trade validation, option-chain requests,
+and order submission, and do not enter the trading approval-rate denominator.
+
+Promote a symbol only after reviewing its data and signals, providing its
+trained bias artifacts, adding it to the entry list (`WATCHLIST` or `--symbols`),
+and removing it from `MONITOR_ONLY_SYMBOLS` in both workflow environments.
+An overlap remains observation only. An empty `MONITOR_ONLY_SYMBOLS` environment
+value disables the extra observation list for local experiments/backtests.
+
+Every option buy checks broker positions and pending buys immediately before
+submission. Any open option or pending buy on the same underlying blocks the
+new entry, regardless of call/put, strike, or expiry. A duplicate contract is
+terminal for that signal; selecting another strike cannot bypass the rule.
+Position or open-order lookup failures block entry until broker state is known.
+Existing positions continue through their normal management and exit paths.
+
+Run the local policy gate before merging:
+
+```bash
+python -m pytest tests/unit
+npx --yes promptfoo@0.123.1 eval --config evals/paper-entry-policy/promptfooconfig.yaml \
+  --output evals/paper-entry-policy/results/eval-results.json
+```
+
+The Promptfoo provider exercises the real order-entry boundary with simulated
+broker responses. It makes no broker or LLM network calls.
 
 ## Verification Points
 

@@ -1,0 +1,54 @@
+name: Paper Policy Checks
+
+on:
+  pull_request:
+    paths:
+      - 'src/**'
+      - 'scripts/**'
+      - 'config/**'
+      - 'tests/**'
+      - 'evals/**'
+      - 'requirements.txt'
+      - '.github/workflows/paper_policy_checks.yml'
+      - '.github/workflows/premarket.yml'
+      - '.github/workflows/live_segment.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  policy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      ALPACA_PAPER_TRADING: 'true'
+      OPTIONS_PAPER_ONLY: 'true'
+      PROMPTFOO_PYTHON: python
+      PROMPTFOO_DISABLE_TELEMETRY: '1'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: Install test dependencies
+        run: python -m pip install -r requirements.txt
+      - name: Unit tests
+        run: python -m pytest -q tests/unit
+      - name: Promptfoo paper entry policy
+        run: >-
+          npx --yes promptfoo@0.123.1 eval
+          --config evals/paper-entry-policy/promptfooconfig.yaml
+          --no-cache
+          --no-table --no-progress-bar
+          --output evals/paper-entry-policy/results/eval-results.json
+      - name: Upload policy evaluation
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: paper-entry-policy-eval
+          path: evals/paper-entry-policy/results/
+          retention-days: 14
