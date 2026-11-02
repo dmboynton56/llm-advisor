@@ -85,7 +85,7 @@ class OpenAILLMClient(LLMClient):
             "response_format": {"type": "json_object"},
             "timeout": timeout,
         }
-        if self.reasoning_effort and self.model.startswith(("gpt-5", "o1", "o3", "o4")):
+        if self.reasoning_effort and self.model.startswith(("gpt-5", "gpt-6", "o1", "o3", "o4")):
             request["reasoning_effort"] = self.reasoning_effort
 
         response = self.client.chat.completions.create(**request)

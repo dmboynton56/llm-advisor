@@ -82,6 +82,21 @@ are expected only on days where a paper order is actually submitted.
 
 ## Current Reliability Rules
 
+- LLM provider failures must remain distinguishable from strategy rejections.
+  `validation_error` events carry verdict `error`; they never approve entries.
+  Each segment records actual LLM call/error counts in `session_summary.json`
+  under `llm_health`. A segment with provider errors continues position management
+  through its normal cutoff, writes shutdown telemetry, then exits unsuccessfully.
+  Existing workflow failure handling uploads its artifacts and starts the next
+  segment in `manage_only` mode; EOD still ingests telemetry. `not_checked` means
+  no LLM calls occurred, not that provider access was verified.
+- If LLM calls report `insufficient_quota`, `credit_balance_exhausted`, or
+  "You have no credits remaining", restore billing for the OpenAI project behind
+  the GitHub `OPENAI_API_KEY` secret (or replace that secret with a funded project
+  credential). Keep the configured advisor model and validation enabled. Confirm a subsequent
+  normal scheduled segment has successful LLM calls and no provider errors;
+  an order is expected only when the normal strategy and execution gates pass.
+
 - Alpaca is the source of truth for open live positions at startup. Warehouse
   `positions` rows that Alpaca does not confirm are closed/deleted before
   strategy recovery runs, and the action is written to `order_events.jsonl`.

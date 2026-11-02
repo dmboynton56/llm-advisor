@@ -19,7 +19,11 @@ def test_settings_default_to_openai_gpt_5_4_nano(monkeypatch: pytest.MonkeyPatch
     assert settings.llm.model == "gpt-5.4-nano"
 
 
-def test_openai_client_uses_gpt_5_reasoning_effort(monkeypatch: pytest.MonkeyPatch) -> None:
+@pytest.mark.parametrize("model", ["gpt-5.4-nano", "gpt-6-luna"])
+@pytest.mark.parametrize("effort", ["low", "medium"])
+def test_openai_client_passes_reasoning_effort(
+    monkeypatch: pytest.MonkeyPatch, model: str, effort: str,
+) -> None:
     captured = {}
 
     class FakeCompletions:
@@ -39,14 +43,20 @@ def test_openai_client_uses_gpt_5_reasoning_effort(monkeypatch: pytest.MonkeyPat
     fake_openai.OpenAI = FakeOpenAI
     monkeypatch.setitem(sys.modules, "openai", fake_openai)
 
-    client = OpenAILLMClient(model="gpt-5.4-nano", api_key="test-key")
+    client = OpenAILLMClient(model=model, api_key="test-key", reasoning_effort=effort)
     response = client.call_structured("Return JSON.", {})
 
     assert response.content == {"ok": True}
     assert response.tokens_used == 7
-    assert captured["model"] == "gpt-5.4-nano"
-    assert captured["reasoning_effort"] == "low"
+    assert captured["model"] == model
+    assert captured["reasoning_effort"] == effort
     assert captured["response_format"] == {"type": "json_object"}
+
+
+def test_deployed_model_override_selects_luna(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("LLM_PROVIDER", "openai")
+    monkeypatch.setenv("LLM_MODEL", "gpt-6-luna")
+    assert Settings.load().llm.model == "gpt-6-luna"
 
 
 def test_normalize_structured_content_passes_dict_through() -> None:

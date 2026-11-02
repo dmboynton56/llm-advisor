@@ -51,6 +51,7 @@ def test_llm_validation_parse_failure_rejects_trade() -> None:
     assert result.should_execute is False
     assert result.confidence == 0
     assert result.risk_assessment == "validation_error"
+    assert result.verdict == "error"
 
 
 def test_llm_validation_unwraps_gemini_style_list_response() -> None:

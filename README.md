@@ -63,7 +63,8 @@ realized trade results.
 ### Built with
 
 - Python, pandas, NumPy, scikit-learn, and XGBoost
-- OpenAI gpt-5.4-nano
+- OpenAI GPT-6 Luna (`LLM_MODEL=gpt-6-luna`, low reasoning in scheduled workflows).
+  Local defaults remain `gpt-5.4-nano`; use `LLM_MODEL` to select the deployed model.
 - Alpaca Markets paper trading API
 - Google BigQuery
 - Supabase and Postgres
