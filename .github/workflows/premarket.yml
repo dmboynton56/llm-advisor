@@ -17,6 +17,8 @@ jobs:
       ALPACA_SECRET_KEY: ${{ secrets.ALPACA_SECRET_KEY }}
       ALPACA_DATA_FEED: ${{ vars.ALPACA_DATA_FEED || 'iex' }}
       OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+      LLM_MODEL: gpt-6-luna
+      OPENAI_REASONING_EFFORT: low
       ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
       GOOGLE_API_KEY: ${{ secrets.GOOGLE_API_KEY }}
       GCP_PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}

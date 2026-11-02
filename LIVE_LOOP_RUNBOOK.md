@@ -93,7 +93,7 @@ are expected only on days where a paper order is actually submitted.
 - If LLM calls report `insufficient_quota`, `credit_balance_exhausted`, or
   "You have no credits remaining", restore billing for the OpenAI project behind
   the GitHub `OPENAI_API_KEY` secret (or replace that secret with a funded project
-  credential). Keep `gpt-5.4-nano` and validation enabled. Confirm a subsequent
+  credential). Keep the configured advisor model and validation enabled. Confirm a subsequent
   normal scheduled segment has successful LLM calls and no provider errors;
   an order is expected only when the normal strategy and execution gates pass.
 

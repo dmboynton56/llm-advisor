@@ -1,6 +1,6 @@
 # LLM Advisor — agent brief
 
-Live **options paper-trading advisor dashboard**. Rules + STDEV signals own entries; `gpt-5.4-nano` reviews context and thresholds. Alpaca paper executes. Next.js ops UI at `web/` reads Supabase; BigQuery holds run detail. No live money.
+Live **options paper-trading advisor dashboard**. Rules + STDEV signals own entries; scheduled `gpt-6-luna` reviews context and thresholds. Alpaca paper executes. Next.js ops UI at `web/` reads Supabase; BigQuery holds run detail. No live money.
 
 Default implementer model: **grok-4.6**. Do not default to Sonnet.
 
@@ -20,7 +20,9 @@ Dashboard and EOD must **show both** booked lifecycle PnL and broker (Alpaca `da
 
 ## Runtime model
 
-Advisor LLM is **`gpt-5.4-nano`** (`src/core/config.py`, `config/settings.py`, README). Override only via `LLM_MODEL`. Parse errors are not approvals.
+Advisor code default is **`gpt-5.4-nano`** (`src/core/config.py`, `config/settings.py`).
+Scheduled Premarket and Live Loop use **`gpt-6-luna`** through `LLM_MODEL`, with
+`OPENAI_REASONING_EFFORT=low`. Override only via `LLM_MODEL`. Parse errors are not approvals.
 
 ## Non-goals
 

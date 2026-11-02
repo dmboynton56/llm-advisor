@@ -88,6 +88,8 @@ jobs:
       OPTION_ALLOW_OVERNIGHT: false
       OPTION_EOD_FLATTEN_MAX_DTE: 0
       OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+      LLM_MODEL: gpt-6-luna
+      OPENAI_REASONING_EFFORT: low
       ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
       GOOGLE_API_KEY: ${{ secrets.GOOGLE_API_KEY }}
       GCP_PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
