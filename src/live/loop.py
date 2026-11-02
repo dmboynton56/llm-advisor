@@ -39,6 +39,7 @@ from src.live.state_manager import SymbolState, TradePlan
 from src.live.feature_computer import compute_features
 from src.live.threshold_evaluator import evaluate_thresholds, SignalEvent
 from src.analysis.llm_client import create_llm_client
+from src.live.llm_health import MonitoredLLMClient
 from src.analysis.market_analyzer import MarketAnalyzer
 from src.analysis.trade_validator import validate_trade_with_llm
 from src.live.shadow_trading import evaluate_shadow_trade
@@ -1479,7 +1480,7 @@ def main():
     }
     
     # Initialize market analyzer
-    llm_client = create_llm_client(settings.llm.provider, settings.llm.model)
+    llm_client = MonitoredLLMClient(create_llm_client(settings.llm.provider, settings.llm.model))
     market_analyzer = MarketAnalyzer(llm_client, interval_minutes=settings.llm.market_analysis_interval_minutes)
     last_market_analysis: Optional[datetime] = None
     
@@ -1707,6 +1708,7 @@ def main():
             storage=storage,
             order_manager=order_manager,
         )
+        llm_client.finalize(output_dir / "session_summary.json")
 
     while True:
         if is_backtest:
@@ -2230,11 +2232,11 @@ def main():
                                     lifecycle["revalidation_timestamps"].append(current_utc.isoformat())
                                 elif lifecycle.get("approved_at") is None and last_validation.should_execute:
                                     lifecycle["approved_at"] = current_utc.isoformat()
-                                validation_event = "validation_approved" if last_validation.should_execute else "validation_rejected"
+                                validation_event = f"validation_{last_validation.verdict}"
                                 reasoning_str = str(last_validation.reasoning or "")
                                 logger.info(
                                     "LLM VALIDATION %s %s (confidence: %s%%): %s",
-                                    "APPROVED" if last_validation.should_execute else "REJECTED",
+                                    last_validation.verdict.upper(),
                                     symbol,
                                     last_validation.confidence,
                                     reasoning_str[:150],
@@ -2249,7 +2251,7 @@ def main():
                                     details={
                                         "signal_uid": signal_uid,
                                         "should_execute": last_validation.should_execute,
-                                        "verdict": "approved" if last_validation.should_execute else "rejected",
+                                        "verdict": last_validation.verdict,
                                         "confidence": last_validation.confidence,
                                         "reasoning": last_validation.reasoning,
                                         "risk_assessment": last_validation.risk_assessment,
@@ -2279,8 +2281,10 @@ def main():
                                     emit_signal_outcome(
                                         signal,
                                         state,
-                                        "validation_rejected",
-                                        "rejected_after_revalidation" if force_revalidation else "rejected_by_validation",
+                                        validation_event,
+                                        "validation_failed" if last_validation.verdict == "error" else (
+                                            "rejected_after_revalidation" if force_revalidation else "rejected_by_validation"
+                                        ),
                                         current_utc,
                                         validation_phase=validation_phase,
                                     )

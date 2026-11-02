@@ -29,6 +29,8 @@ class TradeValidation:
     @property
     def verdict(self) -> str:
         """Stable, display-friendly decision label for downstream evidence."""
+        if self.risk_assessment == "validation_error":
+            return "error"
         return "approved" if self.should_execute else "rejected"
 
 
