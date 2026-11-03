@@ -46,11 +46,14 @@ jobs:
       - name: Verify daily bias model artifacts
         run: |
           set -euo pipefail
-          for s in SPY QQQ IWM; do
-            test -f "models/${s}_daily_bias.pkl"
-            test -f "models/${s}_label_encoder.pkl"
-          done
-          echo "OK: bias model files present"
+          python - <<'PY'
+          from src.data_processing.daily_bias_computing import _load_model_and_encoder
+          for symbol in ("SPY", "QQQ", "IWM", "AAPL", "MSFT", "GOOG", "TSLA"):
+              model, _, features = _load_model_and_encoder(symbol)
+              if not getattr(model, "bias_metadata_", None):
+                  raise SystemExit(f"Missing trained bias provenance: {symbol}")
+              print(f"OK: {symbol} trained model, {len(features)} features")
+          PY
 
       - name: Check market open
         run: python scripts/check_market_open.py

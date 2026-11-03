@@ -47,9 +47,10 @@ cannot receive another entry, even in the opposite direction.
 adds tracked symbols and blocks their entries even if they also appear in
 the entry list. The explicit `EXPERIMENTAL_PAPER_START` date promotes only
 AAPL, MSFT, GOOG, and TSLA after their trial; leaving it unset keeps them in
-preview mode. Those four experiments use news and technical context while
-trained ML bias models are unavailable, with that limitation recorded as a
-warning. Core ETFs still require available ML bias. Both Premarket and Live
+preview mode. All seven tickers have historically trained daily-bias models;
+see [model provenance and validation](models/README.md). The four stock
+experiments retain a news/technical fallback if ML is unavailable, with that
+limitation recorded as a warning. Core ETFs still require available ML bias. Both Premarket and Live
 Loop append the tracked list, so the scheduler's existing inputs continue to
 work. See the
 [options paper runbook](docs/options_paper_runbook.md) for promotion and checks.

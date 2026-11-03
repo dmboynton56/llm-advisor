@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Compute SAME-DAY daily bias at/just after the 9:30 ET open, per symbol,
+Compute SAME-DAY closing-bias priors from a fixed 09:00 ET information boundary,
 then log independent price snapshots and cross-market context for LLM synthesis.
 
 Outputs (ET date under data/daily_news/YYYY-MM-DD/raw/):
@@ -14,6 +14,7 @@ import os
 import sys
 import json
 import pickle
+import hashlib
 from pathlib import Path
 from datetime import datetime, timedelta, timezone
 import time
@@ -33,6 +34,7 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.append(str(PROJECT_ROOT))
 
 from config.settings import WATCHLIST  # noqa: E402
+from src.premarket.bias_features import compute_bias_features as _compute_open_features_today
 
 ET_TZ = "US/Eastern"
 SESSION_OPEN = "09:30"
@@ -113,157 +115,29 @@ def _init_alpaca():
     return data, feed
 
 # ---------------------- Data fetch ---------------------- #
-def _fetch_today_frames(symbol: str, data_client, feed: DataFeed):
+def _fetch_today_frames(symbol: str, data_client, feed: DataFeed, snapshot_only=False):
     """Fetch Day, 1m, 5m, 1h, 4h up to 'now' (UTC), returned in ET tz."""
     now_utc = datetime.now(timezone.utc)
     start_utc = now_utc - timedelta(days=120)
 
-    def _req(tf):
+    def _req(tf, daily=False):
         return StockBarsRequest(
             symbol_or_symbols=[symbol],
             timeframe=tf,
-            start=start_utc,
+            start=(now_utc - timedelta(days=3) if snapshot_only and not daily else start_utc),
             end=now_utc,
             feed=feed,
-            adjustment=Adjustment.RAW,
+            adjustment=Adjustment.SPLIT,
         )
 
-    ddf  = _as_single_symbol_df(data_client.get_stock_bars(_req(TimeFrame.Day)).df, symbol).tz_convert(ET_TZ)
+    ddf  = _as_single_symbol_df(data_client.get_stock_bars(_req(TimeFrame.Day, daily=True)).df, symbol).tz_convert(ET_TZ)
     m1df = _as_single_symbol_df(data_client.get_stock_bars(_req(TimeFrame.Minute)).df, symbol).tz_convert(ET_TZ)
     m5df = _as_single_symbol_df(data_client.get_stock_bars(_req(TimeFrame(5, TimeFrameUnit.Minute))).df, symbol).tz_convert(ET_TZ)
-    h1df = _as_single_symbol_df(data_client.get_stock_bars(_req(TimeFrame.Hour)).df, symbol).tz_convert(ET_TZ)
-    h4df = _as_single_symbol_df(data_client.get_stock_bars(_req(TimeFrame(4, TimeFrameUnit.Hour))).df, symbol).tz_convert(ET_TZ)
+    h1df = pd.DataFrame() if snapshot_only else _as_single_symbol_df(data_client.get_stock_bars(_req(TimeFrame.Hour)).df, symbol).tz_convert(ET_TZ)
+    h4df = pd.DataFrame() if snapshot_only else _as_single_symbol_df(data_client.get_stock_bars(_req(TimeFrame(4, TimeFrameUnit.Hour))).df, symbol).tz_convert(ET_TZ)
     return ddf, m1df, m5df, h1df, h4df
 
 # ---------------------- Training-aligned open snapshot (ML priors) ---------------------- #
-def _daily_atr14_pct(ddf_et: pd.DataFrame, up_to_date) -> float:
-    hist = ddf_et[ddf_et.index.date < up_to_date].tail(60).copy()
-    if hist.empty or len(hist) < 15:
-        return np.nan
-    prev_close = hist["close"].shift(1)
-    tr = np.maximum(hist["high"] - hist["low"],
-                    np.maximum((hist["high"] - prev_close).abs(),
-                               (hist["low"] - prev_close).abs()))
-    atr14 = tr.rolling(14).mean().iloc[-1]
-    ref = hist["close"].iloc[-1]
-    return float((atr14 / max(ref, 1e-10)) * 100.0)
-
-def _first_rth_minute(mdf_et: pd.DataFrame, day_date):
-    rth = _rth_slice(mdf_et, day_date)
-    if rth.empty:
-        return None
-    return rth.iloc[0]
-
-def _compute_open_features_today(symbol: str, ddf_et, m1df_et, h1df, h4df, feature_names):
-    today = pd.Timestamp.now(tz=ET_TZ).date()
-    ddf_prior = ddf_et[ddf_et.index.date < today]
-    if len(ddf_prior) < 2:
-        return None, {"error": "insufficient_daily_history"}, None
-
-    prev  = ddf_prior.tail(1)
-    prev2 = ddf_prior.tail(2).head(1)
-
-    prev_close = float(prev.iloc[-1]["close"])
-    prev_high  = float(prev.iloc[-1]["high"])
-    prev_low   = float(prev.iloc[-1]["low"])
-    prev_open  = float(prev.iloc[-1]["open"])
-    prev_range = max(prev_high - prev_low, 1e-10)
-    prev_day_body_pct = (abs(prev.iloc[-1]["close"] - prev_open) / prev_range) * 100.0
-    prev_day_bull = int(prev.iloc[-1]["close"] > prev_open)
-
-    prev2_high = float(prev2.iloc[-1]["high"])
-    prev2_low  = float(prev2.iloc[-1]["low"])
-    prev_day_swept_prior_high = int(prev_high > prev2_high)
-    prev_day_swept_prior_low  = int(prev_low < prev2_low)
-
-    pre = _premarket_slice(m1df_et, today)
-    if pre.empty:
-        pre_hi = np.nan; pre_lo = np.nan; pre_vol = 0.0
-        pre_first = None; pre_last = None
-    else:
-        pre_hi = float(pre["high"].max())
-        pre_lo = float(pre["low"].min())
-        pre_vol = float(pre["volume"].sum())
-        pre_first = pre.iloc[0]; pre_last = pre.iloc[-1]
-
-    pre_rng_pct = ((pre_hi - pre_lo) / max(prev_close, 1e-10) * 100.0
-                   if not (np.isnan(pre_hi) or np.isnan(pre_lo)) else 0.0)
-    pre_close_vs_prev_close_pct = (((float(pre_last["close"]) - prev_close) / max(prev_close, 1e-10) * 100.0)
-                                   if pre_last is not None else 0.0)
-    pre_return_pct = (((float(pre_last["close"]) - float(pre_first["open"])) / max(float(pre_first["open"]), 1e-10) * 100.0)
-                      if (pre_first is not None and pre_last is not None) else 0.0)
-    pre_sweep_prev_high = int((not np.isnan(pre_hi)) and (pre_hi > prev_high))
-    pre_sweep_prev_low  = int((not np.isnan(pre_lo)) and (pre_lo < prev_low))
-
-    # Prefer 09:30 OPEN, else last premarket CLOSE if 09:30 not available yet
-    open_source = "09:30_minute_open"
-    m0930 = _first_rth_minute(m1df_et, today)
-    if m0930 is not None and not np.isnan(m0930["open"]):
-        open_0930 = float(m0930["open"])
-    else:
-        open_source = "09:29_close_proxy"
-        if pre_last is None or np.isnan(pre_last["close"]):
-            return None, {"error": "no_open_or_premarket"}, None
-        open_0930 = float(pre_last["close"])
-
-    open_pos_in_prev_range = float((open_0930 - prev_low) / max(prev_high - prev_low, 1e-10))
-    open_to_prev_high_pct_rng = float((prev_high - open_0930) / max(prev_high - prev_low, 1e-10) * 100.0)
-    open_to_prev_low_pct_rng  = float((open_0930 - prev_low) / max(prev_high - prev_low, 1e-10) * 100.0)
-    overnight_gap_pct = float((open_0930 - prev_close) / max(prev_close, 1e-10) * 100.0)
-    atr14_pct = _daily_atr14_pct(ddf_et, today)
-
-    open_ts = pd.Timestamp.combine(pd.Timestamp(today), pd.Timestamp(SESSION_OPEN).time()).tz_localize(ET_TZ)
-    h1 = h1df[h1df.index < open_ts]
-    h4 = h4df[h4df.index < open_ts]
-    if h1.empty or h4.empty:
-        return None, {"error": "insufficient_htf_bars"}, None
-
-    h1_close = h1["close"]; h4_close = h4["close"]
-    h1_sma20 = h1_close.rolling(20).mean()
-    h4_sma20 = h4_close.rolling(20).mean()
-    if np.isnan(h1_sma20.iloc[-1]) or np.isnan(h4_sma20.iloc[-1]):
-        return None, {"error": "insufficient_sma_history"}, None
-
-    h1_close_vs_sma20_pct = float(((h1_close.iloc[-1] - h1_sma20.iloc[-1]) / max(h1_sma20.iloc[-1], 1e-10)) * 100.0)
-    h4_close_vs_sma20_pct = float(((h4_close.iloc[-1] - h4_sma20.iloc[-1]) / max(h4_sma20.iloc[-1], 1e-10)) * 100.0)
-    h1_mom_5bars_pct = float(((h1_close.iloc[-1] - (h1_close.iloc[-6] if len(h1_close) > 5 else h1_close.iloc[0])) /
-                               max((h1_close.iloc[-6] if len(h1_close) > 5 else h1_close.iloc[0]), 1e-10)) * 100.0)
-    h4_mom_3bars_pct = float(((h4_close.iloc[-1] - (h4_close.iloc[-4] if len(h4_close) > 3 else h4_close.iloc[0])) /
-                               max((h4_close.iloc[-4] if len(h4_close) > 3 else h4_close.iloc[0]), 1e-10)) * 100.0)
-
-    feature_row = {
-        "overnight_gap_pct": overnight_gap_pct,
-        "premarket_range_pct": pre_rng_pct,
-        "premarket_vol": pre_vol,
-        "premarket_vol_vs_prev5d": float(pre_vol / max(ddf_et[ddf_et.index.date < today]["volume"].tail(5).mean() or 1.0, 1.0)),
-        "premarket_sweep_prev_high": pre_sweep_prev_high,
-        "premarket_sweep_prev_low": pre_sweep_prev_low,
-        "premarket_close_vs_prev_close_pct": pre_close_vs_prev_close_pct,
-        "premarket_return_pct": pre_return_pct,
-        "prev_close": prev_close,
-        "prev_day_range_pct": float((prev_high - prev_low) / max(prev_close, 1e-10) * 100.0),
-        "prev_day_body_pct": prev_day_body_pct,
-        "prev_day_bull": prev_day_bull,
-        "prev_day_swept_prior_high": prev_day_swept_prior_high,
-        "prev_day_swept_prior_low": prev_day_swept_prior_low,
-        "open_pos_in_prev_range": open_pos_in_prev_range,
-        "open_to_prev_high_pct_rng": open_to_prev_high_pct_rng,
-        "open_to_prev_low_pct_rng": open_to_prev_low_pct_rng,
-        "daily_atr14_pct": atr14_pct,
-        "h1_close_vs_sma20_pct": h1_close_vs_sma20_pct,
-        "h4_close_vs_sma20_pct": h4_close_vs_sma20_pct,
-        "h1_mom_5bars_pct": h1_mom_5bars_pct,
-        "h4_mom_3bars_pct": h4_mom_3bars_pct,
-    }
-
-    X = pd.DataFrame([[feature_row.get(f, 0.0) for f in feature_names]], columns=feature_names)
-    meta = {
-        "et_date": str(today),
-        "open_source": "09:30_minute_open" if _first_rth_minute(m1df_et, today) is not None else "09:29_close_proxy",
-        "premarket_last_ts": (pre.index[-1].isoformat() if not pre.empty else None),
-    }
-    return X, None, meta
-
 # ---------------------- ML model I/O ---------------------- #
 def _load_model_and_encoder(symbol: str):
     """Load trained daily-bias model and encoder for a symbol.
@@ -279,6 +153,25 @@ def _load_model_and_encoder(symbol: str):
         provenance = json.loads(prov_path.read_text(encoding="utf-8"))
         source = provenance.get("source", "")
         purpose = provenance.get("purpose", "")
+        if source == "train_daily_bias_models.py":
+            import sklearn
+            from src.premarket.bias_features import FEATURE_VERSION
+
+            if provenance.get("validation", {}).get("status") != "accepted":
+                raise RuntimeError(f"Daily-bias model for {symbol} failed validation")
+            if provenance.get("feature_version") != FEATURE_VERSION:
+                raise RuntimeError(f"Daily-bias feature version mismatch for {symbol}")
+            if provenance.get("feature_cutoff_et") != "09:00":
+                raise RuntimeError(f"Daily-bias feature cutoff mismatch for {symbol}")
+            if provenance.get("sklearn_version") != sklearn.__version__:
+                raise RuntimeError(f"Daily-bias sklearn version mismatch for {symbol}")
+            if provenance.get("data_feed") not in {"iex", "sip"}:
+                raise RuntimeError(f"Unsupported daily-bias data feed for {symbol}")
+            for suffix in ("daily_bias.pkl", "label_encoder.pkl", "feature_names.json"):
+                name = f"{symbol}_{suffix}"
+                digest = hashlib.sha256((models_dir / name).read_bytes()).hexdigest()
+                if provenance.get("artifact_sha256", {}).get(name) != digest:
+                    raise RuntimeError(f"Daily-bias artifact integrity mismatch: {name}")
         
         if "placeholder" in purpose.lower() or "export_minimal_bias_models" in source:
             allow_placeholder = os.getenv("ALLOW_PLACEHOLDER_BIAS", "false").lower() == "true"
@@ -291,6 +184,10 @@ def _load_model_and_encoder(symbol: str):
     
     with open(models_dir / f"{symbol}_daily_bias.pkl", "rb") as f:
         model = pickle.load(f)
+    if prov_path.exists() and provenance.get("source") == "train_daily_bias_models.py":
+        expected = {key: provenance[key] for key in ("data_feed", "feature_cutoff_et", "feature_version")}
+        if getattr(model, "bias_metadata_", None) != expected:
+            raise RuntimeError(f"Daily-bias model/provenance metadata mismatch for {symbol}")
     with open(models_dir / f"{symbol}_label_encoder.pkl", "rb") as f:
         le = pickle.load(f)
     feat_path = models_dir / f"{symbol}_feature_names.json"
@@ -556,23 +453,31 @@ def main():
             results[symbol] = {"error": f"model_load_failed: {e}"}
             continue
 
-        ddf, m1df, m5df, h1df, h4df = _fetch_today_frames(symbol, data_client, feed)
-        per_symbol_frames[symbol] = (ddf, m1df, m5df)  # keep for snapshots
-        if any(x is None or x.empty for x in [ddf, m1df, h1df, h4df]):
-            results[symbol] = {"error": "insufficient_market_data"}
+        metadata = getattr(model, "bias_metadata_", None)
+        if not metadata:
+            results[symbol] = {"error": "model_load_failed: missing validated feature metadata"}
             continue
-
-        X_row, err, meta = _compute_open_features_today(symbol, ddf, m1df, h1df, h4df, feature_names)
-        if err is not None:
-            results[symbol] = {"error": err}
+        try:
+            from src.premarket.bias_training_data import fetch_bias_inference_frames
+            frames = fetch_bias_inference_frames(data_client, symbol, metadata)
+            X_row, err, meta = _compute_open_features_today(
+                symbol, frames["daily"], frames["20min"], frames["hourly"], frames["4hour"],
+                feature_names, bar_minutes=20,
+            )
+            if err is not None:
+                results[symbol] = {"error": err}
+                continue
+            results[symbol] = {
+                **_predict(model, le, X_row), "asof_open_meta": meta,
+                "bias_model": metadata,
+                "bias_target": "NYSE closing price versus previous daily-bar close; not entry-return prediction",
+                "features_snapshot": {k: float(X_row.iloc[0][k]) for k in feature_names},
+            }
+        except Exception as exc:
+            results[symbol] = {"error": f"bias_inference_failed: {exc}"}
             continue
-
-        pred = _predict(model, le, X_row)
-        results[symbol] = {
-            **pred,
-            "asof_open_meta": meta,
-            "features_snapshot": {k: float(X_row.iloc[0][k]) for k in feature_names}
-        }
+        ddf, m1df, m5df, _, _ = _fetch_today_frames(symbol, data_client, feed, snapshot_only=True)
+        per_symbol_frames[symbol] = (ddf, m1df, m5df)
 
     bias_path = _write_daily_bias(results, feed, et_date)
 
@@ -580,7 +485,7 @@ def main():
     #    Ensure we have benchmark & proxies 5m frames available.
     for proxy in PROXY_SYMBOLS + ["SPY", "QQQ"]:
         if proxy not in per_symbol_frames:
-            ddf, m1df, m5df, _, _ = _fetch_today_frames(proxy, data_client, feed)
+            ddf, m1df, m5df, _, _ = _fetch_today_frames(proxy, data_client, feed, snapshot_only=True)
             per_symbol_frames[proxy] = (ddf, m1df, m5df)
 
     today = pd.Timestamp.now(tz=ET_TZ).date()
