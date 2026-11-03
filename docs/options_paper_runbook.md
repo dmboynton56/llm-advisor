@@ -141,9 +141,10 @@ guarantee that trades will pass the normal gates. Unset the date or move it
 later in both environments to extend the trial if a bug appears. Other monitor
 symbols remain blocked regardless of this date.
 
-The four stocks do not yet have trained daily-bias models. They can use their
-recorded news and technical context, with an explicit `premarket_data_quality`
-warning for missing ML. Missing symbol context, invalid LLM responses, risk,
+All seven tickers have historical daily-bias artifacts; see `models/README.md`
+for the SIP source, 09:00 ET cutoff and holdout limitations. The stock cohort
+retains its recorded news/technical fallback if ML is unavailable, with an
+explicit `premarket_data_quality` warning. Missing symbol context, invalid LLM responses, risk,
 HTF alignment, liquidity, and broker checks still reject. ETF ML failures remain
 hard vetoes. Any future stock outside this first cohort requires available ML
 bias and explicit promotion through the entry list and monitor-list removal.

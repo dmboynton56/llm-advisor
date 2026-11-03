@@ -1,0 +1,103 @@
+{
+  "source": "train_daily_bias_models.py",
+  "purpose": "historically trained paper-trading prior",
+  "feature_version": "premarket_0900_completed_bars_v1",
+  "feature_cutoff_et": "09:00",
+  "data_feed": "sip",
+  "adjustment": "split",
+  "sklearn_version": "1.9.1",
+  "dataset_sha256": "25c0f4014f9be3380193cb6787ef6ebc61511f12efd4daf3c68f909c86a886af",
+  "artifact_sha256": {
+    "TSLA_daily_bias.pkl": "0fc0e68974b777cab34f87e6d4a56f86583aba73c2e9f1260f0daf0968e0ba2c",
+    "TSLA_label_encoder.pkl": "b6869cff7e6d7880bc5d039d31f91bd3398b1fbedc799f2561346eb0a9605e13",
+    "TSLA_feature_names.json": "2323114a53700a89908ab6ad3ccc8d8600cdd16652de6b28d43b180dc6be239c"
+  },
+  "label": "NYSE session close versus previous Alpaca daily-bar close; +/- 0.35 prior daily ATR; otherwise choppy",
+  "data_quality": {
+    "skipped_sessions": {
+      "insufficient_daily_history": 2,
+      "insufficient_sma_history": 2,
+      "nonfinite_bias_features": 11
+    },
+    "usable_sessions": 947,
+    "source_bar_counts": {
+      "daily": 962,
+      "20min": 45976,
+      "hourly": 15326,
+      "4hour": 4134
+    },
+    "history_start": "2023-01-03",
+    "history_end": "2026-11-02",
+    "training_data_checks": "unique sorted timestamps, complete cutoff/closing bars, finite features"
+  },
+  "validation": {
+    "status": "accepted",
+    "promotion_rule": "holdout log_loss < train-prior baseline AND balanced_accuracy > 1/3; min 20/class",
+    "selected_model": "logistic_c001",
+    "cv_log_losses": {
+      "logistic_c001": [
+        0.9822848244747349,
+        0.9902949126174396,
+        0.9875376873766332
+      ],
+      "logistic_c01": [
+        0.9717537187845228,
+        0.9960706746580864,
+        1.026993470890042
+      ],
+      "forest_depth3": [
+        1.005294064252013,
+        1.0245652640903014,
+        0.9839827841932524
+      ],
+      "forest_depth5": [
+        1.005294064252013,
+        1.0245080492020526,
+        0.9831369475530723
+      ]
+    },
+    "training_start": "2023-01-25",
+    "evaluation_train_end": "2025-11-21",
+    "holdout_start": "2025-11-24",
+    "holdout_end": "2026-11-02",
+    "train_sessions": 711,
+    "holdout_sessions": 236,
+    "training_class_counts": {
+      "0": 207,
+      "1": 226,
+      "2": 278
+    },
+    "baseline_probabilities": [
+      0.2911392405063291,
+      0.3178621659634318,
+      0.3909985935302391
+    ],
+    "model": {
+      "accuracy": 0.5508474576271186,
+      "balanced_accuracy": 0.521126048793265,
+      "log_loss": 0.951859659502847,
+      "class_counts": {
+        "1": 68,
+        "2": 97,
+        "0": 71
+      }
+    },
+    "baseline": {
+      "accuracy": 0.4110169491525424,
+      "balanced_accuracy": 0.3333333333333333,
+      "log_loss": 1.08744080988651,
+      "class_counts": {
+        "1": 68,
+        "2": 97,
+        "0": 71
+      }
+    },
+    "final_refit_end": "2026-11-02"
+  },
+  "class_order": [
+    "bearish",
+    "bullish",
+    "choppy"
+  ],
+  "limitations": "Single historical holdout after chronological CV; not evidence of profitable option trades or calibrated live confidence."
+}

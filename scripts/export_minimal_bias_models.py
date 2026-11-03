@@ -49,6 +49,12 @@ DEFAULT_FEATURES = [
 def main() -> None:
     symbols = [s.strip().upper() for s in sys.argv[1:]] or ["SPY", "QQQ", "IWM"]
     MODELS.mkdir(parents=True, exist_ok=True)
+    for symbol in symbols:
+        provenance_path = MODELS / f"{symbol}_provenance.json"
+        if provenance_path.exists():
+            existing = json.loads(provenance_path.read_text(encoding="utf-8"))
+            if existing.get("source") == "train_daily_bias_models.py":
+                raise RuntimeError(f"Refusing to overwrite historical {symbol} model with a placeholder")
 
     rng = np.random.default_rng(42)
     n_feat = len(DEFAULT_FEATURES)
